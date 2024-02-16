@@ -23,12 +23,13 @@ fn main() -> Result<()> {
 
     r1.add_team("Rockies");
     r1.add_team("Purple Dragons");
+    r1.add_team("Green Machine");
 
     league.add_region(r1);
 
     league.schedule();
 
-    dbg!(league);
+    // dbg!(league);
 
     Ok(())
 }

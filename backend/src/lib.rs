@@ -1,9 +1,13 @@
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Local, TimeZone};
+use petgraph::{
+    graphmap::{DiGraphMap, GraphMap},
+    Directed,
+};
 
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
+    collections::{HashSet, VecDeque},
     hash::Hash,
     pin::Pin,
     ptr::NonNull,
@@ -24,16 +28,18 @@ impl League {
     }
 
     pub fn schedule(&mut self) -> HashSet<Reservation> {
-        let mut set = HashSet::new();
+        let set = HashSet::new();
+
         for region in self.regions.iter_mut() {
-            set.extend(region.schedule_own_games());
+            let graph = region.season_graph();
+            println!("{graph:#?}");
         }
 
         set
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Region {
     fields: Vec<Field>,
     teams: Vec<Pin<Box<Team>>>,
@@ -61,54 +67,44 @@ impl Region {
         identifier: impl Into<String>,
         availability: &[AvailabilityWindow],
     ) {
-        let self_ref = self as *mut _;
-
-        let mut matches = BinaryHeap::with_capacity(availability.len());
-
-        for window in availability {
-            matches.push(Reservation {
-                availability_window: window.clone(),
-                game: None,
-            });
-        }
+        let region = NonNull::new(self as *mut _).unwrap();
+        let matches = VecDeque::from_iter(availability.iter().map(Reservation::new));
 
         self.fields.push(Field {
             identifier: identifier.into(),
-            region: NonNull::new(self_ref).unwrap(),
+            region,
             matches,
         })
     }
 
-    pub fn schedule_own_games(&mut self) -> HashSet<Reservation> {
-		let result = HashSet::new();
+    pub fn season_graph(
+        &mut self,
+    ) -> GraphMap<Pin<&Team>, Option<AvailabilityWindow>, Directed> {
+        let mut graph = DiGraphMap::new();
 
-        for team in &self.teams {
-			todo!();
-		}
+        for (i, home) in self.teams.iter().enumerate() {
+            println!("home = {home:?}");
+            graph.add_node(home.as_ref());
 
-		result
+            for (j, away) in self.teams.iter().enumerate() {
+                if j == i {
+                    continue;
+                }
+
+                println!("\taway = {away:?} on {home:?}");
+
+                graph.add_edge(home.as_ref(), away.as_ref(), None);
+            }
+        }
+
+        graph
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Team {
     identifier: String,
     region: NonNull<Region>,
-}
-
-impl PartialEq for Team {
-    fn eq(&self, other: &Self) -> bool {
-        self.identifier == other.identifier
-            && unsafe { self.region.as_ref() == other.region.as_ref() }
-    }
-}
-
-impl Eq for Team {}
-
-impl Hash for Team {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.identifier.hash(state);
-    }
 }
 
 #[macro_export]
@@ -165,72 +161,48 @@ impl AvailabilityWindow {
 pub struct Field {
     identifier: String,
     region: NonNull<Region>,
-    matches: BinaryHeap<Reservation>,
+    matches: VecDeque<Reservation>,
 }
 
-impl PartialEq for Field {
-    fn eq(&self, other: &Self) -> bool {
-        unsafe {
-            self.identifier == other.identifier && self.region.as_ref() == other.region.as_ref()
-        }
+impl PartialOrd for Field {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.identifier.partial_cmp(&other.identifier)
     }
 }
 
-impl Eq for Field {}
-
-#[derive(Debug, Hash)]
-pub struct Reservation {
-    availability_window: AvailabilityWindow,
-    game: Option<Game>,
-}
-
-impl Eq for Reservation {}
-
-impl Ord for Reservation {
+impl Ord for Field {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl PartialOrd for Reservation {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (&self.game, &other.game) {
-            (None, Some(..)) => Some(Ordering::Greater),
-            (Some(..), None) => Some(Ordering::Less),
-            (None, None) => Some(Ordering::Equal),
-            _ => self
-                .availability_window
-                .partial_cmp(&other.availability_window),
+impl PartialEq for Field {
+    fn eq(&self, other: &Self) -> bool {
+        self.identifier == other.identifier && self.region.as_ptr() == other.region.as_ptr()
+    }
+}
+
+impl Eq for Field {}
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub struct Reservation {
+    availability_window: AvailabilityWindow,
+    game: Option<Game>,
+}
+
+impl Reservation {
+    pub fn new(availability_window: &AvailabilityWindow) -> Self {
+        Self {
+            availability_window: availability_window.to_owned(),
+            game: None,
         }
     }
 }
 
-impl PartialEq for Reservation {
-    fn eq(&self, other: &Self) -> bool {
-        self.partial_cmp(other).is_some_and(Ordering::is_eq)
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Game {
     home: NonNull<Team>,
     away: NonNull<Team>,
-}
-
-impl PartialEq for Game {
-    fn eq(&self, other: &Self) -> bool {
-        unsafe {
-            self.home.as_ref() == other.home.as_ref() && self.away.as_ref() == other.away.as_ref()
-        }
-    }
-}
-
-impl Hash for Game {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        unsafe {
-            self.home.as_ref().hash(state);
-        }
-    }
 }
 
 impl Game {}
