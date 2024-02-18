@@ -18,6 +18,10 @@ fn main() -> Result<()> {
             backend::window!(9/11/2006 from 12:30 to 14:00)?,
             backend::window!(9/12/2006 from 12:30 to 14:00)?,
             backend::window!(9/12/2006 from 14:30 to 16:00)?,
+            backend::window!(9/12/2006 from 14:30 to 16:00)?,
+            backend::window!(9/12/2006 from 14:30 to 16:00)?,
+            backend::window!(9/12/2006 from 14:30 to 16:00)?,
+            backend::window!(9/12/2006 from 14:30 to 16:00)?,
         ],
     );
 
@@ -25,9 +29,17 @@ fn main() -> Result<()> {
     r1.add_team("Purple Dragons");
     r1.add_team("Green Machine");
 
+    // for a in RegionalGameQueue::new(&r1) {
+    //     println!("{a}")
+    // }
+
     league.add_region(r1);
 
-    league.schedule();
+    let games = league.schedule();
+
+    for game in games {
+        println!("{game}")
+    }
 
     // dbg!(league);
 
