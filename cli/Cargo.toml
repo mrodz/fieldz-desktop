@@ -7,7 +7,10 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.0", features = ["derive"] }
-backend = { path = "../backend"}
+backend = { path = "../backend" }
 chrono-tz = "0.8.6"
 chrono = "0.4.34"
 anyhow = "1.0.79"
+db = { path = "../db" }
+tokio = { version = "1.36.0", features = ["full"] }
+dotenv = "0.15.0"

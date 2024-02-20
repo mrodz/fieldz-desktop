@@ -5,6 +5,7 @@ use petgraph::{
     graphmap::{DiGraphMap, GraphMap},
     Directed,
 };
+use rand::{rngs::ThreadRng, Rng};
 
 use std::{
     cell::Cell,
@@ -17,7 +18,7 @@ use std::{
     ptr::NonNull,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct League {
     regions: Vec<Pin<Box<Region>>>,
 }
@@ -30,6 +31,7 @@ pub struct ScheduledOutput {
 }
 
 impl ScheduledOutput {
+    #[allow(clippy::mutable_key_type)]
     pub fn valid_games(&self) -> &HashSet<Reservation> {
         &self.valid_games
     }
@@ -41,9 +43,28 @@ impl ScheduledOutput {
     }
 }
 
+struct RandomEdgeSupplier<'a> {
+    vec: Vec<(Pin<&'a Team>, Pin<&'a Team>, &'a Option<&'a Reservation>)>,
+    rng: ThreadRng,
+}
+
+impl<'a> Iterator for RandomEdgeSupplier<'a> {
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.vec.is_empty() {
+            return None;
+        }
+
+        let index = self.rng.gen_range(0..self.vec.len());
+        Some(self.vec.swap_remove(index))
+    }
+    type Item = (Pin<&'a Team>, Pin<&'a Team>, &'a Option<&'a Reservation>);
+}
+
 impl League {
     pub fn new() -> Self {
-        Self { regions: vec![] }
+        Self {
+            ..Default::default()
+        }
     }
 
     pub fn add_region(&mut self, region: Region) {
@@ -51,6 +72,8 @@ impl League {
     }
 
     pub fn schedule(&mut self) -> Result<ScheduledOutput> {
+        // Safe because a Reservation's hash is not determined by any interior mutability
+        #[allow(clippy::mutable_key_type)]
         let mut set = HashSet::new();
 
         let mut unable_to_schedule = Vec::new();
@@ -59,7 +82,7 @@ impl League {
 
         for region in self.regions.iter_mut() {
             let mut graph = region.season_graph();
-            let mut time_queue = RegionalGameQueue::new(&region);
+            let mut time_queue = RegionalGameQueue::new(region);
 
             let mut next_window = time_queue.next();
 
@@ -67,7 +90,6 @@ impl League {
             let iter_access_point: *mut GraphMap<_, _, _> = &mut graph as *mut _;
 
             let mut edges = graph.all_edges();
-
 
             while let (Some((mut home, mut away, edge)), Some(next_window_view)) =
                 (edges.next(), next_window)
@@ -124,8 +146,6 @@ impl League {
 
                         if unschedulable {
                             println!("\tWasting space!");
-                            // unable_to_schedule.push(next_window_view.clone());
-                            // next_window = time_queue.next();
                             continue;
                         }
                     }
@@ -210,26 +230,39 @@ impl League {
                 unable_to_schedule.push(next_window.unwrap().clone())
             }
 
-            unplayed_matches.append(&mut graph.all_edges().filter_map(|(home, away, reservation)| {
-                if reservation.is_none() {
-                    Some(Game::new(home.deref(), away.deref()))
-                } else {
-                    None
-                }
-            }).collect());
+            unplayed_matches.append(
+                &mut graph
+                    .all_edges()
+                    .filter_map(|(home, away, reservation)| {
+                        if reservation.is_none() {
+                            Some(Game::new(home.deref(), away.deref()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+            );
         }
 
         let result = ScheduledOutput {
             valid_games: set,
             unable_to_schedule,
-            unplayed_matches
+            unplayed_matches,
         };
 
         Ok(result)
     }
+
+    pub fn teams(&self) -> Vec<&Team> {
+        let mut result = vec![];
+        for region in &self.regions {
+            result.append(&mut region.teams());
+        }
+        result
+    }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Region {
     fields: Vec<Pin<Box<Field>>>,
     teams: Vec<Pin<Box<Team>>>,
@@ -282,8 +315,7 @@ impl<'a> Iterator for RegionalGameQueue<'a> {
 impl Region {
     pub fn new() -> Self {
         Self {
-            fields: vec![],
-            teams: vec![],
+            ..Default::default()
         }
     }
 
@@ -339,12 +371,27 @@ impl Region {
 
         graph
     }
+
+    pub fn teams(&self) -> Vec<&Team> {
+        let mut result = vec![];
+        for team in &self.teams {
+            result.push(team.deref());
+        }
+        result
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Team {
     identifier: String,
     region: NonNull<Region>,
+}
+
+impl Hash for Team {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identifier.hash(state);
+        self.region.hash(state);
+    }
 }
 
 impl Display for Team {
@@ -401,7 +448,14 @@ impl AvailabilityWindow {
         end: (u32, u32),
     ) -> Result<Self> {
         let start = Local
-            .with_ymd_and_hms(year.try_into()?, dbg!(month), dbg!(day), dbg!(start.0), dbg!(start.1), 0)
+            .with_ymd_and_hms(
+                year.try_into()?,
+                dbg!(month),
+                dbg!(day),
+                dbg!(start.0),
+                dbg!(start.1),
+                0,
+            )
             .earliest()
             .context("ambiguous start date")?;
         let end = Local
@@ -463,7 +517,7 @@ impl Display for Field {
 
 impl PartialOrd for Field {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.identifier.partial_cmp(&other.identifier)
+        Some(self.cmp(other))
     }
 }
 
@@ -481,12 +535,20 @@ impl PartialEq for Field {
 
 impl Eq for Field {}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Reservation {
     availability_window: AvailabilityWindow,
     game: Cell<Option<Game>>,
     field: NonNull<Field>,
 }
+
+impl PartialEq for Reservation {
+    fn eq(&self, other: &Self) -> bool {
+        self.availability_window == other.availability_window && self.field == other.field
+    }
+}
+
+impl Eq for Reservation {}
 
 impl Display for Reservation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -505,7 +567,7 @@ impl Display for Reservation {
 impl Hash for Reservation {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.availability_window.hash(state);
-        self.game.get().hash(state);
+        self.field.hash(state);
     }
 }
 

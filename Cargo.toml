@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["cli", "backend"]
+members = ["cli", "backend", "desktop", "db", "db/migration", "db/entity"]
 resolver = "2"
