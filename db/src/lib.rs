@@ -21,11 +21,24 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 pub struct Client {
     connection: DatabaseConnection,
 }
 
 impl Client {
+    pub async fn new(config: &Config) -> Result<Self> {
+        let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
+    
+        if db.ping().await.is_err() {
+            bail!("database did not respond to ping");
+        }
+    
+        migration::Migrator::up(&db, None).await?;
+    
+        Ok(Client { connection: db })
+    }
+
     pub async fn get_regions(&self) -> Result<Vec<Region>, DbErr> {
         RegionEntity::find().all(&self.connection).await
     }
@@ -40,16 +53,4 @@ impl Client {
     pub async fn delete_regions(&self) -> Result<DeleteResult, DbErr> {
         RegionEntity::delete_many().exec(&self.connection).await
     }
-}
-
-pub async fn connect(config: &Config) -> Result<Client> {
-    let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
-
-    if db.ping().await.is_err() {
-        bail!("database did not respond to ping");
-    }
-
-    migration::Migrator::up(&db, None).await?;
-
-    Ok(Client { connection: db })
 }

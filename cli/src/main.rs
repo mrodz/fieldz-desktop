@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use backend::{window, League, Region, RegionalGameQueue};
 use clap::{Parser, Subcommand};
+use db::Client;
 use std::{fmt::Debug, path::Path};
 
 #[derive(Debug, Parser)]
@@ -121,7 +122,7 @@ async fn main() -> Result<()> {
 
     let config = db::Config::new(db_path);
 
-    let client = db::connect(&config).await?;
+    let client = Client::new(&config).await?;
 
     match args.cmd {
         Commands::Playground => {
