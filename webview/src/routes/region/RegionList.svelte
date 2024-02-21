@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import type { Region } from '$lib';
 	import { ProgressRadial, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 	import { dialog, invoke } from '@tauri-apps/api';
@@ -80,20 +81,20 @@
 {:else}
 	<div class="flex flex-wrap justify-center">
 		{#each regions as region, i}
-			<div class="card m-5 w-96 p-5">
+			<button
+				class="card btn m-5 block w-96 p-5"
+				tabindex="0"
+				on:click|preventDefault={() => goto(`/region/${region.id}`)}
+			>
 				<header class="card-header flex flex-row items-center">
 					<strong class="w-1/2 grow truncate">{region.title}</strong>
 					<button
 						type="button"
-						class="btn-icon variant-filled"
-						on:click={() => deleteRegion(region, i)}>X</button
+						class="variant-filled btn-icon"
+						on:click|stopPropagation={() => deleteRegion(region, i)}>X</button
 					>
 				</header>
-				<hr class="my-4" />
-				<blockquote class="blockquote">
-					{JSON.stringify(region)}
-				</blockquote>
-			</div>
+			</button>
 		{/each}
 	</div>
 {/if}

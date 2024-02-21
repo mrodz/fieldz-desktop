@@ -19,7 +19,7 @@
 		const payload: CreateRegionInput = {
 			title: regionNameInput ?? ''
 		};
- 
+
 		try {
 			const newRegion: Region = await invoke('create_region', {
 				input: payload
@@ -87,7 +87,7 @@
 	<hr class="hr my-5" />
 
 	<div class="flex flex-row-reverse">
-		<button class="btn variant-filled" on:click={confirm}>Confirm</button>
-		<button class="btn variant-outline mx-1" on:click={close}>Close</button>
+		<button class="variant-filled btn" on:click={confirm}>Confirm</button>
+		<button class="variant-outline btn mx-1" on:click={close}>Close</button>
 	</div>
 </div>

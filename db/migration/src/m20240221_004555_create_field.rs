@@ -29,7 +29,7 @@ impl MigrationTrait for Migration {
                             .from(Field::Table, Field::RegionOwner)
                             .to(Region::Table, Region::Id)
                             .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )

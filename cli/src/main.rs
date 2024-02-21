@@ -118,7 +118,8 @@ async fn db_command(command: DbCommand, db_path: Option<String>) -> Result<()> {
         .with_prompt(format!("Enter operation for \"{command:?}\""))
         .default(0)
         .items(crud_options)
-        .interact()?.try_into()?;
+        .interact()?
+        .try_into()?;
 
     println!("{selection}, {client:?}");
 

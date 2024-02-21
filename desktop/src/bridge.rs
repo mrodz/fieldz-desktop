@@ -56,7 +56,7 @@ pub enum DeleteRegionError {
     #[error("database operation failed")]
     DatabaseError(String),
     #[error("this record (id = {0}) was not found")]
-	NotFound(i32),
+    NotFound(i32),
 }
 
 #[tauri::command]
@@ -72,12 +72,45 @@ pub(crate) async fn delete_region(app: AppHandle, id: i32) -> Result<(), DeleteR
 
     match deletion {
         Ok(deletion) => {
-			if deletion.rows_affected == 1 {
-				Ok(())
-			} else {
-				Err(DeleteRegionError::NotFound(id))
-			}
-		}
+            if deletion.rows_affected == 1 {
+                Ok(())
+            } else {
+                Err(DeleteRegionError::NotFound(id))
+            }
+        }
         Err(e) => Err(DeleteRegionError::DatabaseError(e.to_string())),
+    }
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum LoadRegionError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed")]
+    DatabaseError(String),
+    #[error("this record (id = {0}) was not found")]
+    NotFound(i32),
+}
+
+#[tauri::command]
+pub(crate) async fn load_region(
+    app: AppHandle,
+    id: i32,
+) -> Result<db::region::Model, LoadRegionError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadRegionError::NoDatabase)?;
+
+    let deletion = client.load_region(id).await;
+
+    match deletion {
+        Ok(deletion) => {
+            if deletion.len() == 1 {
+                Ok(deletion[0].clone())
+            } else {
+                Err(LoadRegionError::NotFound(id))
+            }
+        }
+        Err(e) => Err(LoadRegionError::DatabaseError(e.to_string())),
     }
 }

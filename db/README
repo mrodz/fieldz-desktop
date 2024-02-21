@@ -1,4 +1,0 @@
-# Migration Guide
-
-## After creating the migration
-- `sea-orm-cli generate entity -o entity/src/entities --with-serde both`

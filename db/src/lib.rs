@@ -3,9 +3,9 @@ use entity::region::ActiveModel as ActiveRegion;
 use entity::region::Entity as RegionEntity;
 use entity::region::Model as Region;
 use migration::MigratorTrait;
-pub use sea_orm::{DbErr, DeleteResult};
 use sea_orm::Set;
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
+pub use sea_orm::{DbErr, DeleteResult};
 
 pub use entity::*;
 use serde::Deserialize;
@@ -78,6 +78,10 @@ impl Client {
 
     pub async fn get_regions(&self) -> DBResult<Vec<Region>> {
         RegionEntity::find().all(&self.connection).await
+    }
+
+    pub async fn load_region(&self, id: i32) -> DBResult<Vec<Region>> {
+        RegionEntity::find_by_id(id).all(&self.connection).await
     }
 
     pub async fn create_region(&self, input: CreateRegionInput) -> DBResult<Region> {

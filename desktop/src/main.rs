@@ -60,7 +60,8 @@ fn main() -> Result<()> {
         .invoke_handler(tauri::generate_handler![
             get_regions,
             create_region,
-            delete_region
+            delete_region,
+            load_region,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

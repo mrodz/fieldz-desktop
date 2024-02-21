@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { type Region } from '$lib';
-	import RegionList from './regions/RegionList.svelte';
-	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
+	import { slide } from 'svelte/transition';
+	import RegionList from './region/RegionList.svelte';
+	import { getModalStore } from '@skeletonlabs/skeleton';
 
 	const modalStore = getModalStore();
 
@@ -20,14 +21,16 @@
 	}
 </script>
 
-<main class="p-4">
+<main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
 	<section class="p-4">
 		<h2 class="h2">Regions</h2>
 
 		<RegionList bind:this={regionList} />
-		<button class="btn variant-filled mx-auto block" on:click={createRegion}> Create Region </button>
+		<button class="variant-filled btn mx-auto block" on:click={createRegion}>
+			Create Region
+		</button>
 	</section>
-	<section class="card p-4 mt-8">
+	<section class="card mt-8 p-4">
 		<h2 class="h2">Calendar</h2>
 		<i class="mx-auto">Todo...</i>
 	</section>
