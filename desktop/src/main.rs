@@ -1,20 +1,24 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anyhow::Context;
+mod bridge;
+
+use anyhow::{Context, Result};
+use bridge::*;
 use db::Client;
-use std::sync::Mutex;
+use futures::lock::Mutex;
+use std::sync::Arc;
 use tauri::Manager;
 
 #[derive(Debug, Default)]
-struct SafeAppState(Mutex<State>);
+struct SafeAppState(Arc<Mutex<State>>);
 
 #[derive(Debug, Default)]
 struct State {
     database: Option<Client>,
 }
 
-fn main() {
+fn main() -> Result<()> {
     tauri::Builder::default()
         .manage(SafeAppState::default())
         .setup(|app| {
@@ -27,10 +31,12 @@ fn main() {
 
             let state = app.state::<SafeAppState>();
 
-            // initialize your app here instead of sleeping :)
             println!("Initializing...");
 
-            let db_path = format!("sqlite:{}data.sqlite?mode=rwc", db_path.to_string_lossy());
+            let db_path = format!(
+                "sqlite:{}?mode=rwc",
+                db_path.join("data.sqlite").to_string_lossy()
+            );
 
             println!("Using data: {db_path}");
 
@@ -38,8 +44,12 @@ fn main() {
 
             {
                 let handle = tauri::async_runtime::handle();
-                let mut guard = state.0.lock().unwrap();
-                guard.database = Some(handle.block_on(async { Client::new(&db_config).await })?);
+
+                handle.block_on(async {
+                    let mut guard = state.0.lock().await;
+                    guard.database = Some(Client::new(&db_config).await?);
+                    Result::<()>::Ok(())
+                })?;
             }
 
             println!("Done initializing.");
@@ -47,6 +57,11 @@ fn main() {
             main_window.show().unwrap();
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            get_regions,
+            create_region,
+            delete_region
+        ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .context("error while running tauri application")
 }

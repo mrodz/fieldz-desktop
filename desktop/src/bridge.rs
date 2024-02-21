@@ -1,0 +1,83 @@
+use db::{CreateRegionInput, RegionValidationError};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
+use thiserror::Error;
+
+use crate::SafeAppState;
+
+#[tauri::command]
+pub(crate) async fn get_regions(app: AppHandle) -> Result<Vec<db::region::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.get_regions().await.map_err(|e| e.to_string())
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CreateRegionError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("bad input")]
+    ValidationError(RegionValidationError),
+    #[error("database operation failed")]
+    DatabaseError(String),
+}
+
+#[tauri::command]
+pub(crate) async fn create_region(
+    app: AppHandle,
+    input: CreateRegionInput,
+) -> Result<db::region::Model, CreateRegionError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CreateRegionError::NoDatabase)?;
+
+    input
+        .validate()
+        .map_err(CreateRegionError::ValidationError)?;
+
+    client
+        .create_region(input)
+        .await
+        .map_err(|e| CreateRegionError::DatabaseError(e.to_string()))
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum DeleteRegionError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed")]
+    DatabaseError(String),
+    #[error("this record (id = {0}) was not found")]
+	NotFound(i32),
+}
+
+#[tauri::command]
+pub(crate) async fn delete_region(app: AppHandle, id: i32) -> Result<(), DeleteRegionError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(DeleteRegionError::NoDatabase)?;
+
+    let deletion = client.delete_region(id).await;
+
+    match deletion {
+        Ok(deletion) => {
+			if deletion.rows_affected == 1 {
+				Ok(())
+			} else {
+				Err(DeleteRegionError::NotFound(id))
+			}
+		}
+        Err(e) => Err(DeleteRegionError::DatabaseError(e.to_string())),
+    }
+}

@@ -1,1 +1,9 @@
-// place files you want to import through the `$lib` alias in this folder.
+// db\entity\src\entities\region.rs 
+export interface Region {
+	id: number,
+	title: string,
+}
+
+export interface CreateRegionInput {
+	title: string,
+}

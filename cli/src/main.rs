@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use backend::{window, League, Region, RegionalGameQueue};
 use clap::{Parser, Subcommand};
 use db::Client;
+use dialoguer::{theme::ColorfulTheme, Select};
 use std::{fmt::Debug, path::Path};
 
 #[derive(Debug, Parser)]
@@ -9,32 +10,24 @@ use std::{fmt::Debug, path::Path};
 struct Args {
     #[command(subcommand)]
     cmd: Commands,
-    #[arg(long = "db", required(false))]
-    db_path: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
     Playground,
     /// All subcommands related to regions
-    Region {
+    Db {
         #[command(subcommand)]
-        cmd: RegionCommands,
+        cmd: DbCommand,
+        #[arg(long = "db", required(false))]
+        db_path: Option<String>,
     },
 }
 
 #[derive(Subcommand, Debug, Clone)]
-enum RegionCommands {
-    /// Create a new region
-    Create {
-        /// The name of the region
-        #[arg(long, required(true))]
-        name: String,
-    },
-    /// List all regions
-    List,
-    /// Delete all regions
-    Purge,
+enum DbCommand {
+    Region,
+    Field,
 }
 
 fn test_schedule() -> Result<()> {
@@ -107,16 +100,11 @@ fn test_schedule() -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    dotenv::from_path(Path::new(module_path!()).join(".env"))?;
-
-    let args = Args::parse();
-
+async fn db_command(command: DbCommand, db_path: Option<String>) -> Result<()> {
     let db_path = if let Ok(from_env) = std::env::var("DATABASE_URL") {
         from_env
     } else {
-        args.db_path
+        db_path
             .context("`DATABASE_URL` was not set, and no database path was supplied via `--db`")?
     };
 
@@ -124,24 +112,28 @@ async fn main() -> Result<()> {
 
     let client = Client::new(&config).await?;
 
+    let crud_options = &["create", "read", "delete", "update"];
+
+    let selection: isize = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("Enter operation for \"{command:?}\""))
+        .default(0)
+        .items(crud_options)
+        .interact()?.try_into()?;
+
+    println!("{selection}, {client:?}");
+
+    todo!();
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    dotenv::from_path(Path::new(module_path!()).join(".env"))?;
+
+    let args = Args::parse();
+
     match args.cmd {
-        Commands::Playground => {
-            test_schedule()?;
-        }
-        Commands::Region { cmd } => match cmd {
-            RegionCommands::List => {
-                let result = client.get_regions().await?;
-                println!("{result:#?}");
-            }
-            RegionCommands::Create { name } => {
-                let result = client.create_region(name).await?;
-                println!("{result:#?}");
-            }
-            RegionCommands::Purge => {
-                let result = client.delete_regions().await?;
-                println!("{result:#?}");
-            }
-        },
+        Commands::Playground => test_schedule()?,
+        Commands::Db { cmd, db_path } => db_command(cmd, db_path).await?,
     }
 
     Ok(())

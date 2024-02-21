@@ -1,6 +1,7 @@
 // @ts-check
 
 const { skeleton } = require('@skeletonlabs/tw-plugin');
+const forms = require('@tailwindcss/forms');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -16,6 +17,7 @@ module.exports = {
 	plugins: [
 		skeleton({
 			themes: { preset: ['modern'] }
-		})
+		}),
+		forms
 	]
 };

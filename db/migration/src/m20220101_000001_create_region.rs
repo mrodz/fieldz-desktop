@@ -37,7 +37,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum Region {
+pub(crate) enum Region {
     Table,
     Id,
     Title,
