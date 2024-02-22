@@ -62,6 +62,8 @@ fn main() -> Result<()> {
             create_region,
             delete_region,
             load_region,
+            get_fields,
+            create_field,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

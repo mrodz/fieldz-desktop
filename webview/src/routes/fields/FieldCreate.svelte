@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CreateRegionInput, Region } from '$lib';
+	import type { CreateFieldInput, Field } from '$lib';
 	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 
@@ -8,29 +8,30 @@
 	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
-	let regionNameInput: string | undefined;
-	let regionNameError: string | undefined;
+	let fieldNameInput: string | undefined;
+	let fieldNameError: string | undefined;
 
 	function close() {
 		parent.onClose();
 	}
 
 	async function confirm() {
-		const payload: CreateRegionInput = {
-			title: regionNameInput ?? ''
+		const payload: CreateFieldInput = {
+			name: fieldNameInput ?? '',
+			region_id: $modalStore[0].meta.region.id,
 		};
 
 		try {
-			const newRegion: Region = await invoke('create_region', {
+			const newField: Field = await invoke('create_field', {
 				input: payload
 			});
 
 			toastStore.trigger({
-				message: `Created new region: "${newRegion.title}"`,
+				message: `Created new field: "${newField.name}"`,
 				background: 'variant-filled-success'
 			});
 
-			$modalStore[0].meta?.onCreate(newRegion);
+			$modalStore[0].meta?.onCreate(newField);
 
 			close();
 		} catch (e: any) {
@@ -41,10 +42,10 @@
 				const error = e['ValidationError'];
 
 				if (error === 'EmptyName') {
-					regionNameError = 'Region name cannot be empty';
+					fieldNameError = 'Field name cannot be empty';
 				} else if (typeof error === 'object' && 'NameTooLong' in error) {
 					const nameTooLong = error['NameTooLong'];
-					regionNameError = `Region name is ${nameTooLong?.len} characters which is larger than the max, 64`;
+					fieldNameError = `Field name is ${nameTooLong?.len} characters which is larger than the max, 64`;
 				} else {
 					// unknown validation error!
 					dialog.message(JSON.stringify(e), {
@@ -65,21 +66,21 @@
 <div class="card w-modal p-5">
 	<form class="form">
 		<label class="label">
-			<span>Region Name</span>
+			<span>Field Name</span>
 			<div class="input-group input-group-divider grid-cols-[1fr_auto]">
 				<input
-					class="input {regionNameError === undefined ? '' : 'input-error'}"
+					class="input {fieldNameError === undefined ? '' : 'input-error'}"
 					type="text"
-					bind:value={regionNameInput}
-					on:keypress={() => (regionNameError = undefined)}
-					on:change={() => (regionNameError = undefined)}
+					bind:value={fieldNameInput}
+					on:keypress={() => (fieldNameError = undefined)}
+					on:change={() => (fieldNameError = undefined)}
 				/>
-				<div class="input-group-shim {(regionNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
-					{regionNameInput?.length ?? 0}/64
+				<div class="input-group-shim {(fieldNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
+					{fieldNameInput?.length ?? 0}/64
 				</div>
 			</div>
-			{#if regionNameError !== undefined}
-				<span class="text-error-500">{regionNameError}</span>
+			{#if fieldNameError !== undefined}
+				<span class="text-error-500">{fieldNameError}</span>
 			{/if}
 		</label>
 	</form>

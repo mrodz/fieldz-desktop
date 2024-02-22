@@ -1,4 +1,4 @@
-use db::{CreateRegionInput, RegionValidationError};
+use db::{CreateFieldInput, CreateRegionInput, FieldValidationError, RegionValidationError};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use thiserror::Error;
@@ -113,4 +113,56 @@ pub(crate) async fn load_region(
         }
         Err(e) => Err(LoadRegionError::DatabaseError(e.to_string())),
     }
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum LoadFieldsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed")]
+    DatabaseError(String),
+}
+
+#[tauri::command]
+pub(crate) async fn get_fields(
+    app: AppHandle,
+    region_id: i32,
+) -> Result<Vec<db::field::Model>, LoadFieldsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadFieldsError::NoDatabase)?;
+
+    client
+        .get_fields(region_id)
+        .await
+        .map_err(|e| LoadFieldsError::DatabaseError(e.to_string()))
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CreateFieldError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("bad input")]
+    ValidationError(FieldValidationError),
+    #[error("database operation failed")]
+    DatabaseError(String),
+}
+
+#[tauri::command]
+pub(crate) async fn create_field(
+    app: AppHandle,
+    input: CreateFieldInput,
+) -> Result<db::field::Model, CreateFieldError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(CreateFieldError::NoDatabase)?;
+
+    input
+        .validate()
+        .map_err(CreateFieldError::ValidationError)?;
+
+    client
+        .create_field(input)
+        .await
+        .map_err(|e| CreateFieldError::DatabaseError(e.to_string()))
 }

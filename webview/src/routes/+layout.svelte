@@ -9,13 +9,18 @@
 		type ModalComponent,
 		Toast
 	} from '@skeletonlabs/skeleton';
+
 	import RegionCreate from './region/RegionCreate.svelte';
+	import FieldCreate from './fields/FieldCreate.svelte';
 
 	initializeStores();
 
 	const modalRegistry: Record<string, ModalComponent> = {
 		regionCreate: {
 			ref: RegionCreate
+		},
+		fieldCreate: {
+			ref: FieldCreate
 		}
 	};
 </script>
