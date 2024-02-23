@@ -7,13 +7,18 @@
 		LightSwitch,
 		Modal,
 		type ModalComponent,
-		Toast
+		Toast,
+		storePopup
 	} from '@skeletonlabs/skeleton';
+
+	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
 
 	import RegionCreate from './region/RegionCreate.svelte';
 	import FieldCreate from './fields/FieldCreate.svelte';
 
 	initializeStores();
+
+	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
 
 	const modalRegistry: Record<string, ModalComponent> = {
 		regionCreate: {

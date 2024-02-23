@@ -63,18 +63,28 @@
 
 		{#if fields.length === 0}
 			<div class="m-4 p-4 text-center">⚠️ This region has no fields</div>
-			<button class="btn variant-filled block mx-auto" on:click={createField}>Create your first field</button>
+			<button class="btn variant-filled mx-auto block" on:click={createField}
+				>Create your first field</button
+			>
 		{:else}
 			<div class="flex flex-wrap items-stretch justify-center">
 				{#each fields as field}
-					<div class="card m-4 w-52 lg:w-96 p-4">
+					<div class="card m-4 w-52 p-4 lg:w-96">
 						<strong>{field.name}</strong>
 						<hr class="my-4" />
 						<CodeBlock language="json" lineNumbers code={JSON.stringify(field)} />
+						<hr class="my-4" />
+						<div class="btn-group variant-filled flex w-full">
+							<button class="w-1/2">Teams</button>
+							<button class="w-1/2" disabled>Time Slots (WIP)</button>
+						</div>
 					</div>
 				{/each}
-				<div class="ml-10 my-auto flex flex-col">
-					<button class="btn-icon variant-filled mx-auto block h-[75px] w-[75px]" on:click={createField}>+</button>
+				<div class="my-auto ml-10 flex flex-col">
+					<button
+						class="btn-icon variant-filled mx-auto block h-[75px] w-[75px]"
+						on:click={createField}>+</button
+					>
 					<span class="mx-auto mt-2 block">Create Field</span>
 				</div>
 			</div>
