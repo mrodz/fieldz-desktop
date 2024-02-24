@@ -10,7 +10,6 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub region_owner: i32,
-    pub team_group: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -23,14 +22,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Region,
-    #[sea_orm(
-        belongs_to = "super::team_group::Entity",
-        from = "Column::TeamGroup",
-        to = "super::team_group::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    TeamGroup,
+    #[sea_orm(has_many = "super::team_group_join::Entity")]
+    TeamGroupJoin,
 }
 
 impl Related<super::region::Entity> for Entity {
@@ -39,9 +32,18 @@ impl Related<super::region::Entity> for Entity {
     }
 }
 
+impl Related<super::team_group_join::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::TeamGroupJoin.def()
+    }
+}
+
 impl Related<super::team_group::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TeamGroup.def()
+        super::team_group_join::Relation::TeamGroup.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::team_group_join::Relation::Team.def().rev())
     }
 }
 

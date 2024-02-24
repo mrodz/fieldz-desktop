@@ -29,7 +29,7 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // Replace the sample below with your own migration scripts
         manager
-            .drop_table(Table::drop().table(Region::Table).to_owned())
+            .drop_table(Table::drop().if_exists().table(Region::Table).to_owned())
             .await?;
 
         Ok(())

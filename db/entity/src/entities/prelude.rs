@@ -4,3 +4,4 @@ pub use super::field::Entity as Field;
 pub use super::region::Entity as Region;
 pub use super::team::Entity as Team;
 pub use super::team_group::Entity as TeamGroup;
+pub use super::team_group_join::Entity as TeamGroupJoin;

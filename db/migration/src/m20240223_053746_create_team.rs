@@ -20,7 +20,12 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(TeamGroup::Name).string().not_null())
+                    .col(
+                        ColumnDef::new(TeamGroup::Name)
+                            .string()
+                            .not_null()
+                            .extra("COLLATE nocase"),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -39,7 +44,6 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(Team::Name).string().not_null())
                     .col(ColumnDef::new(Team::RegionOwner).integer().not_null())
-                    .col(ColumnDef::new(Team::TeamGroup).integer().not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_team_region")
@@ -48,11 +52,35 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(TeamGroupJoin::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(TeamGroupJoin::Team).integer().not_null())
+                    .col(ColumnDef::new(TeamGroupJoin::Group).integer().not_null())
+                    .primary_key(
+                        Index::create()
+                            .col(TeamGroupJoin::Team)
+                            .col(TeamGroupJoin::Group),
+                    )
                     .foreign_key(
                         ForeignKey::create()
-                            .name("fk_team_group")
-                            .from(Team::Table, Team::TeamGroup)
+                            .name("fk_join_group")
+                            .from(TeamGroupJoin::Table, TeamGroupJoin::Group)
                             .to(TeamGroup::Table, TeamGroup::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_join_team")
+                            .from(TeamGroupJoin::Table, TeamGroupJoin::Team)
+                            .to(Team::Table, Team::Id)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
@@ -64,12 +92,22 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // the join table needs to be dropped first
         manager
-            .drop_table(Table::drop().table(Team::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .if_exists()
+                    .table(TeamGroupJoin::Table)
+                    .to_owned(),
+            )
             .await?;
 
         manager
-            .drop_table(Table::drop().table(TeamGroup::Table).to_owned())
+            .drop_table(Table::drop().if_exists().table(Team::Table).to_owned())
+            .await?;
+
+        manager
+            .drop_table(Table::drop().if_exists().table(TeamGroup::Table).to_owned())
             .await?;
 
         Ok(())
@@ -87,7 +125,13 @@ pub(crate) enum TeamGroup {
 pub(crate) enum Team {
     Table,
     RegionOwner,
-    TeamGroup,
     Id,
     Name,
+}
+
+#[derive(DeriveIden)]
+pub(crate) enum TeamGroupJoin {
+    Table,
+    Team,
+    Group,
 }

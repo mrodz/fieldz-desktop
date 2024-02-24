@@ -8,13 +8,15 @@
 		Modal,
 		type ModalComponent,
 		Toast,
-		storePopup
+		storePopup,
+		getToastStore,
 	} from '@skeletonlabs/skeleton';
-
+	import { invoke, dialog } from '@tauri-apps/api';
 	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
 
 	import RegionCreate from './region/RegionCreate.svelte';
 	import FieldCreate from './fields/FieldCreate.svelte';
+	import TeamCreate from './fields/TeamCreate.svelte';
 
 	initializeStores();
 
@@ -26,8 +28,15 @@
 		},
 		fieldCreate: {
 			ref: FieldCreate
+		},
+		teamCreate: {
+			ref: TeamCreate,
 		}
 	};
+
+	async function resetDatabase() {
+		await invoke('db_migrate_up_down');
+	}
 </script>
 
 <Toast />
@@ -38,12 +47,25 @@
 		<nav class="list-nav">
 			<ul>
 				<li><a href="/">Home</a></li>
+				<li><a href="/groups">Groups</a></li>
 			</ul>
 		</nav>
 	</svelte:fragment>
 	<svelte:fragment slot="header">
 		<AppBar>
-			<LightSwitch />
+			<div class="flex flex-row items-center justify-center">
+				<LightSwitch />
+				<button class="btn variant-outline ml-4" on:click|preventDefault={async () => {
+					await resetDatabase();
+					window.location.replace('/');
+					dialog.message("The app's data was wiped, and the database's schema was refreshed.", {
+						title: "Database reset complete",
+						type: "info"
+					});
+				}}>
+					Reset Database &mdash; Destructive
+				</button>
+			</div>
 		</AppBar>
 	</svelte:fragment>
 	<slot />

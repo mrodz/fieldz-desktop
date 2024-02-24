@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{anyhow, Context};
 use anyhow::{bail, Result};
 use entity::field::ActiveModel as ActiveField;
@@ -6,11 +8,17 @@ use entity::field::Model as Field;
 use entity::region::ActiveModel as ActiveRegion;
 use entity::region::Entity as RegionEntity;
 use entity::region::Model as Region;
-use migration::MigratorTrait;
-use sea_orm::ModelTrait;
-use sea_orm::Set;
+use entity::team::ActiveModel as ActiveTeam;
+use entity::team::Entity as TeamEntity;
+use entity::team::Model as Team;
+use entity::team_group::ActiveModel as ActiveTeamGroup;
+use entity::team_group::Entity as TeamGroupEntity;
+use entity::team_group::Model as TeamGroup;
+use migration::{Migrator, MigratorTrait};
+use sea_orm::{ColumnTrait, QueryFilter, Set};
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
+use sea_orm::{EntityOrSelect, ModelTrait, RelationTrait};
 
 pub use entity::*;
 use serde::Deserialize;
@@ -100,6 +108,62 @@ impl CreateFieldInput {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateTeamInput {
+    name: String,
+    region_id: i32,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum TeamValidationError {
+    #[error("field name cannot be empty")]
+    EmptyName,
+    #[error("field name is {len} characters which is larger than the max, 64")]
+    NameTooLong { len: usize },
+}
+
+impl CreateTeamInput {
+    pub fn validate(&self) -> Result<(), TeamValidationError> {
+        let len = self.name.len();
+
+        if self.name.is_empty() {
+            return Err(TeamValidationError::EmptyName);
+        }
+
+        if len > 64 {
+            return Err(TeamValidationError::NameTooLong { len });
+        }
+
+        // add more checks if the fields change...
+
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+
+pub enum CreateGroupError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("this tag already exists")]
+    DuplicateTag,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CreateTeamError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("bad input")]
+    ValidationError(TeamValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("the following tags do not exist: {0:?}")]
+    MissingTags(Vec<String>),
+}
+
 impl Client {
     pub async fn new(config: &Config) -> Result<Self> {
         let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
@@ -108,9 +172,15 @@ impl Client {
             bail!("database did not respond to ping");
         }
 
-        migration::Migrator::up(&db, None).await?;
+        let result = Client { connection: db };
 
-        Ok(Client { connection: db })
+        result.refresh().await?;
+
+        Ok(result)
+    }
+
+    pub async fn refresh(&self) -> DBResult<()> {
+        Migrator::refresh(&self.connection).await
     }
 
     pub async fn get_regions(&self) -> DBResult<Vec<Region>> {
@@ -163,5 +233,93 @@ impl Client {
         })
         .exec_with_returning(&self.connection)
         .await
+    }
+
+    pub async fn delete_field(&self, id: i32) -> DBResult<DeleteResult> {
+        FieldEntity::delete(ActiveField {
+            id: Set(id),
+            ..Default::default()
+        })
+        .exec(&self.connection)
+        .await
+    }
+
+    pub async fn create_team(&self, input: CreateTeamInput) -> Result<Team, CreateTeamError> {
+        let groups = TeamGroupEntity::find()
+            .filter(team_group::Column::Name.is_in(&input.tags))
+            .all(&self.connection)
+            .await
+            .map_err(|e| CreateTeamError::DatabaseError(e.to_string()))?;
+
+        if groups.len() != input.tags.len() {
+            // tag does not exist
+            let tags: HashSet<&String> = input.tags.iter().collect();
+            let groups: HashSet<&String> = groups.iter().map(|x| &x.name).collect();
+
+            let out: Vec<String> = tags.difference(&groups).cloned().cloned().collect();
+
+            return Err(CreateTeamError::MissingTags(out));
+        }
+
+        TeamEntity::insert(ActiveTeam {
+            name: Set(input.name),
+            region_owner: Set(input.region_id),
+            ..Default::default()
+        })
+        .exec_with_returning(&self.connection)
+        .await
+        .map_err(|e| CreateTeamError::DatabaseError(e.to_string()))
+    }
+
+    pub async fn get_teams(&self, region_id: i32) -> Result<Vec<Team>> {
+        let region = RegionEntity::find_by_id(region_id)
+            .one(&self.connection)
+            .await?
+            .context("not found")?;
+
+        region
+            .find_related(TeamEntity)
+            // .inner_join(team_group_join::Relation::TeamGroup.def())
+            .all(&self.connection)
+            .await  
+            .map_err(|e| anyhow!(e))
+    }
+
+    pub async fn delete_team(&self, id: i32) -> DBResult<DeleteResult> {
+        TeamEntity::delete(ActiveTeam {
+            id: Set(id),
+            ..Default::default()
+        })
+        .exec(&self.connection)
+        .await
+    }
+
+    pub async fn get_groups(&self) -> DBResult<Vec<TeamGroup>> {
+        TeamGroupEntity.select().all(&self.connection).await
+    }
+
+    pub async fn create_group(&self, tag: String) -> Result<TeamGroup, CreateGroupError> {
+        let all_groups = self
+            .get_groups()
+            .await
+            .map_err(|e| CreateGroupError::DatabaseError(e.to_string()))?;
+
+        if all_groups.iter().any(|x| x.name.eq_ignore_ascii_case(&tag)) {
+            return Err(CreateGroupError::DuplicateTag);
+        }
+
+        TeamGroupEntity::insert(ActiveTeamGroup {
+            name: Set(tag),
+            ..Default::default()
+        })
+        .exec_with_returning(&self.connection)
+        .await
+        .map_err(|e| CreateGroupError::DatabaseError(e.to_string()))
+    }
+
+    pub async fn delete_group(&self, id: i32) -> DBResult<DeleteResult> {
+        TeamGroupEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
     }
 }

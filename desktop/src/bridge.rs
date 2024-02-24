@@ -1,4 +1,7 @@
-use db::{CreateFieldInput, CreateRegionInput, FieldValidationError, RegionValidationError};
+use db::{
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
+    FieldValidationError, RegionValidationError,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use thiserror::Error;
@@ -23,7 +26,7 @@ pub enum CreateRegionError {
     NoDatabase,
     #[error("bad input")]
     ValidationError(RegionValidationError),
-    #[error("database operation failed")]
+    #[error("database operation failed: `{0}`")]
     DatabaseError(String),
 }
 
@@ -53,7 +56,7 @@ pub(crate) async fn create_region(
 pub enum DeleteRegionError {
     #[error("database was not initialized")]
     NoDatabase,
-    #[error("database operation failed")]
+    #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("this record (id = {0}) was not found")]
     NotFound(i32),
@@ -86,7 +89,7 @@ pub(crate) async fn delete_region(app: AppHandle, id: i32) -> Result<(), DeleteR
 pub enum LoadRegionError {
     #[error("database was not initialized")]
     NoDatabase,
-    #[error("database operation failed")]
+    #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("this record (id = {0}) was not found")]
     NotFound(i32),
@@ -119,7 +122,7 @@ pub(crate) async fn load_region(
 pub enum LoadFieldsError {
     #[error("database was not initialized")]
     NoDatabase,
-    #[error("database operation failed")]
+    #[error("database operation failed: `{0}`")]
     DatabaseError(String),
 }
 
@@ -144,7 +147,7 @@ pub enum CreateFieldError {
     NoDatabase,
     #[error("bad input")]
     ValidationError(FieldValidationError),
-    #[error("database operation failed")]
+    #[error("database operation failed: `{0}`")]
     DatabaseError(String),
 }
 
@@ -165,4 +168,165 @@ pub(crate) async fn create_field(
         .create_field(input)
         .await
         .map_err(|e| CreateFieldError::DatabaseError(e.to_string()))
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum DeleteFieldError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("this record (id = {0}) was not found")]
+    NotFound(i32),
+}
+
+#[tauri::command]
+pub(crate) async fn delete_field(app: AppHandle, id: i32) -> Result<(), DeleteFieldError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(DeleteFieldError::NoDatabase)?;
+
+    let deletion = client.delete_field(id).await;
+
+    match deletion {
+        Ok(deletion) => {
+            if deletion.rows_affected == 1 {
+                Ok(())
+            } else {
+                Err(DeleteFieldError::NotFound(id))
+            }
+        }
+        Err(e) => Err(DeleteFieldError::DatabaseError(e.to_string())),
+    }
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum LoadTeamsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+}
+
+#[tauri::command]
+pub(crate) async fn get_teams(
+    app: AppHandle,
+    region_id: i32,
+) -> Result<Vec<db::team::Model>, LoadTeamsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadTeamsError::NoDatabase)?;
+
+    client
+        .get_teams(region_id)
+        .await
+        .map_err(|e| LoadTeamsError::DatabaseError(e.to_string()))
+}
+
+#[tauri::command]
+pub(crate) async fn create_team(
+    app: AppHandle,
+    input: CreateTeamInput,
+) -> Result<db::team::Model, CreateTeamError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(CreateTeamError::NoDatabase)?;
+
+    input.validate().map_err(CreateTeamError::ValidationError)?;
+
+    client
+        .create_team(input)
+        .await
+        .map_err(|e| CreateTeamError::DatabaseError(e.to_string()))
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum DeleteTeamError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("this record (id = {0}) was not found")]
+    NotFound(i32),
+}
+
+#[tauri::command]
+pub(crate) async fn delete_team(app: AppHandle, id: i32) -> Result<(), DeleteTeamError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(DeleteTeamError::NoDatabase)?;
+
+    let deletion = client.delete_team(id).await;
+
+    match deletion {
+        Ok(deletion) => {
+            if deletion.rows_affected == 1 {
+                Ok(())
+            } else {
+                Err(DeleteTeamError::NotFound(id))
+            }
+        }
+        Err(e) => Err(DeleteTeamError::DatabaseError(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn db_migrate_up_down(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("could not access the database".to_owned())?;
+
+    client.refresh().await.map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn get_groups(app: AppHandle) -> Result<Vec<db::team_group::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.get_groups().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn create_group(
+    app: AppHandle,
+    tag: String,
+) -> Result<db::team_group::Model, CreateGroupError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(CreateGroupError::NoDatabase)?;
+
+    client.create_group(tag).await
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum DeleteGroupError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("this record (id = {0}) was not found")]
+    NotFound(i32),
+}
+
+#[tauri::command]
+pub(crate) async fn delete_group(app: AppHandle, id: i32) -> Result<(), DeleteGroupError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(DeleteGroupError::NoDatabase)?;
+
+    match client.delete_group(id).await {
+        Ok(result) if result.rows_affected == 1 => Ok(()),
+        Ok(..) => Err(DeleteGroupError::NotFound(id)),
+        Err(e) => Err(DeleteGroupError::DatabaseError(e.to_string())),
+    }
 }
