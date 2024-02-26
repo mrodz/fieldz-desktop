@@ -129,10 +129,13 @@ where
     }
 }
 
-struct Conflicts {
-    weighted_collisions: i64,
-    weighted_unused_matches: i64,
-    weighted_maldistributions: f32,
+enum Conflicts {
+    Weighted {
+        weighted_collisions: i64,
+        weighted_unused_matches: i64,
+        weighted_maldistributions: f32,
+    },
+    Sentinel(i64),
 }
 
 fn std_deviation(mean: f32, data: &[usize]) -> Option<f32> {
@@ -163,7 +166,7 @@ impl MCTSState {
         x
     }
 
-    pub fn conflicts(&self) -> Conflicts {
+    pub fn conflicts(&self, use_sentinel: bool) -> Conflicts {
         let mut busy: HashMap<Team, Vec<AvailabilityWindow>> = HashMap::new();
 
         let mut unused_matches: i64 = 0;
@@ -180,28 +183,39 @@ impl MCTSState {
             }
         }
 
+        let games_len = self.games.len();
+
         let weighted_maldistributions = 'dist: {
             if !busy.is_empty() {
                 if busy.len() < self.teams.len() {
+                    if use_sentinel {
+                        return Conflicts::Sentinel(-1);
+                    }
+
                     break 'dist 10000000f32;
                 }
 
-                let perfect_mean = self.games.len() as f32 / self.teams.len() as f32;
+                let perfect_mean = games_len as f32 / self.teams.len() as f32;
 
                 let frequency_of_distribution = busy.values().map(Vec::len).collect_vec();
                 let data_std_deviation = std_deviation(perfect_mean, &frequency_of_distribution)
                     .expect("could not get standard deviation");
 
-                let mut weighted_maldistributions = 0f32;
+                let mut weighted_maldistributions = 1f32;
 
                 for frequency in frequency_of_distribution {
                     // if any team plays 20% more games, that is bad
                     let ratio = frequency as f32 / data_std_deviation;
 
-                    if ratio > 1.2 {
-                        weighted_maldistributions =
-                            (weighted_maldistributions + ratio + 1f32).powi(5);
+                    // higher means earlier in the search; lower means later
+                    let composition_of_unused = unused_matches as f32 / games_len as f32;
+
+                    if ratio > 1.2 && use_sentinel {
+                        return Conflicts::Sentinel(-1);
                     }
+
+                    weighted_maldistributions *=
+                        ratio.powf(1.0 / composition_of_unused);
                 }
 
                 weighted_maldistributions
@@ -212,30 +226,36 @@ impl MCTSState {
 
         // threshold = 5% unused
         let weighted_unused_matches =
-            (unused_matches as f32 / self.games.len() as f32).powf(4.5) as i64;
+            (unused_matches as f32 / games_len as f32).powf(6.5) as i64;
 
         let mut weighted_collisions = 0;
 
         for windows in busy.values_mut() {
             windows.sort_by_key(|x| x.start);
 
-            let mut inst_clashes = 0;
+            // let mut inst_clashes = 0;
 
             for xy in windows.windows(2) {
-                if xy[0].end >= xy[1].start {
-                    inst_clashes += 1;
+                let cond = xy[0].end >= xy[1].start;
+                println!("{cond}");
+                if cond {
+                    weighted_collisions += 10000000i64;
                 }
             }
-
-            inst_clashes *= 10000000i64;
-
-            weighted_collisions += inst_clashes;
         }
 
-        Conflicts {
-            weighted_collisions,
-            weighted_unused_matches,
-            weighted_maldistributions,
+        if use_sentinel && weighted_collisions != 0 {
+            return Conflicts::Sentinel(-1);
+        }
+
+        if use_sentinel {
+            Conflicts::Sentinel(1)
+        } else {
+            Conflicts::Weighted {
+                weighted_collisions,
+                weighted_unused_matches,
+                weighted_maldistributions,
+            }
         }
     }
 }
@@ -254,9 +274,6 @@ impl GameState for MCTSState {
         let mut x = self.games.clone();
 
         x.retain(|_, game| game.is_none());
-
-        // .retain(f);
-        // println!("\t{x:#?}");
 
         if x.len() == 0 {
             vec![]
@@ -322,12 +339,18 @@ impl Evaluator<SchedulerMCTS> for MyEvaluator {
     ) -> (Vec<()>, i64) {
         let mut result = 0;
 
-        let conflicts = state.conflicts();
+        match state.conflicts(false) {
+            Conflicts::Sentinel(val) => {
+                result = val;
+            }
+            Conflicts::Weighted { weighted_collisions, weighted_unused_matches, weighted_maldistributions } => {
+                result -= dbg!(weighted_collisions);
+                result -= dbg!(weighted_unused_matches);
+                result -= dbg!(weighted_maldistributions) as i64 * 30;        
+            }
+        }
 
-        result -= conflicts.weighted_collisions;
-        result -= conflicts.weighted_unused_matches;
-        result -= conflicts.weighted_maldistributions as i64;
-
+        
         (vec![(); moves.len()], result)
     }
 
