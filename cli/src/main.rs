@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use backend::{window, League, Region, RegionalGameQueue};
 use clap::{Parser, Subcommand};
 use db::Client;
 use dialoguer::{theme::ColorfulTheme, Select};
@@ -31,6 +30,9 @@ enum DbCommand {
 }
 
 fn test_schedule() -> Result<()> {
+    backend::algorithm::test()?;
+    Ok(())
+    /*
     let mut league = League::new();
 
     let mut r1 = Region::new();
@@ -63,41 +65,42 @@ fn test_schedule() -> Result<()> {
     r1.add_team("Green Machine");
     r1.add_team("Red Rubies");
 
-    println!("Providing times:");
-    for time in RegionalGameQueue::new(&r1) {
-        println!("- {time}");
-    }
-    println!();
+    // println!("Providing times:");
+    // for time in RegionalGameQueue::new(&r1) {
+    //     println!("- {time}");
+    // }
+    // println!();
 
     league.add_region(r1);
 
-    let out = league.schedule()?;
+    // let out = league.schedule()?;
 
-    println!("\nValid Games");
+    // println!("\nValid Games");
 
-    let mut games = out.valid_games().iter().collect::<Vec<_>>();
-    games.sort_by(|x, y| x.time().cmp(y.time()));
+    // let mut games = out.valid_games().iter().collect::<Vec<_>>();
+    // games.sort_by(|x, y| x.time().cmp(y.time()));
 
-    for game in games {
-        println!("{game}");
-    }
+    // for game in games {
+    //     println!("{game}");
+    // }
 
-    println!("\nCould not use these times because of conflicts");
-    for unused in out.unable_to_schedule() {
-        println!("- {unused}");
-    }
+    // println!("\nCould not use these times because of conflicts");
+    // for unused in out.unable_to_schedule() {
+    //     println!("- {unused}");
+    // }
 
-    println!("\nUnscheduled matches");
-    for unused in out.unplayed_matches() {
-        println!("- {unused}");
-    }
+    // println!("\nUnscheduled matches");
+    // for unused in out.unplayed_matches() {
+    //     println!("- {unused}");
+    // }
 
-    println!("\nSummary");
-    for team in league.teams() {
-        println!("\t{team}");
-    }
+    // println!("\nSummary");
+    // for team in league.teams() {
+    //     println!("\t{team}");
+    // }
 
     Ok(())
+     */
 }
 
 async fn db_command(command: DbCommand, db_path: Option<String>) -> Result<()> {

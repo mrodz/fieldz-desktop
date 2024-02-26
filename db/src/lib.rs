@@ -18,7 +18,7 @@ use migration::{Migrator, MigratorTrait};
 use sea_orm::{ColumnTrait, QueryFilter, Set};
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
-use sea_orm::{EntityOrSelect, ModelTrait, RelationTrait};
+use sea_orm::{EntityOrSelect, ModelTrait};
 
 pub use entity::*;
 use serde::Deserialize;

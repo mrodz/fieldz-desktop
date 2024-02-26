@@ -1,3 +1,5 @@
+pub mod algorithm;
+
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Local, TimeDelta, TimeZone, Timelike};
 use petgraph::{
@@ -450,10 +452,10 @@ impl AvailabilityWindow {
         let start = Local
             .with_ymd_and_hms(
                 year.try_into()?,
-                dbg!(month),
-                dbg!(day),
-                dbg!(start.0),
-                dbg!(start.1),
+                month,
+                day,
+                start.0,
+                start.1,
                 0,
             )
             .earliest()
