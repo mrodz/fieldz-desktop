@@ -496,11 +496,16 @@ impl AvailabilityWindow {
         Ok(())
     }
 
+    #[inline(always)]
+    pub fn overlap_fast(lhs: &Self, rhs: &Self) -> bool {
+        lhs.start <= rhs.end && lhs.end >= rhs.start
+    }
+
     pub fn overlap(mut lhs: Self, mut rhs: Self, err: TimeDelta) -> Result<bool> {
         lhs.add_error(err)?;
         rhs.add_error(err)?;
 
-        Ok(lhs.start <= rhs.end && lhs.end >= rhs.start)
+        Ok(Self::overlap_fast(&lhs, &rhs))
     }
 }
 

@@ -8,6 +8,7 @@ use std::sync::RwLock;
 
 use anyhow::Result;
 use itertools::Itertools;
+use itertools::MinMaxResult;
 use mcts::transposition_table::*;
 use mcts::tree_policy::*;
 use mcts::*;
@@ -72,12 +73,6 @@ impl Display for Reservation {
     }
 }
 
-// A really simple game. There's one player and one number. In each move the player can
-// increase or decrease the number. The player's score is the number.
-// The game ends when the number reaches 100.
-//
-// The best strategy is to increase the number at every step.
-
 #[derive(Clone, Debug)]
 struct MutableGame(Arc<RwLock<Option<Game>>>);
 
@@ -110,7 +105,7 @@ impl From<MutableGame> for Arc<RwLock<Option<Game>>> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MCTSState {
     games: BTreeMap<AvailabilityWindow, MutableGame>,
-    teams: Vec<Team>,
+    teams: Vec<(Team, Vec<AvailabilityWindow>)>,
 }
 
 impl<T> From<T> for MCTSState
@@ -127,15 +122,6 @@ where
             teams: vec![],
         }
     }
-}
-
-enum Conflicts {
-    Weighted {
-        weighted_collisions: i64,
-        weighted_unused_matches: i64,
-        weighted_maldistributions: f32,
-    },
-    Sentinel(i64),
 }
 
 fn std_deviation(mean: f32, data: &[usize]) -> Option<f32> {
@@ -161,102 +147,8 @@ impl MCTSState {
         teams: impl Into<Vec<Team>>,
     ) -> Self {
         let mut x = Self::from(availability_windows);
-        x.teams = teams.into();
-
+        x.teams = teams.into().into_iter().map(|x| (x, vec![])).collect();
         x
-    }
-
-    pub fn conflicts(&self, use_sentinel: bool) -> Conflicts {
-        let mut busy: HashMap<Team, Vec<AvailabilityWindow>> = HashMap::new();
-
-        let mut unused_matches: i64 = 0;
-
-        for (availability, game) in &self.games {
-            if let Some(game) = game.0.read().unwrap().as_ref() {
-                let mut entry = busy.entry(game.team_one.clone()).or_default();
-                entry.push(availability.clone());
-
-                entry = busy.entry(game.team_two.clone()).or_default();
-                entry.push(availability.clone());
-            } else {
-                unused_matches += 1;
-            }
-        }
-
-        let games_len = self.games.len();
-
-        let weighted_maldistributions = 'dist: {
-            if !busy.is_empty() {
-                if busy.len() < self.teams.len() {
-                    if use_sentinel {
-                        return Conflicts::Sentinel(-1);
-                    }
-
-                    break 'dist 10000000f32;
-                }
-
-                let perfect_mean = games_len as f32 / self.teams.len() as f32;
-
-                let frequency_of_distribution = busy.values().map(Vec::len).collect_vec();
-                let data_std_deviation = std_deviation(perfect_mean, &frequency_of_distribution)
-                    .expect("could not get standard deviation");
-
-                let mut weighted_maldistributions = 1f32;
-
-                for frequency in frequency_of_distribution {
-                    // if any team plays 20% more games, that is bad
-                    let ratio = frequency as f32 / data_std_deviation;
-
-                    // higher means earlier in the search; lower means later
-                    let composition_of_unused = unused_matches as f32 / games_len as f32;
-
-                    if ratio > 1.2 && use_sentinel {
-                        return Conflicts::Sentinel(-1);
-                    }
-
-                    weighted_maldistributions *=
-                        ratio.powf(1.0 / composition_of_unused);
-                }
-
-                weighted_maldistributions
-            } else {
-                0f32
-            }
-        };
-
-        // threshold = 5% unused
-        let weighted_unused_matches =
-            (unused_matches as f32 / games_len as f32).powf(6.5) as i64;
-
-        let mut weighted_collisions = 0;
-
-        for windows in busy.values_mut() {
-            windows.sort_by_key(|x| x.start);
-
-            // let mut inst_clashes = 0;
-
-            for xy in windows.windows(2) {
-                let cond = xy[0].end >= xy[1].start;
-                println!("{cond}");
-                if cond {
-                    weighted_collisions += 10000000i64;
-                }
-            }
-        }
-
-        if use_sentinel && weighted_collisions != 0 {
-            return Conflicts::Sentinel(-1);
-        }
-
-        if use_sentinel {
-            Conflicts::Sentinel(1)
-        } else {
-            Conflicts::Weighted {
-                weighted_collisions,
-                weighted_unused_matches,
-                weighted_maldistributions,
-            }
-        }
     }
 }
 
@@ -290,15 +182,25 @@ impl GameState for MCTSState {
                         }
                     }) */
                     {
-                        let [team_one, team_two] = &permutation[..] else {
+                        let [(team_one, t1_avail), (team_two, t2_avail)] = &permutation[..] else {
                             unreachable!()
                         };
+
+                        if t1_avail
+                            .iter()
+                            .any(|x| AvailabilityWindow::overlap_fast(x, &availability_window))
+                            || t2_avail
+                                .iter()
+                                .any(|x| AvailabilityWindow::overlap_fast(x, &availability_window))
+                        {
+                            continue;
+                        }
 
                         result.push(Reservation {
                             availability_window: availability_window.clone(),
                             game: Arc::new(RwLock::new(Some(Game {
-                                team_one: (*team_one).clone(),
-                                team_two: (*team_two).clone(),
+                                team_one: team_one.clone(),
+                                team_two: team_two.clone(),
                             }))),
                         })
                     }
@@ -339,18 +241,74 @@ impl Evaluator<SchedulerMCTS> for MyEvaluator {
     ) -> (Vec<()>, i64) {
         let mut result = 0;
 
-        match state.conflicts(false) {
-            Conflicts::Sentinel(val) => {
-                result = val;
-            }
-            Conflicts::Weighted { weighted_collisions, weighted_unused_matches, weighted_maldistributions } => {
-                result -= dbg!(weighted_collisions);
-                result -= dbg!(weighted_unused_matches);
-                result -= dbg!(weighted_maldistributions) as i64 * 30;        
+        let mut busy: HashMap<Team, Vec<AvailabilityWindow>> = HashMap::new();
+
+        for (availability, game) in &state.games {
+            if let Some(game) = game.0.read().unwrap().as_ref() {
+                let mut entry = busy.entry(game.team_one.clone()).or_default();
+                entry.push(availability.clone());
+
+                entry = busy.entry(game.team_two.clone()).or_default();
+                entry.push(availability.clone());
+
+                result += 1;
+            } else {
+                result -= 1;
             }
         }
 
-        
+        if !busy.is_empty() {
+            let games_len = state.games.len();
+
+            let perfect_mean = games_len as f32 / state.teams.len() as f32;
+
+            let frequency_of_distribution = busy.values().map(Vec::len).collect_vec();
+            let data_std_deviation = std_deviation(perfect_mean, &frequency_of_distribution)
+                .expect("could not get standard deviation");
+
+            let diff_std_dev_mean = (data_std_deviation - perfect_mean).abs();
+
+            if diff_std_dev_mean < 0.2 {
+                result += 5;
+            } else if diff_std_dev_mean < 0.4 {
+                result += 3;
+            } else if diff_std_dev_mean < 0.5 {
+                result += 1;
+            } else if diff_std_dev_mean < 0.6 {
+                result += 0;
+            } else if diff_std_dev_mean < 0.8 {
+                result -= 4;
+            } else if diff_std_dev_mean < 1.0 {
+                result -= 7;
+            } else if diff_std_dev_mean < 1.2 {
+                result -= 12;
+            } else {
+                result -= 30;
+            }
+
+            if let MinMaxResult::MinMax(min, max) = frequency_of_distribution.iter().minmax() {
+                let delta = max - min;
+
+                let std_deviation_spread = delta as f32 / data_std_deviation;
+
+                if std_deviation_spread < 1.0 {
+                    result += 3;
+                } else if std_deviation_spread < 2.0 {
+                    result += 1;
+                } else if std_deviation_spread < 3.0 {
+                    result -= 1;
+                } else if std_deviation_spread < 4.0 {
+                    result -= 2;
+                } else if std_deviation_spread < 5.0 {
+                    result -= 5;
+                } else if std_deviation_spread < 6.0 {
+                    result -= 10;
+                } else {
+                    result -= 30;
+                }
+            }
+        }
+
         (vec![(); moves.len()], result)
     }
 
@@ -395,8 +353,17 @@ pub fn test() -> Result<()> {
             window!(13/9/2006 from 12:00 to 13:00)?,
             window!(14/9/2006 from 8:00 to 9:30)?,
             window!(14/9/2006 from 14:00 to 15:30)?,
+            window!(14/9/2006 from 16:00 to 17:30)?,
         ],
-        [Team { id: 0 }, Team { id: 1 }, Team { id: 2 }],
+        [
+            Team { id: 0 },
+            Team { id: 1 },
+            Team { id: 2 },
+            Team { id: 3 },
+            Team { id: 4 },
+            Team { id: 5 },
+            Team { id: 6 },
+        ],
     );
 
     let total_slots = game.games.len();
@@ -409,7 +376,7 @@ pub fn test() -> Result<()> {
         UCTPolicy::new(0.5),
         ApproxTable::new(1024),
     );
-    mcts.playout_n_parallel(20_000, 8); // 10000 playouts, 4 search threads
+    mcts.playout_n_parallel(1_000_000, 40); // 10000 playouts, 4 search threads
 
     let mut game_count = 0;
 
