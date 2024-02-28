@@ -5,6 +5,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::Instant;
 
 use anyhow::Result;
 use itertools::Itertools;
@@ -386,9 +387,9 @@ impl Evaluator<SchedulerMCTS> for ScheduleEvaluator {
                     0 => result += 5,
                     1 => result += 3,
                     2 => result += 0,
-                    3 => result -= 1,
-                    4 => result -= 4,
-                    5 => result -= 10,
+                    3 => result -= 3,
+                    4 => result -= 8,
+                    5 => result -= 15,
                     _ => result -= 30,
                 }
             }
@@ -507,6 +508,7 @@ pub fn test() -> Result<()> {
     group_two.add_team(7);
     group_two.add_team(8);
     group_two.add_team(9);
+    group_two.add_team(10);
 
     state.add_group(group_two);
 
@@ -521,32 +523,53 @@ pub fn test() -> Result<()> {
         ApproxTable::new(1024),
     );
 
-    mcts.playout_n_parallel(
-        1_000_000,
-        std::thread::available_parallelism()
-            .expect("could not get thread data")
-            .get()
-            * 3,
+    let iterations = 1_000_000;
+    let runners = std::thread::available_parallelism()
+        .expect("could not get thread data")
+        .get()
+        * 3;
+
+    println!("Scheduling for {iterations} iterations on {runners} threads.");
+
+    let start = Instant::now();
+
+    mcts.playout_n_parallel(iterations, runners);
+
+    let end = Instant::now();
+
+    println!(
+        "... Done in {:.3}s\n",
+        end.duration_since(start).as_secs_f32()
     );
 
     let mut game_count = 0;
 
+    let mut result = vec![];
+
     for m in mcts.principal_variation(total_slots) {
-        let guard = m.game.read().unwrap();
+        {
+            let guard = m.game.read().unwrap();
 
-        let Some(game) = guard.as_ref() else {
-            unreachable!()
-        };
+            let Some(game) = guard.as_ref() else {
+                unreachable!()
+            };
 
-        println!("{m}");
+            let mut c = teams_summary.entry(game.team_one.clone()).or_default();
+            *c += 1;
 
-        let mut c = teams_summary.entry(game.team_one.clone()).or_default();
-        *c += 1;
+            c = teams_summary.entry(game.team_two.clone()).or_default();
+            *c += 1;
 
-        c = teams_summary.entry(game.team_two.clone()).or_default();
-        *c += 1;
+            game_count += 1;
+        }
 
-        game_count += 1;
+        result.push(m);
+    }
+
+    result.sort_by_key(|r| r.slot.availability.start.clone());
+
+    for reservation in result {
+        println!("{reservation}");
     }
 
     println!("\n{game_count}/{total_slots} slots filled");
