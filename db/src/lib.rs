@@ -281,7 +281,7 @@ impl Client {
             .find_related(TeamEntity)
             // .inner_join(team_group_join::Relation::TeamGroup.def())
             .all(&self.connection)
-            .await  
+            .await
             .map_err(|e| anyhow!(e))
     }
 

@@ -450,14 +450,7 @@ impl AvailabilityWindow {
         end: (u32, u32),
     ) -> Result<Self> {
         let start = Local
-            .with_ymd_and_hms(
-                year.try_into()?,
-                month,
-                day,
-                start.0,
-                start.1,
-                0,
-            )
+            .with_ymd_and_hms(year.try_into()?, month, day, start.0, start.1, 0)
             .earliest()
             .context("ambiguous start date")?;
         let end = Local
