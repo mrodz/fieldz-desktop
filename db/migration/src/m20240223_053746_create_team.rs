@@ -26,6 +26,12 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .extra("COLLATE nocase"),
                     )
+                    .col(
+                        ColumnDef::new(TeamGroup::Usages)
+                            .integer()
+                            .default(0)
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -119,6 +125,7 @@ pub(crate) enum TeamGroup {
     Table,
     Id,
     Name,
+    Usages,
 }
 
 #[derive(DeriveIden)]

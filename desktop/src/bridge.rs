@@ -1,6 +1,6 @@
 use db::{
     CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
-    FieldValidationError, RegionValidationError,
+    FieldValidationError, RegionValidationError, TeamExtension,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -224,10 +224,25 @@ pub(crate) async fn get_teams(
 }
 
 #[tauri::command]
+pub(crate) async fn get_teams_and_tags(
+    app: AppHandle,
+    region_id: i32,
+) -> Result<Vec<db::TeamExtension>, LoadTeamsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadTeamsError::NoDatabase)?;
+
+    client
+        .get_teams_with_tags(region_id)
+        .await
+        .map_err(|e| LoadTeamsError::DatabaseError(e.to_string()))
+}
+
+#[tauri::command]
 pub(crate) async fn create_team(
     app: AppHandle,
     input: CreateTeamInput,
-) -> Result<db::team::Model, CreateTeamError> {
+) -> Result<TeamExtension, CreateTeamError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock.database.as_ref().ok_or(CreateTeamError::NoDatabase)?;

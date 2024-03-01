@@ -1,12 +1,15 @@
 <script lang="ts">
 	import type { TeamGroup } from '$lib';
-	import { InputChip } from '@skeletonlabs/skeleton';
+	import { InputChip, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 	import { slide } from 'svelte/transition';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { onMount } from 'svelte';
 
+	let modalStore = getModalStore();
+	let toastStore = getToastStore();
+
 	let groups: TeamGroup[] = [];
-	$: groupsFrontend = groups.map((group) => group.name);
+	$: groupsFrontend = groups.map((group) => `${group.name} (${group.usages})`);
 
 	onMount(async () => {
 		try {
@@ -71,7 +74,8 @@
 	<div class="[&>*]:my-4">
 		<p>
 			Here is where you create labels you'll use to group teams
-			<strong>across regions</strong>. Teams that you create in any region can have many grouping labels.
+			<strong>across regions</strong>. Teams that you create in any region can have many grouping
+			labels.
 		</p>
 		<p>Some use cases might be:</p>
 		<ul class="list">
@@ -87,7 +91,26 @@
 			add(customEvent.detail.chipValue);
 		}}
 		on:remove={(customEvent) => {
-			remove(customEvent.detail.chipIndex);
+			const item = groups[customEvent.detail.chipIndex];
+			let message = `Deleting a group is PERMANENT! Are you sure you wish to proceed? You will NOT be able to recover "${item.name}"`;
+			if (item.usages > 0) {
+				message += `, which ${item.usages} team${item.usages == 1 ? '' : 's'} actively depends on for scheduling. Make sure that you know what you're doing, as deleting a group can have unwanted consequences on the scheduling algorithm.`;
+			}
+			modalStore.trigger({
+				type: 'confirm',
+				title: 'Danger Zone',
+				body: message,
+				buttonTextConfirm: 'Delete',
+				async response(r) {
+					if (r) {
+						remove(customEvent.detail.chipIndex);
+						toastStore.trigger({
+							message: `"${item.name}" is no longer a group${item.usages === 0 ? '' : `, even though it was being used across ${item.usages} teams`}`,
+							background: item.usages === 0 ? 'variant-filled-success' : 'variant-filled-warning'
+						});
+					}
+				}
+			});
 		}}
 		validation={noDuplicates}
 		class="mt-4"

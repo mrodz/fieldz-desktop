@@ -9,7 +9,7 @@
 		type ModalComponent,
 		Toast,
 		storePopup,
-		getToastStore,
+		getToastStore
 	} from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
@@ -30,7 +30,7 @@
 			ref: FieldCreate
 		},
 		teamCreate: {
-			ref: TeamCreate,
+			ref: TeamCreate
 		}
 	};
 
@@ -55,14 +55,17 @@
 		<AppBar>
 			<div class="flex flex-row items-center justify-center">
 				<LightSwitch />
-				<button class="btn variant-outline ml-4" on:click|preventDefault={async () => {
-					await resetDatabase();
-					window.location.replace('/');
-					dialog.message("The app's data was wiped, and the database's schema was refreshed.", {
-						title: "Database reset complete",
-						type: "info"
-					});
-				}}>
+				<button
+					class="variant-outline btn ml-4"
+					on:click|preventDefault={async () => {
+						await resetDatabase();
+						window.location.replace('/');
+						dialog.message("The app's data was wiped, and the database's schema was refreshed.", {
+							title: 'Database reset complete',
+							type: 'info'
+						});
+					}}
+				>
 					Reset Database &mdash; Destructive
 				</button>
 			</div>

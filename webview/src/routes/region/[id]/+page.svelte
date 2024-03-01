@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Region, Field, Team, TeamGroup } from '$lib';
+	import type { Region, Field, Team, TeamExtension } from '$lib';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { dialog, invoke } from '@tauri-apps/api';
@@ -12,7 +12,7 @@
 
 	let region: Region | undefined;
 	let fields: Field[] | undefined;
-	let teams: Team[] | undefined;
+	let teams: TeamExtension[] | undefined;
 
 	onMount(async () => {
 		try {
@@ -29,7 +29,7 @@
 			[region, fields, teams] = await Promise.all([
 				invoke<Region>('load_region', { id }),
 				invoke<Field[]>('get_fields', { regionId: id }),
-				invoke<Team[]>('get_teams', { regionId: id }),
+				invoke<TeamExtension[]>('get_teams_and_tags', { regionId: id })
 			]);
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
@@ -89,7 +89,7 @@
 			type: 'component',
 			component: 'teamCreate',
 			meta: {
-				onCreate(team: Team) {
+				onCreate(team: TeamExtension) {
 					teams?.push(team);
 					teams = teams;
 				},
@@ -141,38 +141,46 @@
 
 		<hr class="my-4" />
 
-		<div class="grid grid-rows-2 grid-cols-1 lg:grid-rows-1 lg:grid-cols-2">
+		<div class="grid grid-cols-1 grid-rows-2 lg:grid-cols-2 lg:grid-rows-1">
 			<section class="card m-4 p-4">
 				<h2 class="h2 text-center">Teams</h2>
 				{#if teams.length === 0}
 					<div class="m-4 p-4 text-center">⚠️ This region has no teams</div>
-					<button class="btn variant-filled mx-auto block" on:click={createTeam}
+					<button class="variant-filled btn mx-auto block" on:click={createTeam}
 						>Create your first team</button
 					>
 				{:else}
 					<div class="flex flex-wrap items-stretch justify-center">
-						{#each teams as team, i}
+						{#each teams as team_ext, i}
 							<div class="card m-4 w-52 p-4 lg:w-96">
 								<header class="card-header flex flex-row items-center">
-									<strong class="w-1/2 grow truncate">{team.name}</strong>
+									<strong class="w-1/2 grow truncate">{team_ext.team.name}</strong>
 									<button
 										type="button"
 										class="variant-filled btn-icon"
-										on:click|stopPropagation={() => deleteTeam(team, i)}>X</button
+										on:click|stopPropagation={() => deleteTeam(team_ext.team, i)}>X</button
 									>
 								</header>
 
 								<hr class="my-4" />
 
-								<CodeBlock language="json" lineNumbers code={JSON.stringify(team)} />
+								{#if team_ext.tags.length !== 0}
+									<div>
+										{#each team_ext.tags as tag}
+											<span class="variant-filled-success chip">{tag.name}</span>
+										{/each}
+									</div>
+								{:else}
+									<i>Untagged field.</i>
+								{/if}
 
 								<hr class="my-4" />
-								<button class="btn variant-filled mx-auto block" disabled>Edit</button>
+								<button class="variant-filled btn mx-auto block" disabled>Edit</button>
 							</div>
 						{/each}
 						<div class="my-auto ml-10 flex flex-col">
 							<button
-								class="btn-icon variant-filled mx-auto block h-[75px] w-[75px]"
+								class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
 								on:click={createTeam}>+</button
 							>
 							<span class="mx-auto mt-2 block">Create Team</span>
@@ -185,7 +193,7 @@
 
 				{#if fields.length === 0}
 					<div class="m-4 p-4 text-center">⚠️ This region has no fields</div>
-					<button class="btn variant-filled mx-auto block" on:click={createField}
+					<button class="variant-filled btn mx-auto block" on:click={createField}
 						>Create your first field</button
 					>
 				{:else}
@@ -207,12 +215,12 @@
 
 								<hr class="my-4" />
 
-								<button class="btn variant-filled mx-auto block">Time Slots</button>
+								<button class="variant-filled btn mx-auto block">Time Slots</button>
 							</div>
 						{/each}
 						<div class="my-auto ml-10 flex flex-col">
 							<button
-								class="btn-icon variant-filled mx-auto block h-[75px] w-[75px]"
+								class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
 								on:click={createField}>+</button
 							>
 							<span class="mx-auto mt-2 block">Create Field</span>

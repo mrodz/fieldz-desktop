@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CreateTeamInput, Team, TeamGroup } from '$lib';
+	import type { CreateTeamInput, TeamExtension, TeamGroup } from '$lib';
 	import { faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 	import { ProgressRadial, getModalStore, getToastStore, popup } from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
@@ -19,6 +19,7 @@
 	}
 
 	let groups: TeamGroup[] | undefined;
+	let tags: string[] = [];
 
 	onMount(async () => {
 		try {
@@ -35,16 +36,16 @@
 		const payload: CreateTeamInput = {
 			name: teamNameInput ?? '',
 			region_id: $modalStore[0].meta.region.id,
-			tags: groups?.map((group) => group.name) ?? []
+			tags
 		};
 
 		try {
-			const newTeam: Team = await invoke('create_team', {
+			const newTeam: TeamExtension = await invoke('create_team', {
 				input: payload
 			});
 
 			toastStore.trigger({
-				message: `Created new team: "${newTeam.name}"`,
+				message: `Created new team: "${newTeam.team.name}"`,
 				background: 'variant-filled-success'
 			});
 
@@ -123,13 +124,13 @@
 						here, where you may add as many of them as you'd like to this team.
 					</p>
 				</div>
-				<div class="arrow bg-surface-100-800-token" />
+				<div class="bg-surface-100-800-token arrow" />
 			</div>
 			<div class="space-y-2">
 				{#if groups !== undefined}
 					{#each groups as group}
 						<label class="flex items-center space-x-2">
-							<input class="checkbox" type="checkbox" />
+							<input class="checkbox" type="checkbox" value={group.name} bind:group={tags} />
 							<p>{group.name}</p>
 						</label>
 					{/each}

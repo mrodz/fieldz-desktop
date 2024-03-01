@@ -18,6 +18,17 @@ export interface CreateFieldInput {
 	region_id: number;
 }
 
+export interface TeamGroup {
+	id: number;
+	name: string;
+	usages: number;
+}
+
+export interface TeamExtension {
+	team: Team;
+	tags: TeamGroup[];
+}
+
 export interface Team {
 	id: number;
 	name: string;
@@ -31,6 +42,6 @@ export interface CreateTeamInput {
 }
 
 export interface TeamGroup {
-	id: number,
-	name: string,
+	id: number;
+	name: string;
 }

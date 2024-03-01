@@ -509,6 +509,8 @@ pub fn test() -> Result<()> {
     group_two.add_team(8);
     group_two.add_team(9);
     group_two.add_team(10);
+    group_two.add_team(11);
+    group_two.add_team(12);
 
     state.add_group(group_two);
 
@@ -519,8 +521,8 @@ pub fn test() -> Result<()> {
         state.clone(),
         SchedulerMCTS,
         ScheduleEvaluator,
-        UCTPolicy::new(0.5),
-        ApproxTable::new(1024),
+        UCTPolicy::new(0.01),
+        ApproxTable::new(4096),
     );
 
     let iterations = 1_000_000;
@@ -566,7 +568,7 @@ pub fn test() -> Result<()> {
         result.push(m);
     }
 
-    result.sort_by_key(|r| r.slot.availability.start.clone());
+    result.sort_by_key(|r| r.slot.availability.start);
 
     for reservation in result {
         println!("{reservation}");

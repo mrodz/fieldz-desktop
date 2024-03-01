@@ -18,7 +18,7 @@
 	async function confirm() {
 		const payload: CreateFieldInput = {
 			name: fieldNameInput ?? '',
-			region_id: $modalStore[0].meta.region.id,
+			region_id: $modalStore[0].meta.region.id
 		};
 
 		try {
