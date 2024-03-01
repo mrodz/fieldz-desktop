@@ -153,6 +153,7 @@ dependencies = [
  "anyhow",
  "backend",
  "db",
+ "dotenv",
  "futures",
  "serde",
  "serde_json",

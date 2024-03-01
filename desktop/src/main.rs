@@ -19,6 +19,10 @@ struct State {
 }
 
 fn main() -> Result<()> {
+    if dotenv::dotenv().is_err() {
+        println!("Not using any environment variables in a `.env` file.")
+    };
+
     tauri::Builder::default()
         .manage(SafeAppState::default())
         .setup(|app| {

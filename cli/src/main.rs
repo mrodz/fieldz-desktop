@@ -131,7 +131,9 @@ async fn db_command(command: DbCommand, db_path: Option<String>) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv::from_path(Path::new(module_path!()).join(".env"))?;
+    if dotenv::from_path(Path::new(module_path!()).join(".env")).is_err() {
+        dotenv::dotenv()?;
+    }
 
     let args = Args::parse();
 
