@@ -1,6 +1,9 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::Utc;
+use chrono::{serde::ts_seconds, DateTime, TimeZone};
 use entity::field::ActiveModel as ActiveField;
 use entity::field::Entity as FieldEntity;
 use entity::field::Model as Field;
@@ -13,6 +16,9 @@ use entity::team::Model as Team;
 use entity::team_group::ActiveModel as ActiveTeamGroup;
 use entity::team_group::Entity as TeamGroupEntity;
 use entity::team_group::Model as TeamGroup;
+use entity::time_slot::ActiveModel as ActiveTimeSlot;
+use entity::time_slot::Entity as TimeSlotEntity;
+use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::QueryOrder;
 use sea_orm::{
@@ -179,6 +185,28 @@ impl TeamExtension {
     pub const fn new(team: Team, tags: Vec<TeamGroup>) -> Self {
         Self { tags, team }
     }
+}
+
+pub struct CreateTimeSlotInput<Tz: TimeZone> {
+    field_id: i32,
+    start: DateTime<Tz>,
+    end: DateTime<Tz>,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+
+pub enum CreateTimeSlotError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("this time slot is booked from {o_start} to {o_end}")]
+    Overlap {
+        #[serde(with = "ts_seconds")]
+        o_start: DateTime<Utc>,
+        #[serde(with = "ts_seconds")]
+        o_end: DateTime<Utc>,
+    },
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
 }
 
 impl Client {
@@ -469,30 +497,6 @@ impl Client {
 
                     Self::decrement_group_count(transaction, ids_to_decrement, 1).await?;
 
-                    // let r = TeamGroupEntity::update_many()
-                    // .col_expr(
-                    //     team_group::Column::Usages,
-                    //     Expr::sub(Expr::col(team_group::Column::Usages), 1),
-                    // )
-                    // .filter(
-                    //     /*Expr::exists(
-                    //         team_group_join::Entity::find()
-                    //             .column(team_group_join::Column::Group)
-                    //             .filter(team_group_join::Column::Team.eq(id))
-                    //             .into_query(),
-                    //     ),*/ Condition::all().add(
-                    //            team_group::Column::Id
-                    //                .in_subquery(
-                    //                    team_group_join::Entity::find()
-                    //                        .column(team_group_join::Column::Group)
-                    //                        .filter(team_group_join::Column::Team.eq(id))
-                    //                        .into_query(),
-                    //                )
-                    //        ),
-                    // )
-
-                    // .belongs_to()
-
                     TeamEntity::delete(ActiveTeam {
                         id: Set(id),
                         ..Default::default()
@@ -531,5 +535,50 @@ impl Client {
         TeamGroupEntity::delete_by_id(id)
             .exec(&self.connection)
             .await
+    }
+
+    pub async fn create_time_slot<Tz: TimeZone>(
+        &self,
+        input: CreateTimeSlotInput<Tz>,
+        overlap_fn: for<'a> fn(&'a TimeSlot) -> bool,
+    ) -> Result<TimeSlot, CreateTimeSlotError> {
+        let time_slots = TimeSlotEntity::find()
+            .inner_join(FieldEntity)
+            .filter(time_slot::Column::FieldId.eq(input.field_id))
+            .all(&self.connection)
+            .await
+            .map_err(|e| CreateTimeSlotError::DatabaseError(e.to_string()))?;
+
+        for time_slot in time_slots {
+            if overlap_fn(&time_slot) {
+                return Err(CreateTimeSlotError::Overlap {
+                    o_start: DateTime::<Utc>::from_str(&time_slot.start).unwrap(),
+                    o_end: DateTime::<Utc>::from_str(&time_slot.end).unwrap(),
+                });
+            }
+        }
+
+        /*
+         * No conflicts; good to go.
+         */
+
+        TimeSlotEntity::insert(ActiveTimeSlot {
+            start: Set(input.start.to_utc().to_rfc2822()),
+            end: Set(input.end.to_utc().to_rfc2822()),
+            field_id: Set(input.field_id),
+            ..Default::default()
+        })
+        .exec_with_returning(&self.connection)
+        .await
+        .map_err(|e| CreateTimeSlotError::DatabaseError(e.to_string()))
+    }
+
+    pub async fn delete_time_slot(&self, id: i32) -> DBResult<DeleteResult> {
+        TimeSlotEntity::delete(ActiveTimeSlot {
+            id: Set(id),
+            ..Default::default()
+        })
+        .exec(&self.connection)
+        .await
     }
 }

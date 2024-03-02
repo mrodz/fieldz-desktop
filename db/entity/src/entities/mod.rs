@@ -7,3 +7,4 @@ pub mod region;
 pub mod team;
 pub mod team_group;
 pub mod team_group_join;
+pub mod time_slot;

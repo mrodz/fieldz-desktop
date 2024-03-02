@@ -4,37 +4,30 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "field")]
+#[sea_orm(table_name = "time_slot")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub name: String,
-    pub region_owner: i32,
+    pub field_id: i32,
+    pub start: String,
+    pub end: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::region::Entity",
-        from = "Column::RegionOwner",
-        to = "super::region::Column::Id",
+        belongs_to = "super::field::Entity",
+        from = "Column::FieldId",
+        to = "super::field::Column::Id",
         on_update = "Cascade",
         on_delete = "Cascade"
     )]
-    Region,
-    #[sea_orm(has_many = "super::time_slot::Entity")]
-    TimeSlot,
+    Field,
 }
 
-impl Related<super::region::Entity> for Entity {
+impl Related<super::field::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Region.def()
-    }
-}
-
-impl Related<super::time_slot::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::TimeSlot.def()
+        Relation::Field.def()
     }
 }
 
