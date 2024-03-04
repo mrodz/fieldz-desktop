@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
-use chrono::{serde::ts_seconds, DateTime, TimeZone};
+use chrono::{serde::ts_seconds, DateTime};
 use entity::field::ActiveModel as ActiveField;
 use entity::field::Entity as FieldEntity;
 use entity::field::Model as Field;
@@ -187,10 +187,13 @@ impl TeamExtension {
     }
 }
 
-pub struct CreateTimeSlotInput<Tz: TimeZone> {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateTimeSlotInput {
     field_id: i32,
-    start: DateTime<Tz>,
-    end: DateTime<Tz>,
+    #[serde(with = "ts_seconds")]
+    start: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    end: DateTime<Utc>,
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -207,6 +210,8 @@ pub enum CreateTimeSlotError {
     },
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
+    #[error("could not parse date: `{0}`")]
+    ParseError(String),
 }
 
 impl Client {
@@ -219,9 +224,14 @@ impl Client {
 
         let result = Client { connection: db };
 
-        result.refresh().await?;
+        result.up().await?;
+        // result.refresh().await?;
 
         Ok(result)
+    }
+
+    pub async fn up(&self) -> DBResult<()> {
+        Migrator::up(&self.connection, None).await
     }
 
     pub async fn refresh(&self) -> DBResult<()> {
@@ -537,10 +547,17 @@ impl Client {
             .await
     }
 
-    pub async fn create_time_slot<Tz: TimeZone>(
+    pub async fn get_time_slots(&self, field_id: i32) -> Result<Vec<TimeSlot>, DbErr> {
+        TimeSlotEntity::find()
+            .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+            .filter(Condition::all().add(field::Column::Id.eq(field_id)))
+            .all(&self.connection)
+            .await
+    }
+
+    pub async fn create_time_slot(
         &self,
-        input: CreateTimeSlotInput<Tz>,
-        overlap_fn: for<'a> fn(&'a TimeSlot) -> bool,
+        input: CreateTimeSlotInput,
     ) -> Result<TimeSlot, CreateTimeSlotError> {
         let time_slots = TimeSlotEntity::find()
             .inner_join(FieldEntity)
@@ -550,11 +567,11 @@ impl Client {
             .map_err(|e| CreateTimeSlotError::DatabaseError(e.to_string()))?;
 
         for time_slot in time_slots {
-            if overlap_fn(&time_slot) {
-                return Err(CreateTimeSlotError::Overlap {
-                    o_start: DateTime::<Utc>::from_str(&time_slot.start).unwrap(),
-                    o_end: DateTime::<Utc>::from_str(&time_slot.end).unwrap(),
-                });
+            let o_start = DateTime::<Utc>::from_str(&time_slot.start).unwrap();
+            let o_end = DateTime::<Utc>::from_str(&time_slot.end).unwrap();
+
+            if o_start <= input.end && o_end >= input.start {
+                return Err(CreateTimeSlotError::Overlap { o_start, o_end });
             }
         }
 

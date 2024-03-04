@@ -300,10 +300,10 @@ impl Evaluator<SchedulerMCTS> for ScheduleEvaluator {
 
         for (slot, game) in &state.games {
             if let Some(game) = game.0.read().unwrap().as_ref() {
-                let mut entry = busy.entry(game.team_one.clone()).or_default();
+                let mut entry = busy.entry(game.team_one).or_default();
                 entry.push(slot.clone());
 
-                entry = busy.entry(game.team_two.clone()).or_default();
+                entry = busy.entry(game.team_two).or_default();
                 entry.push(slot.clone());
 
                 result += 1;
@@ -547,10 +547,10 @@ pub fn test() -> Result<()> {
                 unreachable!()
             };
 
-            let mut c = teams_summary.entry(game.team_one.clone()).or_default();
+            let mut c = teams_summary.entry(game.team_one).or_default();
             *c += 1;
 
-            c = teams_summary.entry(game.team_two.clone()).or_default();
+            c = teams_summary.entry(game.team_two).or_default();
             *c += 1;
 
             game_count += 1;

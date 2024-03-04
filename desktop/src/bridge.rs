@@ -1,6 +1,7 @@
 use db::{
     CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
-    FieldValidationError, RegionValidationError, TeamExtension,
+    CreateTimeSlotError, CreateTimeSlotInput, FieldValidationError, RegionValidationError,
+    TeamExtension,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -344,4 +345,37 @@ pub(crate) async fn delete_group(app: AppHandle, id: i32) -> Result<(), DeleteGr
         Ok(..) => Err(DeleteGroupError::NotFound(id)),
         Err(e) => Err(DeleteGroupError::DatabaseError(e.to_string())),
     }
+}
+
+#[tauri::command]
+pub(crate) async fn get_time_slots(
+    app: AppHandle,
+    field_id: i32,
+) -> Result<Vec<db::time_slot::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_time_slots(field_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn create_time_slot(
+    app: AppHandle,
+    input: CreateTimeSlotInput,
+) -> Result<db::time_slot::Model, CreateTimeSlotError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CreateTimeSlotError::NoDatabase)?;
+
+    client.create_time_slot(input).await
 }

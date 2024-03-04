@@ -45,3 +45,10 @@ export interface TeamGroup {
 	id: number;
 	name: string;
 }
+
+export interface TimeSlot {
+	id: number,
+	field_id: number,
+	start: String,
+	end: String,
+}

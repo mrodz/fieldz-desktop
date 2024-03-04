@@ -81,6 +81,8 @@ fn main() -> Result<()> {
             get_groups,
             delete_group,
             get_teams_and_tags,
+            get_time_slots,
+            create_time_slot,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

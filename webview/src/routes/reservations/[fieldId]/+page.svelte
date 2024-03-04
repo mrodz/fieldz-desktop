@@ -4,8 +4,26 @@
 	import Interaction from '@event-calendar/interaction';
 	import { slide } from 'svelte/transition';
 	import { getModalStore } from '@skeletonlabs/skeleton';
+	import { onMount } from 'svelte';
+	import { dialog, invoke } from '@tauri-apps/api';
+	import type { TimeSlot } from '$lib';
 
 	export let data;
+
+	let events: TimeSlot[] = []
+
+	onMount(async () => {
+		try {
+			events = await invoke<TimeSlot[]>('get_time_slots', {
+				fieldId: Number(data.fieldId)
+			});
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: 'Error getting reservations',
+				type: 'error'
+			});
+		}
+	})
 
 	let modalStore = getModalStore();
 
@@ -15,13 +33,17 @@
 		view: 'timeGridWeek',
 		editable: true,
 		selectable: true,
-		events: [
-			// your list of events
-		],
+		events,
 		select(e: { start: Date, end: Date }) {
+			let diff: number = e.end.valueOf() - e.start.valueOf();
+			let diffInHours = diff/1000/60/60; // Convert milliseconds to hours
+
+			let hours = Math.floor(diffInHours)
+			let minutes = Math.floor((diffInHours - hours) * 60);
+
 			modalStore.trigger({
 				type: 'confirm',
-				title: 'Is this correct?',
+				title: `New Reservation (${hours}:${minutes < 10 ? '0' + minutes : minutes} duration)`,
 				body: `From ${e.start} to ${e.end}`,
 				buttonTextConfirm: 'Yes!',
 				buttonTextCancel: 'No, go back',
