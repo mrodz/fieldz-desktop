@@ -19,7 +19,7 @@ use crate::AvailabilityWindow;
 
 type TeamId = u8;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Team {
     id: TeamId,
 }
@@ -214,54 +214,44 @@ impl GameState for MCTSState {
 
     fn current_player(&self) -> Self::Player {}
 
+    #[inline(always)]
     fn available_moves(&self) -> Vec<Reservation> {
-        let mut x = self.games.clone();
+        let mut result = vec![];
 
-        x.retain(|_, game| game.is_none());
+        for (slot, game) in &self.games {
+            if !game.is_none() {
+                continue;
+            }
 
-        if x.is_empty() {
-            vec![]
-        } else {
-            x.into_iter()
-                .flat_map(|(slot, _)| {
-                    let mut result = vec![];
-                    for group in self.groups.iter() {
-                        for permutation in group.teams.iter().permutations(2) {
-                            let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
-                                &permutation[..]
-                            else {
-                                unreachable!()
-                            };
+            for group in &self.groups {
+                for permutation in group.teams.iter().permutations(2) {
+                    let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
+                        &permutation[..]
+                    else {
+                        unreachable!()
+                    };
 
-                            if t1_avail.iter().any(|x| {
-                                AvailabilityWindow::overlap_fast(
-                                    &x.availability,
-                                    &slot.availability,
-                                )
-                            }) || t2_avail.iter().any(|x| {
-                                AvailabilityWindow::overlap_fast(
-                                    &x.availability,
-                                    &slot.availability,
-                                )
-                            }) {
-                                continue;
-                            }
-
-                            result.push(Reservation {
-                                slot: slot.clone(),
-                                game: Arc::new(RwLock::new(Some(Game {
-                                    team_one: (*team_one).clone(),
-                                    team_two: (*team_two).clone(),
-                                    group_id: group.id(),
-                                }))),
-                            })
-                        }
+                    if t1_avail.iter().any(|x| {
+                        AvailabilityWindow::overlap_fast(&x.availability, &slot.availability)
+                    }) || t2_avail.iter().any(|x| {
+                        AvailabilityWindow::overlap_fast(&x.availability, &slot.availability)
+                    }) {
+                        continue;
                     }
 
-                    result
-                })
-                .collect()
+                    result.push(Reservation {
+                        slot: slot.clone(),
+                        game: Arc::new(RwLock::new(Some(Game {
+                            team_one: *team_one,
+                            team_two: *team_two,
+                            group_id: group.id(),
+                        }))),
+                    })
+                }
+            }
         }
+
+        result
     }
 
     fn make_move(&mut self, mov: &Self::Move) {
@@ -297,6 +287,7 @@ struct ScheduleEvaluator;
 impl Evaluator<SchedulerMCTS> for ScheduleEvaluator {
     type StateEvaluation = i64;
 
+    #[inline(always)]
     fn evaluate_new_state(
         &self,
         state: &MCTSState,
@@ -508,9 +499,9 @@ pub fn test() -> Result<()> {
     group_two.add_team(7);
     group_two.add_team(8);
     group_two.add_team(9);
-    group_two.add_team(10);
-    group_two.add_team(11);
-    group_two.add_team(12);
+    // group_two.add_team(10);
+    // group_two.add_team(11);
+    // group_two.add_team(12);
 
     state.add_group(group_two);
 

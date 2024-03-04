@@ -215,7 +215,9 @@
 
 								<hr class="my-4" />
 
-								<button class="variant-filled btn mx-auto block">Time Slots</button>
+								<a class="variant-filled btn mx-auto block" href={`/reservations/${field.id}`}>
+									Time Slots
+								</a>
 							</div>
 						{/each}
 						<div class="my-auto ml-10 flex flex-col">
