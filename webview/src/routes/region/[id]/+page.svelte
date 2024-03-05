@@ -200,7 +200,7 @@
 					<div class="flex flex-wrap items-stretch justify-center">
 						{#each fields as field, i}
 							<div class="card m-4 w-52 p-4 lg:w-96">
-								<header class="card-header flex flex-row items-center mb-4">
+								<header class="card-header mb-4 flex flex-row items-center">
 									<strong class="w-1/2 grow truncate">{field.name}</strong>
 									<button
 										type="button"

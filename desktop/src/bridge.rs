@@ -1,5 +1,7 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, FieldValidationError, MoveTimeSlotInput, RegionValidationError, TeamExtension, TimeSlotError
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
+    CreateTimeSlotInput, FieldValidationError, MoveTimeSlotInput, RegionValidationError,
+    TeamExtension, TimeSlotError,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -155,7 +157,9 @@ pub(crate) async fn get_field(
         .map_err(|e| LoadFieldsError::DatabaseError(e.to_string()))
     {
         Ok(mut fields) if fields.len() == 1 => Ok(fields.remove(0)),
-        Ok(..) => Err(LoadFieldsError::DatabaseError("too many/little fields".to_owned())),
+        Ok(..) => Err(LoadFieldsError::DatabaseError(
+            "too many/little fields".to_owned(),
+        )),
         Err(e) => Err(LoadFieldsError::DatabaseError(e.to_string())),
     }
 }
@@ -390,22 +394,19 @@ pub(crate) async fn create_time_slot(
 ) -> Result<db::time_slot::Model, TimeSlotError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
-    let client = lock
-        .database
-        .as_ref()
-        .ok_or(TimeSlotError::NoDatabase)?;
+    let client = lock.database.as_ref().ok_or(TimeSlotError::NoDatabase)?;
 
     client.create_time_slot(input).await
 }
 
 #[tauri::command]
-pub(crate) async fn move_time_slot(app: AppHandle, input: MoveTimeSlotInput) -> Result<(), TimeSlotError> {
+pub(crate) async fn move_time_slot(
+    app: AppHandle,
+    input: MoveTimeSlotInput,
+) -> Result<(), TimeSlotError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
-    let client = lock
-        .database
-        .as_ref()
-        .ok_or(TimeSlotError::NoDatabase)?;
+    let client = lock.database.as_ref().ok_or(TimeSlotError::NoDatabase)?;
 
     client.move_time_slot(input).await
 }
@@ -422,6 +423,6 @@ pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), Stri
     match client.delete_time_slot(id).await {
         Ok(d) if d.rows_affected == 1 => Ok(()),
         Ok(d) => Err(format!("expected to delete 1 row, instead executed {d:?}")),
-        Err(e) => Err(e.to_string())
+        Err(e) => Err(e.to_string()),
     }
 }

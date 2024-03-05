@@ -176,7 +176,7 @@
 			}
 			console.info(e);
 		},
-		eventClick(e: { el: HTMLElement, event: CalendarEvent }) {
+		eventClick(e: { el: HTMLElement; event: CalendarEvent }) {
 			modalStore.trigger({
 				type: 'confirm',
 				title: 'Delete time slot',
@@ -185,17 +185,17 @@
 				async response(r: boolean) {
 					if (r) {
 						try {
-							await invoke('delete_time_slot', { id: Number(e.event.id) })
+							await invoke('delete_time_slot', { id: Number(e.event.id) });
 							calendar.removeEventById(e.event.id);
 						} catch (e) {
 							dialog.message(JSON.stringify(e), {
 								title: 'Could not delete time slot',
-								type: 'error',
-							})
+								type: 'error'
+							});
 						}
 					}
-				},
-			})
+				}
+			});
 		},
 		select(e: DateRange) {
 			let diff: number = e.end.valueOf() - e.start.valueOf();
@@ -238,13 +238,11 @@
 					}
 				}
 			});
-		},
-		
+		}
 	};
 </script>
 
 <main class="p-4" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
-	
 	<button class="variant-filled btn" on:click={() => history.back()}>&laquo;&nbsp; Fields</button>
 
 	{#if field === undefined}
@@ -253,14 +251,14 @@
 		<h1 class="h1 my-4">Availability: {field?.name}</h1>
 	{/if}
 
-	<section class="grid grid-cols-3 justify-items-center my-4">
-		<div class="card sm:mx-2 md:mx-4 lg:mx-8 max-w-md p-4 text-center">
+	<section class="my-4 grid grid-cols-3 justify-items-center">
+		<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
 			<strong>Click and drag</strong> over empty space to create a time slot
 		</div>
-		<div class="card sm:mx-2 md:mx-4 lg:mx-8 max-w-md p-4 text-center">
+		<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
 			<strong>Click and drag</strong> an event to move it or resize it
 		</div>
-		<div class="card sm:mx-2 md:mx-4 lg:mx-8 max-w-md p-4 text-center">
+		<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
 			<strong>Click</strong> an event to delete it
 		</div>
 	</section>
