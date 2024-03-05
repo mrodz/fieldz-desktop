@@ -2,9 +2,8 @@
 	import { type Region } from '$lib';
 	import { slide } from 'svelte/transition';
 	import RegionList from './region/RegionList.svelte';
-	import { getModalStore, InputChip, popup } from '@skeletonlabs/skeleton';
-	import Fa from 'svelte-fa';
-	import { faCircleInfo } from '@fortawesome/free-solid-svg-icons';
+	import { getModalStore } from '@skeletonlabs/skeleton';
+	import Groups from './groups/Groups.svelte';
 
 	const modalStore = getModalStore();
 
@@ -24,6 +23,12 @@
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
+	<!--
+	<Groups />
+
+	<hr class="!border-t-4 my-4" />
+	-->
+
 	<section class="p-4">
 		<h2 class="h2">Regions</h2>
 

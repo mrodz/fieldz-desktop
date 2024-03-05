@@ -171,7 +171,7 @@
 										{/each}
 									</div>
 								{:else}
-									<i>Untagged field.</i>
+									<i>Untagged team</i>
 								{/if}
 
 								<hr class="my-4" />
@@ -200,7 +200,7 @@
 					<div class="flex flex-wrap items-stretch justify-center">
 						{#each fields as field, i}
 							<div class="card m-4 w-52 p-4 lg:w-96">
-								<header class="card-header flex flex-row items-center">
+								<header class="card-header mb-4 flex flex-row items-center">
 									<strong class="w-1/2 grow truncate">{field.name}</strong>
 									<button
 										type="button"
@@ -209,13 +209,9 @@
 									>
 								</header>
 
-								<hr class="my-4" />
-
-								<CodeBlock language="json" lineNumbers code={JSON.stringify(field)} />
-
-								<hr class="my-4" />
-
-								<button class="variant-filled btn mx-auto block">Time Slots</button>
+								<a class="variant-filled btn mx-auto block" href={`/reservations/${field.id}`}>
+									Edit Time Slots
+								</a>
 							</div>
 						{/each}
 						<div class="my-auto ml-10 flex flex-col">

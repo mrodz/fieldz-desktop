@@ -21,8 +21,8 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(TimeSlot::FieldId).integer().not_null())
-                    .col(ColumnDef::new(TimeSlot::Start).date_time().not_null())
-                    .col(ColumnDef::new(TimeSlot::End).date_time().not_null())
+                    .col(ColumnDef::new(TimeSlot::Start).timestamp().not_null())
+                    .col(ColumnDef::new(TimeSlot::End).timestamp().not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_time_slot_field")
