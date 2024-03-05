@@ -1,7 +1,5 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
-    CreateTimeSlotError, CreateTimeSlotInput, FieldValidationError, RegionValidationError,
-    TeamExtension,
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, FieldValidationError, MoveTimeSlotInput, RegionValidationError, TeamExtension, TimeSlotError
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -140,6 +138,26 @@ pub(crate) async fn get_fields(
         .get_fields(region_id)
         .await
         .map_err(|e| LoadFieldsError::DatabaseError(e.to_string()))
+}
+
+#[tauri::command]
+pub(crate) async fn get_field(
+    app: AppHandle,
+    field_id: i32,
+) -> Result<db::field::Model, LoadFieldsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadFieldsError::NoDatabase)?;
+
+    match client
+        .get_field(field_id)
+        .await
+        .map_err(|e| LoadFieldsError::DatabaseError(e.to_string()))
+    {
+        Ok(mut fields) if fields.len() == 1 => Ok(fields.remove(0)),
+        Ok(..) => Err(LoadFieldsError::DatabaseError("too many/little fields".to_owned())),
+        Err(e) => Err(LoadFieldsError::DatabaseError(e.to_string())),
+    }
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -369,13 +387,41 @@ pub(crate) async fn get_time_slots(
 pub(crate) async fn create_time_slot(
     app: AppHandle,
     input: CreateTimeSlotInput,
-) -> Result<db::time_slot::Model, CreateTimeSlotError> {
+) -> Result<db::time_slot::Model, TimeSlotError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
         .database
         .as_ref()
-        .ok_or(CreateTimeSlotError::NoDatabase)?;
+        .ok_or(TimeSlotError::NoDatabase)?;
 
     client.create_time_slot(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn move_time_slot(app: AppHandle, input: MoveTimeSlotInput) -> Result<(), TimeSlotError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(TimeSlotError::NoDatabase)?;
+
+    client.move_time_slot(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    match client.delete_time_slot(id).await {
+        Ok(d) if d.rows_affected == 1 => Ok(()),
+        Ok(d) => Err(format!("expected to delete 1 row, instead executed {d:?}")),
+        Err(e) => Err(e.to_string())
+    }
 }

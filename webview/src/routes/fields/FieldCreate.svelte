@@ -74,6 +74,7 @@
 					bind:value={fieldNameInput}
 					on:keypress={() => (fieldNameError = undefined)}
 					on:change={() => (fieldNameError = undefined)}
+					placeholder="eg. Rolling Hills Sports Complex - North"
 				/>
 				<div class="input-group-shim {(fieldNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
 					{fieldNameInput?.length ?? 0}/64

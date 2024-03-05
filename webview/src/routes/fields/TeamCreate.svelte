@@ -92,6 +92,7 @@
 					bind:value={teamNameInput}
 					on:keypress={() => (teamNameError = undefined)}
 					on:change={() => (teamNameError = undefined)}
+					placeholder="eg. Green Dragons"
 				/>
 				<div class="input-group-shim {(teamNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
 					{teamNameInput?.length ?? 0}/64

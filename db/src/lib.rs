@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
-use chrono::{serde::ts_seconds, DateTime};
+use chrono::{serde::ts_milliseconds, DateTime};
 use entity::field::ActiveModel as ActiveField;
 use entity::field::Entity as FieldEntity;
 use entity::field::Model as Field;
@@ -20,7 +20,6 @@ use entity::time_slot::ActiveModel as ActiveTimeSlot;
 use entity::time_slot::Entity as TimeSlotEntity;
 use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
-use sea_orm::QueryOrder;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, JoinType, QueryFilter, QuerySelect,
     RelationTrait, Set, TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
@@ -28,6 +27,7 @@ use sea_orm::{
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
 use sea_orm::{EntityOrSelect, ModelTrait};
+use sea_orm::{IntoSimpleExpr, QueryOrder};
 
 pub use entity::*;
 use serde::Deserialize;
@@ -190,28 +190,38 @@ impl TeamExtension {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTimeSlotInput {
     field_id: i32,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "ts_milliseconds")]
     start: DateTime<Utc>,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "ts_milliseconds")]
     end: DateTime<Utc>,
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 
-pub enum CreateTimeSlotError {
+pub enum TimeSlotError {
     #[error("database was not initialized")]
     NoDatabase,
     #[error("this time slot is booked from {o_start} to {o_end}")]
     Overlap {
-        #[serde(with = "ts_seconds")]
+        #[serde(with = "ts_milliseconds")]
         o_start: DateTime<Utc>,
-        #[serde(with = "ts_seconds")]
+        #[serde(with = "ts_milliseconds")]
         o_end: DateTime<Utc>,
     },
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("could not parse date: `{0}`")]
     ParseError(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveTimeSlotInput {
+    field_id: i32,
+    id: i32,
+    #[serde(with = "ts_milliseconds")]
+    new_start: DateTime<Utc>,
+    #[serde(with = "ts_milliseconds")]
+    new_end: DateTime<Utc>,
 }
 
 impl Client {
@@ -314,6 +324,13 @@ impl Client {
             .context("not found")?;
         region
             .find_related(FieldEntity)
+            .all(&self.connection)
+            .await
+            .map_err(|e| anyhow!(e))
+    }
+
+    pub async fn get_field(&self, field_id: i32) -> Result<Vec<Field>> {
+        FieldEntity::find_by_id(field_id)
             .all(&self.connection)
             .await
             .map_err(|e| anyhow!(e))
@@ -555,39 +572,72 @@ impl Client {
             .await
     }
 
+    async fn conflicts(
+        connection: &impl ConnectionTrait,
+        field_id: i32,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        exclude_from_conflicts: Option<i32>,
+    ) -> Result<(), TimeSlotError> {
+        let mut condition = Condition::all().add(time_slot::Column::FieldId.eq(field_id));
+
+        if let Some(id) = exclude_from_conflicts {
+            condition = condition.add(time_slot::Column::Id.ne(id))
+        }
+
+        let time_slots = TimeSlotEntity::find()
+            .inner_join(FieldEntity)
+            .filter(condition)
+            .all(connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?;
+
+        for time_slot in time_slots {
+            let o_start = DateTime::<Utc>::from_str(&time_slot.start) //, FMT)
+                .map_err(|e| {
+                    TimeSlotError::ParseError(format!("bad input: {e} (`{}`)", time_slot.start))
+                })?
+                .to_utc();
+            let o_end = DateTime::<Utc>::from_str(&time_slot.end) //, FMT)
+                .map_err(|e| {
+                    TimeSlotError::ParseError(format!("bad input: {e} (`{}`)", time_slot.end))
+                })?
+                .to_utc();
+
+            if o_start < end && o_end > start {
+                return Err(TimeSlotError::Overlap { o_start, o_end });
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn create_time_slot(
         &self,
         input: CreateTimeSlotInput,
-    ) -> Result<TimeSlot, CreateTimeSlotError> {
-        let time_slots = TimeSlotEntity::find()
-            .inner_join(FieldEntity)
-            .filter(time_slot::Column::FieldId.eq(input.field_id))
-            .all(&self.connection)
-            .await
-            .map_err(|e| CreateTimeSlotError::DatabaseError(e.to_string()))?;
-
-        for time_slot in time_slots {
-            let o_start = DateTime::<Utc>::from_str(&time_slot.start).unwrap();
-            let o_end = DateTime::<Utc>::from_str(&time_slot.end).unwrap();
-
-            if o_start <= input.end && o_end >= input.start {
-                return Err(CreateTimeSlotError::Overlap { o_start, o_end });
-            }
-        }
+    ) -> Result<TimeSlot, TimeSlotError> {
+        Self::conflicts(
+            &self.connection,
+            input.field_id,
+            input.start,
+            input.end,
+            None,
+        )
+        .await?;
 
         /*
          * No conflicts; good to go.
          */
 
         TimeSlotEntity::insert(ActiveTimeSlot {
-            start: Set(input.start.to_utc().to_rfc2822()),
-            end: Set(input.end.to_utc().to_rfc2822()),
+            start: Set(input.start.to_utc().to_rfc3339()),
+            end: Set(input.end.to_utc().to_rfc3339()),
             field_id: Set(input.field_id),
             ..Default::default()
         })
         .exec_with_returning(&self.connection)
         .await
-        .map_err(|e| CreateTimeSlotError::DatabaseError(e.to_string()))
+        .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))
     }
 
     pub async fn delete_time_slot(&self, id: i32) -> DBResult<DeleteResult> {
@@ -597,5 +647,34 @@ impl Client {
         })
         .exec(&self.connection)
         .await
+    }
+
+    pub async fn move_time_slot(&self, input: MoveTimeSlotInput) -> Result<(), TimeSlotError> {
+        Self::conflicts(
+            &self.connection,
+            input.field_id,
+            input.new_start,
+            input.new_end,
+            Some(input.id),
+        )
+        .await?;
+
+        TimeSlotEntity::update_many()
+            .col_expr(
+                time_slot::Column::Start,
+                Expr::val(Value::String(Some(Box::new(input.new_start.to_rfc3339()))))
+                    .into_simple_expr(),
+            )
+            .col_expr(
+                time_slot::Column::End,
+                Expr::val(Value::String(Some(Box::new(input.new_end.to_rfc3339()))))
+                    .into_simple_expr(),
+            )
+            .filter(time_slot::Column::Id.eq(input.id))
+            .exec(&self.connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?;
+
+        Ok(())
     }
 }
