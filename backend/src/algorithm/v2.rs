@@ -89,7 +89,7 @@ impl Display for Game {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-struct Reservation {
+pub(crate) struct Reservation {
     slot: Slot,
     game: Option<Game>,
 }
@@ -349,6 +349,59 @@ impl MCTS for SchedulerMCTS {
     }
 }
 
+pub(crate) struct Output {
+    reservations: Vec<Reservation>,
+    
+}
+
+pub(crate) fn schedule(state: MCTSState) -> Result<()> {
+    let total_slots = state.games.len();
+    let team_len = state.teams_len();
+
+    let mut mcts = MCTSManager::new(
+        state.clone(),
+        SchedulerMCTS,
+        ScheduleEvaluator,
+        UCTPolicy::new(0.01),
+        ApproxTable::new(4096),
+    );
+
+    let iterations = if team_len >= 8 {
+        (10_000. * (20. * team_len as f32 + 10.).powf(0.33)) as u32
+    } else {
+        // Lower rounds need more iterations because the algorithm
+        // will have less of a chance of picking the right path.
+        500_000
+    };
+
+    let runners = std::thread::available_parallelism()
+        .expect("could not get thread data")
+        .get();
+
+    log::info!("Scheduling for {iterations} iterations on {runners} threads.");
+
+    let start = Instant::now();
+
+    mcts.playout_n_parallel(iterations, runners);
+
+    let end = Instant::now();
+
+    log::info!(
+        "... Done in {:.3}s\n",
+        end.duration_since(start).as_secs_f32()
+    );
+
+    let mut result = vec![];
+
+    for m in mcts.principal_variation(total_slots) {
+        result.push(m);
+    }
+
+    result.sort_by_key(|r| r.slot.availability.0);
+
+    Ok(())
+}
+
 pub fn test() -> Result<()> {
     let mut state = MCTSState::new();
 
@@ -399,80 +452,13 @@ pub fn test() -> Result<()> {
 
     let mut group_one = PlayableGroup::new(0);
 
-    for i in 0..3 {
+    for i in 0..4 {
         group_one.add_team(i);
     }
 
     state.add_group(group_one);
 
-    let total_slots = state.games.len();
-    let team_len = state.teams_len();
-    let mut teams_summary: HashMap<Team, u8> = HashMap::with_capacity(team_len as usize);
-
-    let mut mcts = MCTSManager::new(
-        state.clone(),
-        SchedulerMCTS,
-        ScheduleEvaluator,
-        UCTPolicy::new(0.01),
-        ApproxTable::new(4096),
-    );
-
-    let iterations = if team_len >= 8 {
-        (10_000. * (20. * team_len as f32 + 10.).powf(0.33)) as u32
-    } else {
-        // Lower rounds need more iterations because the algorithm
-        // will have less of a chance of picking the right path.
-        100_000
-    };
-
-    let runners = std::thread::available_parallelism()
-        .expect("could not get thread data")
-        .get();
-
-    println!("Scheduling for {iterations} iterations on {runners} threads.");
-
-    let start = Instant::now();
-
-    mcts.playout_n_parallel(iterations, runners);
-
-    let end = Instant::now();
-
-    println!(
-        "... Done in {:.3}s\n",
-        end.duration_since(start).as_secs_f32()
-    );
-
-    let mut game_count = 0;
-
-    let mut result = vec![];
-
-    for m in mcts.principal_variation(total_slots) {
-        {
-            let game = m.game.as_ref().unwrap();
-
-            let mut c = teams_summary.entry(game.team_one).or_default();
-            *c += 1;
-
-            c = teams_summary.entry(game.team_two).or_default();
-            *c += 1;
-
-            game_count += 1;
-        }
-
-        result.push(m);
-    }
-
-    result.sort_by_key(|r| r.slot.availability.0);
-
-    for reservation in result {
-        println!("{reservation}");
-    }
-
-    println!("\n{game_count}/{total_slots} slots filled");
-
-    for (team, games_played) in &teams_summary {
-        println!("\t- {team} played {games_played} games");
-    }
+    schedule(state)?;
 
     Ok(())
 }

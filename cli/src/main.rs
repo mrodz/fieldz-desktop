@@ -1,8 +1,26 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use db::Client;
 use dialoguer::{theme::ColorfulTheme, Select};
 use std::{fmt::Debug, path::Path};
+
+use log::{Record, Level, Metadata};
+
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= Level::Info
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            println!("{} {}", record.level(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -129,11 +147,16 @@ async fn db_command(command: DbCommand, db_path: Option<String>) -> Result<()> {
     todo!();
 }
 
+static LOGGER: SimpleLogger = SimpleLogger;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if dotenv::from_path(Path::new(module_path!()).join(".env")).is_err() {
         dotenv::dotenv()?;
     }
+
+    log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(log::LevelFilter::Info)).map_err(|e| anyhow!(e)).context("could not set up logger")?;
 
     let args = Args::parse();
 

@@ -98,3 +98,60 @@ impl AvailabilityWindow {
         ))
     }
 }
+
+trait TeamLike {
+    fn id(&self) -> u8;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Team {
+    name: Option<String>
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Field {
+    name: Option<String>,
+    time_slots: Vec<AvailabilityWindow>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ScheduledInput
+{
+    teams: Vec<Team>,
+    fields: Vec<Field>,
+}
+
+impl ScheduledInput
+{
+    pub fn new(teams: impl AsRef<[Team]>, fields: impl AsRef<[Field]>) -> Self
+    {
+        Self {
+            teams: teams.as_ref().to_vec(),
+            fields: fields.as_ref().to_vec(),
+        }
+    }
+}
+
+pub fn schedule<K>(input: ScheduledInput) -> Result<()>
+{
+    algorithm::v2::test()
+    // if input.teams.len() <= 3 {
+    //     let mut league = algorithm::v1::League::new();
+
+    //     let mut region = algorithm::v1::Region::new();
+
+    //     for (field, availability) in input.availability {
+    //         region.add_field(field, &availability);
+    //     }
+
+    //     for team in input.teams {
+    //         region.add_team(team.id().to_string());
+    //     }
+
+    //     league.add_region(region);
+
+    //     let out = league.schedule()?;
+
+        
+    // }
+}
