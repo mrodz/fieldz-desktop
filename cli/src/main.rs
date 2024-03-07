@@ -30,7 +30,7 @@ enum DbCommand {
 }
 
 fn test_schedule() -> Result<()> {
-    backend::algorithm::test()?;
+    backend::algorithm::v2::test()?;
     Ok(())
     /*
     let mut league = League::new();
