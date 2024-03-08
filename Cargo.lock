@@ -421,9 +421,12 @@ dependencies = [
  "chrono-tz",
  "genevo",
  "itertools",
+ "lazy_static",
+ "log",
  "mcts",
  "petgraph",
  "rand 0.8.5",
+ "thiserror",
  "tinyvec",
 ]
 
@@ -808,6 +811,7 @@ dependencies = [
  "db",
  "dialoguer",
  "dotenv",
+ "log",
  "tokio",
 ]
 
