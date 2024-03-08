@@ -1,13 +1,14 @@
+extern crate tinyvec;
+
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::num::NonZeroU8;
+use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
-use chrono::DateTime;
 use itertools::Itertools;
 use itertools::MinMaxResult;
 use mcts::transposition_table::*;
@@ -18,6 +19,7 @@ use tinyvec::TinyVec;
 
 use crate::window;
 use crate::AvailabilityWindow;
+use crate::LossyAvailability;
 
 type TeamId = u8;
 
@@ -33,7 +35,7 @@ impl Team {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-struct PlayableGroup {
+pub struct PlayableGroup {
     teams: TinyVec<[TeamSlot; 8]>,
     external_id: Option<NonZeroU8>,
     index_start: usize,
@@ -89,7 +91,7 @@ impl Display for Game {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub(crate) struct Reservation {
+pub struct Reservation {
     slot: Slot,
     game: Option<Game>,
 }
@@ -109,26 +111,25 @@ impl Display for Reservation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct Slot {
     field_id: u8,
-    availability: (i32, i32),
+    availability: LossyAvailability,
 }
 
 impl Display for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[f{}] {} to {}",
+            "[f{}] {}",
             self.field_id,
-            DateTime::from_timestamp(self.availability.0 as i64, 0).unwrap(),
-            DateTime::from_timestamp(self.availability.1 as i64, 0).unwrap()
+            self.availability.as_availability_window_lossy(),
         )
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-struct TeamSlot(Team, TinyVec<[Slot; 8]>);
+pub struct TeamSlot(Team, TinyVec<[Slot; 8]>);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct MCTSState {
+pub struct MCTSState {
     games: BTreeMap<Slot, Option<Game>>,
     groups: Vec<PlayableGroup>,
     teams_len: u8,
@@ -166,7 +167,7 @@ impl MCTSState {
                     .insert(
                         Slot {
                             field_id,
-                            availability: time_slot.as_unix().unwrap()
+                            availability: time_slot.as_lossy_window().unwrap()
                         },
                         None
                     )
@@ -190,7 +191,7 @@ impl GameState for MCTSState {
 
     #[inline(always)]
     fn available_moves(&self) -> Vec<Reservation> {
-        let mut result = tiny_vec!([Reservation; 10]);
+        let mut result = tiny_vec!([Reservation; 8]);
 
         for (slot, game) in &self.games {
             if game.is_some() {
@@ -206,8 +207,7 @@ impl GameState for MCTSState {
                     };
 
                     let overlap = |x: &Slot| {
-                        x.availability.0 <= slot.availability.1
-                            && x.availability.1 >= slot.availability.0
+                        LossyAvailability::overlap_fast(&x.availability, &slot.availability)
                     };
 
                     if t1_avail.iter().any(overlap) || t2_avail.iter().any(overlap) {
@@ -330,7 +330,13 @@ impl Evaluator<SchedulerMCTS> for ScheduleEvaluator {
 }
 
 #[derive(Default)]
-struct SchedulerMCTS;
+struct SchedulerMCTS(usize);
+
+impl SchedulerMCTS {
+    pub const fn new(max_playout_length: usize) -> Self {
+        Self(max_playout_length)
+    }
+}
 
 impl MCTS for SchedulerMCTS {
     type State = MCTSState;
@@ -345,33 +351,97 @@ impl MCTS for SchedulerMCTS {
     }
 
     fn max_playout_length(&self) -> usize {
-        1_000
+        self.0
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Output {
     reservations: Vec<Reservation>,
-    
+    time_taken: Duration,
+    fillage: f32,
 }
 
-pub(crate) fn schedule(state: MCTSState) -> Result<()> {
+impl Output {
+    pub fn all_booked(&self) -> bool {
+        self.fillage == 1.
+    }
+}
+
+impl Display for Output {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut r = self.reservations.iter();
+
+        if let Some(first) = r.next() {
+            write!(f, "- {first}")?;
+        }
+
+        for reservation in r {
+            write!(f, "\n- {reservation}")?;
+        }
+
+        write!(
+            f,
+            "\nBooked {:.2}%; Elapsed {}s",
+            self.fillage * 100.,
+            self.time_taken.as_secs_f32()
+        )
+    }
+}
+
+pub(crate) fn schedule(state: MCTSState) -> Result<Output> {
+    let mut best: Option<Output> = None;
+
+    const RETRIES: u8 = 10;
+
+    for i in 1..=RETRIES {
+        let out = schedule_once(state.clone())?;
+        if out.all_booked() {
+            return Ok(out);
+        }
+
+        let percent = out.fillage * 100.;
+
+        log::warn!("Recieved an output that booked {percent:.2}% of all matches, will retry {} more times.", RETRIES - i);
+
+        if let Some(ref best_unwrapped) = best {
+            if out.fillage <= best_unwrapped.fillage {
+                log::warn!("Current best is {percent:.2}%");
+                continue;
+            }
+        }
+
+        best = Some(out);
+    }
+
+    log::error!("Returning a sub-optimal schedule: {best:?}");
+
+    best.ok_or_else(|| unreachable!("the scheduler should have retried"))
+}
+
+pub(crate) fn schedule_once(state: MCTSState) -> Result<Output> {
     let total_slots = state.games.len();
     let team_len = state.teams_len();
 
     let mut mcts = MCTSManager::new(
         state.clone(),
-        SchedulerMCTS,
+        SchedulerMCTS::new(total_slots),
         ScheduleEvaluator,
         UCTPolicy::new(0.01),
         ApproxTable::new(4096),
     );
 
-    let iterations = if team_len >= 8 {
-        (10_000. * (20. * team_len as f32 + 10.).powf(0.33)) as u32
+    let iterations = if (8..=13).contains(&team_len) {
+        (10_000. * (20. * team_len as f32 + 10.).powf(0.335)) as u32
     } else {
-        // Lower rounds need more iterations because the algorithm
-        // will have less of a chance of picking the right path.
-        500_000
+        /*
+         * Lower rounds need more iterations because the algorithm
+         * will have less of a chance of picking the right path.
+         *
+         * Higher rounds (>14) are not going to be supported as well
+         * as lower team counts.
+         */
+        100_000
     };
 
     let runners = std::thread::available_parallelism()
@@ -386,10 +456,9 @@ pub(crate) fn schedule(state: MCTSState) -> Result<()> {
 
     let end = Instant::now();
 
-    log::info!(
-        "... Done in {:.3}s\n",
-        end.duration_since(start).as_secs_f32()
-    );
+    let time_taken = end.duration_since(start);
+
+    log::info!("... Done in {:.3}s", time_taken.as_secs_f32());
 
     let mut result = vec![];
 
@@ -399,7 +468,11 @@ pub(crate) fn schedule(state: MCTSState) -> Result<()> {
 
     result.sort_by_key(|r| r.slot.availability.0);
 
-    Ok(())
+    Ok(Output {
+        fillage: result.len() as f32 / total_slots as f32,
+        reservations: result,
+        time_taken,
+    })
 }
 
 pub fn test() -> Result<()> {
@@ -452,13 +525,15 @@ pub fn test() -> Result<()> {
 
     let mut group_one = PlayableGroup::new(0);
 
-    for i in 0..4 {
+    for i in 0..8 {
         group_one.add_team(i);
     }
 
     state.add_group(group_one);
 
-    schedule(state)?;
+    let result = schedule(state)?;
+
+    println!("{result}");
 
     Ok(())
 }
