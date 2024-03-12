@@ -1,7 +1,5 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
-    CreateTimeSlotInput, FieldValidationError, MoveTimeSlotInput, RegionValidationError,
-    TeamExtension, TimeSlotError,
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, RegionValidationError, TeamExtension, TimeSlotError
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -425,4 +423,34 @@ pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), Stri
         Ok(d) => Err(format!("expected to delete 1 row, instead executed {d:?}")),
         Err(e) => Err(e.to_string()),
     }
+}
+
+#[tauri::command]
+pub(crate) async fn list_reservations_between(app: AppHandle, input: ListReservationsBetweenInput) -> Result<Vec<db::time_slot::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .list_reservations_between(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn load_all_teams(app: AppHandle) -> Result<Vec<TeamExtension>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .load_all_teams()
+        .await
+        .map_err(|e| e.to_string())
 }

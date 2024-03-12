@@ -6,12 +6,13 @@
 	import { getModalStore, getToastStore, ProgressRadial } from '@skeletonlabs/skeleton';
 	import { onMount } from 'svelte';
 	import { dialog, invoke } from '@tauri-apps/api';
-	import type {
-		TimeSlot,
-		CreateTimeSlotInput,
-		CalendarEvent,
-		Field,
-		MoveTimeSlotInput
+	import {
+		type TimeSlot,
+		type CreateTimeSlotInput,
+		type CalendarEvent,
+		type Field,
+		type MoveTimeSlotInput,
+		eventFromTimeSlot
 	} from '$lib';
 
 	export let data;
@@ -20,20 +21,8 @@
 	let toastStore = getToastStore();
 
 	let rawEvents: TimeSlot[] = [];
-	// $: events = rawEvents.map(eventFromTimeSlot) ?? []
 
 	let field: Field | undefined;
-
-	function eventFromTimeSlot(input: TimeSlot): CalendarEvent {
-		return {
-			allDay: false,
-			display: 'auto',
-			id: String(input.id),
-			resources: [],
-			start: new Date(input.start),
-			end: new Date(input.end)
-		};
-	}
 
 	onMount(async () => {
 		try {
@@ -57,7 +46,7 @@
 		}
 	});
 
-	let plugins = [TimeGrid, Interaction];
+	const plugins = [TimeGrid, Interaction] as const;
 
 	let calendar: typeof Calendar;
 
@@ -74,12 +63,15 @@
 		inWeeks: boolean;
 	};
 
-	let options = {
+	const queryParams = new URLSearchParams(window.location.search);
+	const dateStart = queryParams.get('d');
+	const options = {
 		allDaySlot: false,
 		view: 'timeGridWeek',
 		editable: true,
 		selectable: true,
 		events: [],
+		date: isNaN(Number(dateStart)) ? new Date() : new Date(Number(dateStart)),
 		async eventDrop(e: {
 			oldEvent: CalendarEvent;
 			event: CalendarEvent;
@@ -97,7 +89,6 @@
 			}
 
 			if (canSkip) {
-				console.info('No need to send event move action to backend');
 				return;
 			}
 
@@ -126,7 +117,6 @@
 					});
 				}
 			}
-			console.info(e);
 		},
 		async eventResize(e: {
 			oldEvent: CalendarEvent;
@@ -145,7 +135,6 @@
 			}
 
 			if (canSkip) {
-				console.info('No need to send event move action to backend');
 				return;
 			}
 
@@ -174,7 +163,6 @@
 					});
 				}
 			}
-			console.info(e);
 		},
 		eventClick(e: { el: HTMLElement; event: CalendarEvent }) {
 			modalStore.trigger({
@@ -239,11 +227,11 @@
 				}
 			});
 		}
-	};
+	} as const;
 </script>
 
 <main class="p-4" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
-	<button class="variant-filled btn" on:click={() => history.back()}>&laquo;&nbsp; Fields</button>
+	<button class="variant-filled btn" on:click={() => history.back()}>&laquo;&nbsp; Back</button>
 
 	{#if field === undefined}
 		<ProgressRadial />

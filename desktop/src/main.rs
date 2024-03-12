@@ -86,6 +86,8 @@ fn main() -> Result<()> {
             get_field,
             move_time_slot,
             delete_time_slot,
+            list_reservations_between,
+            load_all_teams,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

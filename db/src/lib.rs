@@ -224,6 +224,14 @@ pub struct MoveTimeSlotInput {
     new_end: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListReservationsBetweenInput {
+    #[serde(with = "ts_milliseconds")]
+    start: DateTime<Utc>,
+    #[serde(with = "ts_milliseconds")]
+    end: DateTime<Utc>,
+}
+
 impl Client {
     pub async fn new(config: &Config) -> Result<Self> {
         let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
@@ -676,5 +684,25 @@ impl Client {
             .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?;
 
         Ok(())
+    }
+
+    pub async fn list_reservations_between(
+        &self,
+        input: ListReservationsBetweenInput,
+    ) -> DBResult<Vec<TimeSlot>> {
+        TimeSlotEntity::find()
+            .filter(time_slot::Column::Start.between(input.start, input.end))
+            .all(&self.connection)
+            .await
+    }
+
+    pub async fn load_all_teams(&self) -> DBResult<Vec<TeamExtension>> {
+        Ok(TeamEntity::find()
+            .find_with_related(TeamGroupEntity)
+            .all(&self.connection)
+            .await?
+            .into_iter()
+            .map(|(team, tags)| TeamExtension::new(team, tags))
+            .collect())
     }
 }

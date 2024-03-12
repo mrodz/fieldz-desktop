@@ -99,7 +99,7 @@
 			const item = groups[customEvent.detail.chipIndex];
 			let message = `Deleting a group is PERMANENT! Are you sure you wish to proceed? You will NOT be able to recover "${item.name}"`;
 			if (item.usages > 0) {
-				message += `, which ${item.usages} team${item.usages == 1 ? '' : 's'} actively depends on for scheduling. Make sure that you know what you're doing, as deleting a group can have unwanted consequences on the scheduling algorithm.`;
+				message += `, <strong><u>which ${item.usages} team${item.usages == 1 ? '' : 's'} actively depend${item.usages === 1 ? 's' : ''} on for scheduling</u></strong>. Make sure that you know what you're doing, as deleting a group can have unwanted consequences on the scheduling algorithm.`;
 			}
 			modalStore.trigger({
 				type: 'confirm',

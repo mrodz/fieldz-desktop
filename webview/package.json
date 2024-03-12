@@ -43,6 +43,7 @@
 	"type": "module",
 	"dependencies": {
 		"@event-calendar/interaction": "^2.6.1",
+		"@event-calendar/list": "^2.6.1",
 		"@floating-ui/dom": "^1.6.3",
 		"@fortawesome/free-solid-svg-icons": "^6.5.1",
 		"@tauri-apps/api": "^1.5.3",
