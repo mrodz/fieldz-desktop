@@ -84,3 +84,34 @@ export interface MoveTimeSlotInput {
 	new_start: number;
 	new_end: number;
 }
+
+export interface ListReservationsBetweenInput {
+	start: number;
+	end: number;
+}
+
+const CALENDAR_TIME_SLOT_COLORS = [
+	'#cf625b',
+	'#b8cf5b',
+	'#5b9fba',
+	'#d136c9',
+	'#d1aa36',
+	'#86a86c'
+];
+
+function colorForTimeSlot(input: TimeSlot): string {
+	return CALENDAR_TIME_SLOT_COLORS[input.field_id % CALENDAR_TIME_SLOT_COLORS.length];
+}
+
+export function eventFromTimeSlot(input: TimeSlot, title?: string): CalendarEvent {
+	return {
+		allDay: false,
+		display: 'auto',
+		id: String(input.id),
+		resources: [],
+		start: new Date(input.start),
+		end: new Date(input.end),
+		backgroundColor: colorForTimeSlot(input),
+		...(title !== undefined ? { title } : {})
+	};
+}

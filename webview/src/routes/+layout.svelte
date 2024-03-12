@@ -48,6 +48,7 @@
 			<ul>
 				<li><a href="/">Home</a></li>
 				<li><a href="/groups">Groups</a></li>
+				<li><a href="/scheduler">Scheduler</a></li>
 			</ul>
 		</nav>
 	</svelte:fragment>
