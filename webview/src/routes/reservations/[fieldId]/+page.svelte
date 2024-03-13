@@ -71,7 +71,7 @@
 		editable: true,
 		selectable: true,
 		events: [],
-		date: isNaN(Number(dateStart)) ? new Date() : new Date(Number(dateStart)),
+		date: (dateStart === null || isNaN(Number(dateStart))) ? new Date() : new Date(Number(dateStart)),
 		async eventDrop(e: {
 			oldEvent: CalendarEvent;
 			event: CalendarEvent;
