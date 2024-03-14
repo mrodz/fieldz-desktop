@@ -44,10 +44,6 @@ fn main() -> Result<()> {
 
             println!("Using data: {db_path}");
 
-            /*
-             * Right now, we WIPE AND RESET the database between runs. That way,
-             * we can edit the migrations without conflicts.
-             */
             let db_config = db::Config::new(db_path);
 
             {
@@ -88,6 +84,8 @@ fn main() -> Result<()> {
             delete_time_slot,
             list_reservations_between,
             load_all_teams,
+            update_region,
+            update_team,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

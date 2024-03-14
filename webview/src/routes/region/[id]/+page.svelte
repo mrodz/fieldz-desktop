@@ -128,6 +128,69 @@
 			}
 		});
 	}
+
+	let regionNameInput: string | undefined;
+
+	$: if (region !== undefined) {
+		regionNameInput = region.title;
+	}
+
+	async function editRegion() {
+		let id: number;
+
+		if (typeof data.id === 'string' && data.id.length > 0) {
+			id = Number(data.id);
+		} else {
+			toastStore.trigger({
+				message: `Could not edit region with non-str id: ${data.id}`,
+				background: 'variant-filled-success'
+			});
+			return;
+		}
+
+		if (isNaN(id)) {
+			toastStore.trigger({
+				message: `Could not edit region with non-int id: ${data.id}`,
+				background: 'variant-filled-success'
+			});
+			return;
+		}
+
+		modalStore.trigger({
+			type: 'component',
+			component: 'regionEdit',
+			meta: {
+				id,
+				onUpdate(updatedRegion: Region) {
+					toastStore.trigger({
+						message: `Saved changes for "${updatedRegion.title}"`,
+						background: 'variant-filled-success'
+					});
+
+					region = updatedRegion;
+				}
+			}
+		});
+	}
+
+	async function editTeam(team: TeamExtension, index: number) {
+		modalStore.trigger({
+			type: 'component',
+			component: 'teamEdit',
+			meta: {
+				team,
+				onUpdate(updatedTeam: TeamExtension) {
+					toastStore.trigger({
+						message: `Saved changes for "${updatedTeam.team.name}"`,
+						background: 'variant-filled-success'
+					});
+
+					teams![index] = updatedTeam;
+					teams = teams;
+				}
+			}
+		});
+	}
 </script>
 
 <main class="p-4" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
@@ -137,7 +200,16 @@
 		<div class="placeholder" />
 		<ProgressRadial />
 	{:else}
-		<h1 class="h1 my-4">{region.title}</h1>
+		<h1 class="h1 my-4 flex">
+			{region.title}
+			<button class="variant-ghost btn-icon my-auto ml-4" on:click={editRegion}>
+				<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24">
+					<path
+						d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"
+					/>
+				</svg>
+			</button>
+		</h1>
 
 		<hr class="my-4" />
 
@@ -175,7 +247,10 @@
 								{/if}
 
 								<hr class="my-4" />
-								<button class="variant-filled btn mx-auto block" disabled>Edit</button>
+								<button
+									class="variant-filled btn mx-auto block"
+									on:click={() => editTeam(team_ext, i)}>Edit</button
+								>
 							</div>
 						{/each}
 						<div class="my-auto ml-10 flex flex-col">

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { TeamGroup } from '$lib';
 	import { InputChip, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
-	import { slide } from 'svelte/transition';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { onMount } from 'svelte';
 

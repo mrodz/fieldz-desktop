@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import Calendar from '@event-calendar/core';
 	import TimeGrid from '@event-calendar/time-grid';
-	import Interaction from '@event-calendar/interaction';
 	import List from '@event-calendar/list';
 	import {
 		type ListReservationsBetweenInput,
@@ -30,7 +29,7 @@
 
 	let calendar: typeof Calendar;
 
-	const plugins = [TimeGrid, List, Interaction] as const;
+	const plugins = [TimeGrid, List] as const;
 
 	let compact = false;
 
