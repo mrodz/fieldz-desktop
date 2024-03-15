@@ -12,7 +12,8 @@
 		type CalendarEvent,
 		type TeamExtension,
 		type Region,
-		eventFromTimeSlot
+		eventFromTimeSlot,
+		type TeamGroup
 	} from '$lib';
 	import {
 		getModalStore,
@@ -21,10 +22,16 @@
 		Paginator,
 		SlideToggle,
 		Table,
-		type PaginationSettings
+		type PaginationSettings,
+		popup,
+		Autocomplete,
+		type AutocompleteOption,
+		type PopupSettings,
+		ProgressRadial
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
+	import Target from './Target.svelte';
 
 	let modalStore = getModalStore();
 
@@ -176,11 +183,13 @@
 		});
 	}
 
-	let teams: TeamExtension[] | undefined = undefined;
+	let teams: TeamExtension[] | undefined;
+	let groups: TeamGroup[] | undefined;
 
 	onMount(async () => {
 		try {
 			teams = await invoke<TeamExtension[]>('load_all_teams');
+			groups = await invoke<TeamGroup[]>('get_groups');
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error loading teams`,
@@ -257,5 +266,25 @@
 				</svelte:fragment>
 			</AccordionItem>
 		</Accordion>
+	</section>
+
+	<section class="card m-4 p-4">
+		<h2 class="h3">Targets</h2>
+
+		{#if groups === undefined}
+			<ProgressRadial />
+		{:else}
+			<Target {groups} />
+		{/if}
+		<!-- <InputChip bind:input={inputChip} bind:value={inputChipList} name="chips" />
+
+		<div class="card max-h-48 w-full max-w-sm overflow-y-auto p-4" tabindex="-1">
+			<Autocomplete
+				bind:input={inputChip}
+				options={flavorOptions}
+				denylist={inputChipList}
+				on:selection={onFlavorSelection}
+			/>
+		</div> -->
 	</section>
 </main>
