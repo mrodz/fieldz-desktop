@@ -1,5 +1,8 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, RegionValidationError, TeamExtension, TimeSlotError
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
+    CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput,
+    FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, RegionValidationError,
+    TeamExtension, TimeSlotError, Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -426,7 +429,10 @@ pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), Stri
 }
 
 #[tauri::command]
-pub(crate) async fn list_reservations_between(app: AppHandle, input: ListReservationsBetweenInput) -> Result<Vec<db::time_slot::Model>, String> {
+pub(crate) async fn list_reservations_between(
+    app: AppHandle,
+    input: ListReservationsBetweenInput,
+) -> Result<Vec<db::time_slot::Model>, String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -449,8 +455,29 @@ pub(crate) async fn load_all_teams(app: AppHandle) -> Result<Vec<TeamExtension>,
         .as_ref()
         .ok_or("database was not initialized".to_owned())?;
 
-    client
-        .load_all_teams()
-        .await
-        .map_err(|e| e.to_string())
+    client.load_all_teams().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn update_region(
+    app: AppHandle,
+    input: EditRegionInput,
+) -> Result<db::region::Model, EditRegionError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(EditRegionError::NoDatabase)?;
+
+    client.edit_region(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn update_team(
+    app: AppHandle,
+    input: EditTeamInput,
+) -> Result<TeamExtension, EditTeamError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(EditTeamError::NoDatabase)?;
+
+    client.edit_team(input).await
 }

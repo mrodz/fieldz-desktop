@@ -8,8 +8,7 @@
 		Modal,
 		type ModalComponent,
 		Toast,
-		storePopup,
-		getToastStore
+		storePopup
 	} from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
@@ -17,6 +16,8 @@
 	import RegionCreate from './region/RegionCreate.svelte';
 	import FieldCreate from './fields/FieldCreate.svelte';
 	import TeamCreate from './fields/TeamCreate.svelte';
+	import RegionEdit from './region/RegionEdit.svelte';
+	import TeamEdit from './fields/TeamEdit.svelte';
 
 	initializeStores();
 
@@ -31,6 +32,12 @@
 		},
 		teamCreate: {
 			ref: TeamCreate
+		},
+		regionEdit: {
+			ref: RegionEdit
+		},
+		teamEdit: {
+			ref: TeamEdit
 		}
 	};
 

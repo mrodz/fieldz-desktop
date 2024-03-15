@@ -1,11 +1,10 @@
 <script lang="ts">
 	import type { CreateRegionInput, Region } from '$lib';
-	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
+	import { getModalStore } from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 
 	export let parent: any;
 
-	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
 	let regionNameInput: string | undefined;
@@ -16,19 +15,12 @@
 	}
 
 	async function confirm() {
-		const payload: CreateRegionInput = {
+		const input = {
 			title: regionNameInput ?? ''
-		};
+		} satisfies CreateRegionInput;
 
 		try {
-			const newRegion: Region = await invoke('create_region', {
-				input: payload
-			});
-
-			toastStore.trigger({
-				message: `Created new region: "${newRegion.title}"`,
-				background: 'variant-filled-success'
-			});
+			const newRegion = await invoke<Region>('create_region', { input });
 
 			$modalStore[0].meta?.onCreate(newRegion);
 

@@ -2,9 +2,9 @@
 	import { type Region } from '$lib';
 	import { slide } from 'svelte/transition';
 	import RegionList from './region/RegionList.svelte';
-	import { getModalStore } from '@skeletonlabs/skeleton';
-	import Groups from './groups/Groups.svelte';
+	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 
+	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
 	let regionList: RegionList;
@@ -15,6 +15,10 @@
 			component: 'regionCreate',
 			meta: {
 				onCreate(region: Region) {
+					toastStore.trigger({
+						message: `Created new region: "${region.title}"`,
+						background: 'variant-filled-success'
+					});
 					regionList.addRegionToFrontend(region);
 				}
 			}

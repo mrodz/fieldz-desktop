@@ -115,3 +115,14 @@ export function eventFromTimeSlot(input: TimeSlot, title?: string): CalendarEven
 		...(title !== undefined ? { title } : {})
 	};
 }
+
+export interface EditRegionInput {
+	id: number;
+	name?: string;
+}
+
+export interface EditTeamInput {
+	id: number;
+	name?: string;
+	tags?: string[];
+}

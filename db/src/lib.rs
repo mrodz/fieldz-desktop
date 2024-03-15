@@ -55,32 +55,54 @@ pub struct Client {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(transparent)]
+struct RegionName(String);
+
+pub trait Validator {
+    type Error;
+    fn validate(&self) -> Result<(), Self::Error>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateRegionInput {
-    title: String,
+    title: RegionName,
 }
 
 #[derive(Debug, Error, Serialize, Deserialize)]
-pub enum RegionValidationError {
+pub enum RegionNameValidationError {
     #[error("region name cannot be empty")]
     EmptyName,
     #[error("region name is {len} characters which is larger than the max, 64")]
     NameTooLong { len: usize },
 }
 
-impl CreateRegionInput {
-    pub fn validate(&self) -> Result<(), RegionValidationError> {
-        let len = self.title.len();
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum RegionValidationError {
+    #[error(transparent)]
+    Name(#[from] RegionNameValidationError),
+}
 
-        if self.title.is_empty() {
-            return Err(RegionValidationError::EmptyName);
+impl Validator for RegionName {
+    type Error = RegionNameValidationError;
+    fn validate(&self) -> Result<(), Self::Error> {
+        let len = self.0.len();
+
+        if self.0.is_empty() {
+            return Err(RegionNameValidationError::EmptyName);
         }
 
         if len > 64 {
-            return Err(RegionValidationError::NameTooLong { len });
+            return Err(RegionNameValidationError::NameTooLong { len });
         }
 
-        // add more checks if the fields change...
+        Ok(())
+    }
+}
 
+impl Validator for CreateRegionInput {
+    type Error = RegionValidationError;
+    fn validate(&self) -> Result<(), Self::Error> {
+        self.title.validate()?;
         Ok(())
     }
 }
@@ -118,10 +140,31 @@ impl CreateFieldInput {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(transparent)]
+struct TeamName(String);
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTeamInput {
-    name: String,
+    name: TeamName,
     region_id: i32,
     tags: Vec<String>,
+}
+
+impl Validator for TeamName {
+    type Error = TeamValidationError;
+    fn validate(&self) -> Result<(), Self::Error> {
+        let len = self.0.len();
+
+        if self.0.is_empty() {
+            return Err(TeamValidationError::EmptyName);
+        }
+
+        if len > 64 {
+            return Err(TeamValidationError::NameTooLong { len });
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Error, Serialize, Deserialize)]
@@ -134,17 +177,7 @@ pub enum TeamValidationError {
 
 impl CreateTeamInput {
     pub fn validate(&self) -> Result<(), TeamValidationError> {
-        let len = self.name.len();
-
-        if self.name.is_empty() {
-            return Err(TeamValidationError::EmptyName);
-        }
-
-        if len > 64 {
-            return Err(TeamValidationError::NameTooLong { len });
-        }
-
-        // add more checks if the fields change...
+        self.name.validate()?;
 
         Ok(())
     }
@@ -232,6 +265,70 @@ pub struct ListReservationsBetweenInput {
     end: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditRegionInput {
+    id: i32,
+    name: Option<RegionName>,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum EditRegionError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error(transparent)]
+    Name(#[from] RegionNameValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("region with id {0} not found")]
+    NotFound(i32),
+}
+
+impl Validator for EditRegionInput {
+    type Error = EditRegionError;
+    fn validate(&self) -> Result<(), Self::Error> {
+        if let Some(ref name) = self.name {
+            name.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditTeamInput {
+    id: i32,
+    name: Option<TeamName>,
+    tags: Option<Vec<String>>,
+}
+
+impl Validator for EditTeamInput {
+    type Error = EditTeamError;
+
+    fn validate(&self) -> Result<(), Self::Error> {
+        if let Some(ref name) = self.name {
+            name.validate().map_err(EditTeamError::ValidationError)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum EditTeamError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("bad input")]
+    ValidationError(TeamValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("the following tags do not exist: {0:?}")]
+    MissingTags(Vec<String>),
+    #[error("the transaction to create a team failed")]
+    TransactionError,
+    #[error("team with id {0} not found")]
+    NotFound(i32),
+}
+
 impl Client {
     pub async fn new(config: &Config) -> Result<Self> {
         let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
@@ -266,7 +363,7 @@ impl Client {
 
     pub async fn create_region(&self, input: CreateRegionInput) -> DBResult<Region> {
         RegionEntity::insert(ActiveRegion {
-            title: Set(input.title),
+            title: Set(input.title.0),
             ..Default::default()
         })
         .exec_with_returning(&self.connection)
@@ -399,7 +496,7 @@ impl Client {
                         return Err(CreateTeamError::MissingTags(out));
                     }
                     let team = ActiveTeam {
-                        name: Set(input.name),
+                        name: Set(input.name.0),
                         region_owner: Set(input.region_id),
                         ..Default::default()
                     }
@@ -704,5 +801,172 @@ impl Client {
             .into_iter()
             .map(|(team, tags)| TeamExtension::new(team, tags))
             .collect())
+    }
+
+    pub async fn edit_region(&self, input: EditRegionInput) -> Result<Region, EditRegionError> {
+        input.validate()?;
+
+        let region_to_update = RegionEntity::find_by_id(input.id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| EditRegionError::DatabaseError(e.to_string()))?
+            .ok_or(EditRegionError::NotFound(input.id))?;
+
+        let mut active_model: ActiveRegion = region_to_update.into();
+
+        if let Some(name) = input.name {
+            active_model.title = Set(name.0);
+        }
+
+        /*
+         * Add more updated fields later!
+         */
+
+        active_model
+            .update(&self.connection)
+            .await
+            .map_err(|e| EditRegionError::DatabaseError(e.to_string()))?;
+
+        // It's okay to look up again because the value is hot and cached.
+        Ok(RegionEntity::find_by_id(input.id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| EditRegionError::DatabaseError(e.to_string()))?
+            .expect("this will never fail to select because we updated an existing record"))
+    }
+
+    pub async fn edit_team(&self, input: EditTeamInput) -> Result<TeamExtension, EditTeamError> {
+        input.validate()?;
+
+        self.connection
+            .transaction(|transaction| {
+                Box::pin(async move {
+                    let mut team_to_edit = TeamEntity::find_by_id(input.id)
+                        .one(transaction)
+                        .await
+                        .map_err(|e| {
+                            EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                        })?
+                        .ok_or(EditTeamError::NotFound(input.id))?;
+
+                    let tags = team_to_edit
+                        .find_related(TeamGroupEntity)
+                        .all(transaction)
+                        .await
+                        .map_err(|e| {
+                            EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                        })?
+                        .into_iter()
+                        .collect::<Vec<_>>();
+
+                    if let Some(new_tags) = input.tags {
+                        let new_tags = HashSet::from_iter(&new_tags);
+
+                        let hashset = tags.iter().map(|m| &m.name).collect::<HashSet<_>>();
+
+                        let deleted = hashset.difference(&new_tags);
+
+                        // make all the tags hot
+                        let groups = TeamGroupEntity::find()
+                            .filter(team_group::Column::Name.is_in(new_tags.iter().cloned()))
+                            .all(transaction)
+                            .await
+                            .map_err(|e| {
+                                EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+
+                        // tags that were removed
+                        TeamGroupEntity::update_many()
+                            .filter(team_group::Column::Name.is_in(deleted.cloned()))
+                            .col_expr(
+                                team_group::Column::Usages,
+                                Expr::sub(Expr::col(team_group::Column::Usages), 1),
+                            )
+                            .exec(transaction)
+                            .await
+                            .map_err(|e| {
+                                EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+
+                        // tags that were added
+                        TeamGroupEntity::update_many()
+                            .filter(
+                                team_group::Column::Name
+                                    .is_in(new_tags.difference(&hashset).cloned()),
+                            )
+                            .col_expr(
+                                team_group::Column::Usages,
+                                Expr::add(Expr::col(team_group::Column::Usages), 1),
+                            )
+                            .exec(transaction)
+                            .await
+                            .map_err(|e| {
+                                EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+
+                        team_group_join::Entity::delete_many()
+                            .filter(team_group_join::Column::Team.eq(input.id))
+                            .exec(transaction)
+                            .await
+                            .map_err(|e| {
+                                EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+
+                        let mut active_models = Vec::with_capacity(groups.len());
+
+                        for group in groups {
+                            active_models.push(team_group_join::ActiveModel {
+                                group: Set(group.id),
+                                team: Set(input.id),
+                            });
+                        }
+
+                        if !active_models.is_empty() {
+                            team_group_join::Entity::insert_many(active_models)
+                                .exec(transaction)
+                                .await
+                                .map_err(|e| {
+                                    EditTeamError::DatabaseError(format!(
+                                        "{}:{} {e}",
+                                        file!(),
+                                        line!()
+                                    ))
+                                })?;
+                        }
+                    }
+
+                    if let Some(new_name) = input.name {
+                        if team_to_edit.name != new_name.0 {
+                            let mut active_team: ActiveTeam = team_to_edit.into();
+
+                            active_team.name = Set(new_name.0);
+
+                            team_to_edit = active_team.update(transaction).await.map_err(|e| {
+                                EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+                        }
+                    }
+
+                    let final_tags = team_to_edit
+                        .find_related(TeamGroupEntity)
+                        .all(transaction)
+                        .await
+                        .map_err(|e| {
+                            EditTeamError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                        })?;
+
+                    Ok(TeamExtension {
+                        team: team_to_edit,
+                        tags: final_tags,
+                    })
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                TransactionError::Connection(db) => {
+                    EditTeamError::DatabaseError(format!("{}:{} {db}", file!(), line!()))
+                }
+                TransactionError::Transaction(t) => t,
+            })
     }
 }
