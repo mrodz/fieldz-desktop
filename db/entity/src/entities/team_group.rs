@@ -14,13 +14,30 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::target_group_join::Entity")]
+    TargetGroupJoin,
     #[sea_orm(has_many = "super::team_group_join::Entity")]
     TeamGroupJoin,
+}
+
+impl Related<super::target_group_join::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::TargetGroupJoin.def()
+    }
 }
 
 impl Related<super::team_group_join::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::TeamGroupJoin.def()
+    }
+}
+
+impl Related<super::target::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::target_group_join::Relation::Target.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::target_group_join::Relation::TeamGroup.def().rev())
     }
 }
 

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::hint::unreachable_unchecked;
 use std::num::NonZeroU8;
 use std::time::Duration;
 use std::time::Instant;
@@ -52,6 +53,14 @@ impl PlayableGroup {
 
     pub fn get_team(&mut self, id: TeamId) -> &mut TeamSlot {
         &mut self.teams[id as usize - self.index_start]
+    }
+
+    /// Index into teams by a team id without Rust's bounds checking.
+    /// ## Safety
+    /// `id` must be a valid TeamId dealt out by the library, and not an index
+    /// given at random.
+    pub unsafe fn get_team_unchecked(&mut self, id: TeamId) -> &mut TeamSlot {
+        self.teams.get_unchecked_mut(id as usize - self.index_start)
     }
 
     pub fn add_team(&mut self, id: TeamId) {
@@ -199,19 +208,45 @@ impl GameState for MCTSState {
             }
 
             for group in &self.groups {
-                for permutation in group.teams.iter().permutations(2) {
+                'outer: for permutation in group.teams.iter().permutations(2) {
                     let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
                         &permutation[..]
                     else {
-                        unreachable!()
+                        unsafe {
+                            unreachable_unchecked();
+                        }
                     };
 
-                    let overlap = |x: &Slot| {
-                        LossyAvailability::overlap_fast(&x.availability, &slot.availability)
-                    };
+                    // let overlap = |x: &Slot| {
+                    //     LossyAvailability::overlap_fast(&x.availability, &slot.availability)
+                    // };
 
-                    if t1_avail.iter().any(overlap) || t2_avail.iter().any(overlap) {
-                        continue;
+                    let mut t1_iter = t1_avail.iter();
+                    let mut t2_iter = t2_avail.iter();
+
+                    loop {
+                        match (t1_iter.next(), t2_iter.next()) {
+                            (Some(t1), Some(t2)) => {
+                                if LossyAvailability::overlap_fast(
+                                    &t1.availability,
+                                    &slot.availability,
+                                ) || LossyAvailability::overlap_fast(
+                                    &t2.availability,
+                                    &slot.availability,
+                                ) {
+                                    continue 'outer;
+                                }
+                            }
+                            (Some(t), None) | (None, Some(t)) => {
+                                if LossyAvailability::overlap_fast(
+                                    &t.availability,
+                                    &slot.availability,
+                                ) {
+                                    continue 'outer;
+                                }
+                            }
+                            (None, None) => break,
+                        }
                     }
 
                     result.push(Reservation {
@@ -236,17 +271,23 @@ impl GameState for MCTSState {
             unreachable!();
         };
 
-        let t1_vec = &mut self.groups[(game.group_id.get() - 1) as usize]
-            .get_team(game.team_one.id)
-            .1;
+        unsafe {
+            let t1_vec = &mut self
+                .groups
+                .get_unchecked_mut((game.group_id.get() - 1) as usize)
+                .get_team_unchecked(game.team_one.id)
+                .1;
 
-        t1_vec.push(mov.slot);
+            t1_vec.push(mov.slot);
 
-        let t2_vec = &mut self.groups[(game.group_id.get() - 1) as usize]
-            .get_team(game.team_two.id)
-            .1;
+            let t2_vec = &mut self
+                .groups
+                .get_unchecked_mut((game.group_id.get() - 1) as usize)
+                .get_team_unchecked(game.team_two.id)
+                .1;
 
-        t2_vec.push(mov.slot);
+            t2_vec.push(mov.slot);
+        }
 
         self.games.insert(mov.slot, mov.game);
     }

@@ -4,6 +4,8 @@ pub mod prelude;
 
 pub mod field;
 pub mod region;
+pub mod target;
+pub mod target_group_join;
 pub mod team;
 pub mod team_group;
 pub mod team_group_join;

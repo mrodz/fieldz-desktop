@@ -10,6 +10,9 @@ use entity::field::Model as Field;
 use entity::region::ActiveModel as ActiveRegion;
 use entity::region::Entity as RegionEntity;
 use entity::region::Model as Region;
+use entity::target::ActiveModel as ActiveTarget;
+use entity::target::Entity as TargetEntity;
+use entity::target::Model as Target;
 use entity::team::ActiveModel as ActiveTeam;
 use entity::team::Entity as TeamEntity;
 use entity::team::Model as Team;
@@ -327,6 +330,54 @@ pub enum EditTeamError {
     TransactionError,
     #[error("team with id {0} not found")]
     NotFound(i32),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetExtension {
+    target: Target,
+    groups: Vec<TeamGroup>,
+}
+
+impl TargetExtension {
+    pub async fn new<C>(target: Target, connection: &C) -> DBResult<Self>
+    where
+        C: ConnectionTrait,
+    {
+        let groups = TeamGroupEntity::find()
+            .join(
+                JoinType::LeftJoin,
+                team_group::Relation::TargetGroupJoin.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                target_group_join::Relation::TeamGroup.def(),
+            )
+            .filter(team::Column::Id.eq(target.id))
+            .all(connection)
+            .await?;
+
+        Ok(Self { target, groups })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetOp {
+    Insert,
+    Delete,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum TargetOpError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("group with id {0} not found")]
+    GroupNotFound(i32),
+    #[error("team with id {0} not found")]
+    TargetNotFound(i32),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("the transaction to create a team failed")]
+    TransactionError,
 }
 
 impl Client {
@@ -965,6 +1016,96 @@ impl Client {
             .map_err(|e| match e {
                 TransactionError::Connection(db) => {
                     EditTeamError::DatabaseError(format!("{}:{} {db}", file!(), line!()))
+                }
+                TransactionError::Transaction(t) => t,
+            })
+    }
+
+    pub async fn create_target(&self) -> Result<TargetExtension, TransactionError<DbErr>> {
+        self.connection
+            .transaction(|transaction| {
+                Box::pin(async move {
+                    let target = TargetEntity::insert(ActiveTarget {
+                        ..Default::default()
+                    })
+                    .exec_with_returning(transaction)
+                    .await?;
+
+                    TargetExtension::new(target, transaction).await
+                })
+            })
+            .await
+    }
+
+    pub async fn target_group_op(
+        &self,
+        target_id: i32,
+        group_id: i32,
+        op: TargetOp,
+    ) -> Result<TargetExtension, TargetOpError> {
+        self.connection
+            .transaction(|transaction| {
+                Box::pin(async move {
+                    let target = TargetEntity::find_by_id(target_id)
+                        .one(transaction)
+                        .await
+                        .map_err(|e| {
+                            TargetOpError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                        })?
+                        .ok_or(TargetOpError::TargetNotFound(target_id))?;
+
+                    let _group = TeamGroupEntity::find_by_id(group_id)
+                        .one(transaction)
+                        .await
+                        .map_err(|e| {
+                            TargetOpError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                        })?
+                        .ok_or(TargetOpError::GroupNotFound(group_id))?;
+
+                    /*
+                     * Missing: checks on existing primary key in join table
+                     * for creation, and absense in join table for deletion.
+                     *
+                     * Not a problem because we control inputs but should be
+                     * fixed if this is deployed as a docker container.
+                     */
+
+                    match op {
+                        TargetOp::Insert => {
+                            target_group_join::Entity::insert(target_group_join::ActiveModel {
+                                group: Set(group_id),
+                                target: Set(target_id),
+                            })
+                            .exec(transaction)
+                            .await
+                            .map_err(|e| {
+                                TargetOpError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+                        }
+                        TargetOp::Delete => {
+                            target_group_join::Entity::delete(target_group_join::ActiveModel {
+                                group: Set(group_id),
+                                target: Set(target_id),
+                            })
+                            .exec(transaction)
+                            .await
+                            .map_err(|e| {
+                                TargetOpError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                            })?;
+                        }
+                    }
+
+                    TargetExtension::new(target, transaction)
+                        .await
+                        .map_err(|e| {
+                            TargetOpError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                        })
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                TransactionError::Connection(db) => {
+                    TargetOpError::DatabaseError(format!("{}:{} {db}", file!(), line!()))
                 }
                 TransactionError::Transaction(t) => t,
             })
