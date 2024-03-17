@@ -126,3 +126,12 @@ export interface EditTeamInput {
 	name?: string;
 	tags?: string[];
 }
+
+export interface Target {
+	id: number;
+}
+
+export interface TargetExtension {
+	target: Target;
+	groups: TeamGroup[];
+}

@@ -78,7 +78,7 @@
 		</p>
 		<p>
 			Try to make labels as generic as possible. Once you've inputted all of your data, you can
-			create rules to have specific labels play each other.
+			create scheduling targets to have specific groups play each other.
 		</p>
 		<p>Some use cases might be:</p>
 		<ul class="list">

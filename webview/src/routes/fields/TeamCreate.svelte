@@ -140,7 +140,7 @@
 							>You have not created any labels. <a
 								class="btn underline"
 								href="/groups"
-								on:click={parent.onClose}>Create a label here</a
+								on:click={parent.onClose}>Create a group here</a
 							></span
 						>
 					{/if}

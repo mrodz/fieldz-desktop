@@ -2,7 +2,7 @@ use db::{
     CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
     CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput,
     FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, RegionValidationError,
-    TeamExtension, TimeSlotError, Validator,
+    TargetExtension, TeamExtension, TimeSlotError, Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -480,4 +480,29 @@ pub(crate) async fn update_team(
     let client = lock.database.as_ref().ok_or(EditTeamError::NoDatabase)?;
 
     client.edit_team(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_targets(app: AppHandle) -> Result<Vec<TargetExtension>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.get_targets().await.map_err(|e| e.to_string())
+}
+
+
+#[tauri::command]
+pub(crate) async fn create_target(app: AppHandle) -> Result<TargetExtension, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.create_target().await.map_err(|e| e.to_string())
 }

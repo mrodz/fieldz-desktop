@@ -12,7 +12,8 @@
 		type TeamExtension,
 		type Region,
 		eventFromTimeSlot,
-		type TeamGroup
+		type TeamGroup,
+		type TargetExtension
 	} from '$lib';
 	import {
 		getModalStore,
@@ -22,10 +23,6 @@
 		SlideToggle,
 		Table,
 		type PaginationSettings,
-		popup,
-		Autocomplete,
-		type AutocompleteOption,
-		type PopupSettings,
 		ProgressRadial
 	} from '@skeletonlabs/skeleton';
 
@@ -184,11 +181,13 @@
 
 	let teams: TeamExtension[] | undefined;
 	let groups: TeamGroup[] | undefined;
+	let targets: TargetExtension[] | undefined;
 
 	onMount(async () => {
 		try {
 			teams = await invoke<TeamExtension[]>('load_all_teams');
 			groups = await invoke<TeamGroup[]>('get_groups');
+			targets = await invoke<TargetExtension[]>('get_targets');
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error loading teams`,
@@ -211,6 +210,30 @@
 			paginationSettings.page * paginationSettings.limit,
 			paginationSettings.page * paginationSettings.limit + paginationSettings.limit
 		) ?? [];
+
+	async function createTarget() {
+		try {
+			const target = await invoke<TargetExtension>('create_target');
+			targets!.push(target);
+			targets = targets;
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error creating target`,
+				type: 'error'
+			});
+		}
+	}
+
+	async function deleteTarget(target: TargetExtension) {
+		try {
+			await invoke('delete_target', { id: target.target.id })
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error deleting target`,
+				type: 'error'
+			});
+		}
+	}
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -268,12 +291,33 @@
 	</section>
 
 	<section class="card m-4 p-4">
-		<h2 class="h3">Targets</h2>
+		<h2 class="h3 mb-4">Targets</h2>
 
-		{#if groups === undefined}
+		{#if groups === undefined || targets === undefined}
 			<ProgressRadial />
 		{:else}
-			<Target {groups} />
+			{#if targets.length === 0}
+				<div class="m-4 text-center" in:slide={{ axis: 'x', duration: 300 }}>
+					You haven't created any schedule output targets.
+				</div>
+			{/if}
+			{#each targets as target}
+				<Target groups={groups} {target} on:delete={async (e) => await deleteTarget(e.detail)} />
+			{/each}
+			<hr class="hr my-5" />
+
+			<button
+				disabled={groups.length === 0}
+				class="btn variant-filled mx-auto block"
+				on:click={createTarget}>+ New Target</button
+			>
+			{#if groups.length === 0}
+				<div class="m-4 p-4 card bg-warning-500 text-center">
+					You can't create any targets, as you have not created any groups!
+					<br />
+					<a class="btn underline" href="/groups">Create a group here</a>
+				</div>
+			{/if}
 		{/if}
 		<!-- <InputChip bind:input={inputChip} bind:value={inputChipList} name="chips" />
 

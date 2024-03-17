@@ -25,7 +25,8 @@ use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait, Set, TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
+    QueryTrait, RelationTrait, Set, TransactionError, TransactionTrait, TryIntoModel, UpdateResult,
+    Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -343,18 +344,20 @@ impl TargetExtension {
     where
         C: ConnectionTrait,
     {
-        let groups = TeamGroupEntity::find()
+        let query = TeamGroupEntity::find()
             .join(
-                JoinType::LeftJoin,
+                JoinType::RightJoin,
                 team_group::Relation::TargetGroupJoin.def(),
             )
             .join(
                 JoinType::LeftJoin,
-                target_group_join::Relation::TeamGroup.def(),
+                target_group_join::Relation::Target.def(),
             )
-            .filter(team::Column::Id.eq(target.id))
-            .all(connection)
-            .await?;
+            .filter(target::Column::Id.eq(target.id));
+
+        println!("{}", query.build(sea_orm::DatabaseBackend::Sqlite));
+
+        let groups = query.all(connection).await?;
 
         Ok(Self { target, groups })
     }
@@ -1031,6 +1034,8 @@ impl Client {
                     .exec_with_returning(transaction)
                     .await?;
 
+                    dbg!(&target);
+
                     TargetExtension::new(target, transaction).await
                 })
             })
@@ -1109,5 +1114,17 @@ impl Client {
                 }
                 TransactionError::Transaction(t) => t,
             })
+    }
+
+    pub async fn get_targets(&self) -> DBResult<Vec<TargetExtension>> {
+        let targets = TargetEntity::find().all(&self.connection).await?;
+
+        let mut result = Vec::with_capacity(targets.len());
+
+        for target in targets {
+            result.push(TargetExtension::new(target, &self.connection).await?);
+        }
+
+        Ok(result)
     }
 }

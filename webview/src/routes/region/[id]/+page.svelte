@@ -243,7 +243,7 @@
 										{/each}
 									</div>
 								{:else}
-									<i>Untagged team</i>
+									<i>No groups yet!</i>
 								{/if}
 
 								<hr class="my-4" />
