@@ -2,7 +2,7 @@ use db::{
     CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
     CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput,
     FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, RegionValidationError,
-    TeamExtension, TimeSlotError, Validator,
+    TargetExtension, TeamExtension, TimeSlotError, Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -480,4 +480,65 @@ pub(crate) async fn update_team(
     let client = lock.database.as_ref().ok_or(EditTeamError::NoDatabase)?;
 
     client.edit_team(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_targets(app: AppHandle) -> Result<Vec<TargetExtension>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.get_targets().await.map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+
+#[tauri::command]
+pub(crate) async fn create_target(app: AppHandle) -> Result<TargetExtension, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.create_target().await.map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn delete_target(app: AppHandle, id: i32) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.delete_target(id).await.map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn target_add_group(app: AppHandle, target_id: i32, group_id: i32) -> Result<TargetExtension, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.target_group_op(target_id, group_id, db::TargetOp::Insert).await.map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn target_delete_group(app: AppHandle, target_id: i32, group_id: i32) -> Result<TargetExtension, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client.target_group_op(target_id, group_id, db::TargetOp::Delete).await.map_err(|e| format!("{}:{} {e}", file!(), line!()))
 }

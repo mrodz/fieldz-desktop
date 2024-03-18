@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
+	import { blur, slide, crossfade } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import { onMount } from 'svelte';
 	import Calendar from '@event-calendar/core';
 	import TimeGrid from '@event-calendar/time-grid';
@@ -12,7 +13,8 @@
 		type TeamExtension,
 		type Region,
 		eventFromTimeSlot,
-		type TeamGroup
+		type TeamGroup,
+		type TargetExtension
 	} from '$lib';
 	import {
 		getModalStore,
@@ -22,10 +24,6 @@
 		SlideToggle,
 		Table,
 		type PaginationSettings,
-		popup,
-		Autocomplete,
-		type AutocompleteOption,
-		type PopupSettings,
 		ProgressRadial
 	} from '@skeletonlabs/skeleton';
 
@@ -184,14 +182,17 @@
 
 	let teams: TeamExtension[] | undefined;
 	let groups: TeamGroup[] | undefined;
+	let targets: TargetExtension[] | undefined;
 
 	onMount(async () => {
 		try {
 			teams = await invoke<TeamExtension[]>('load_all_teams');
 			groups = await invoke<TeamGroup[]>('get_groups');
+			targets = await invoke<TargetExtension[]>('get_targets');
+			console.info(JSON.stringify(targets));
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
-				title: `Error loading teams`,
+				title: `Error loading scheduler page`,
 				type: 'error'
 			});
 		}
@@ -211,6 +212,61 @@
 			paginationSettings.page * paginationSettings.limit,
 			paginationSettings.page * paginationSettings.limit + paginationSettings.limit
 		) ?? [];
+
+	async function createTarget() {
+		try {
+			const target = await invoke<TargetExtension>('create_target');
+			targets!.push(target);
+			targets = targets;
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error creating target`,
+				type: 'error'
+			});
+		}
+	}
+
+	async function deleteTarget(target: TargetExtension, index: number) {
+		try {
+			await invoke('delete_target', { id: target.target.id });
+			targets!.splice(index, 1);
+			targets = targets;
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error deleting target`,
+				type: 'error'
+			});
+		}
+	}
+
+	async function targetAddGroup(target: TargetExtension, group: TeamGroup) {
+		try {
+			await invoke('target_add_group', { targetId: target.target.id, groupId: group.id });
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error adding group to target`,
+				type: 'error'
+			});
+		}
+	}
+
+	async function targetDeleteGroup(target: TargetExtension, group: TeamGroup) {
+		try {
+			await invoke('target_delete_group', { targetId: target.target.id, groupId: group.id });
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error adding group to target`,
+				type: 'error'
+			});
+		}
+	}
+
+	const [send, receive] = crossfade({
+		duration: 250,
+		easing: quintOut
+	});
+
+	const key = Symbol('key for crossfade animation');
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -268,12 +324,53 @@
 	</section>
 
 	<section class="card m-4 p-4">
-		<h2 class="h3">Targets</h2>
+		<h2 class="h3 mb-4">Targets</h2>
 
-		{#if groups === undefined}
+		{#if groups === undefined || targets === undefined}
 			<ProgressRadial />
 		{:else}
-			<Target {groups} />
+			{#if targets.length === 0}
+				<div class="m-4 text-center" in:send={{ key }} out:receive={{ key }}>
+					<p>You haven't created any schedule output targets.</p>
+					<p class="mt-4">
+						Create a target derived from a combination of the {groups.length}
+						group{groups.length > 1 ? 's' : ''} you've created,
+					</p>
+				</div>
+			{:else}
+				<div
+					class="grid grid-cols-1 gap-8 p-8 lg:grid-cols-2 2xl:grid-cols-3"
+					in:send={{ key }}
+					out:receive={{ key }}
+				>
+					{#each targets as target, i}
+						<Target
+							{groups}
+							{target}
+							popupId={i}
+							on:delete={async (e) => await deleteTarget(e.detail, i)}
+							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
+							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
+						/>
+					{/each}
+				</div>
+			{/if}
+
+			<hr class="hr my-5" />
+
+			<button
+				disabled={groups.length === 0}
+				class="variant-filled btn mx-auto block"
+				on:click={createTarget}>+ New Target</button
+			>
+
+			{#if groups.length === 0}
+				<div class="card m-4 bg-warning-500 p-4 text-center">
+					You can't create any targets, as you have not created any groups!
+					<br />
+					<a class="btn underline" href="/groups">Create a group here</a>
+				</div>
+			{/if}
 		{/if}
 		<!-- <InputChip bind:input={inputChip} bind:value={inputChipList} name="chips" />
 

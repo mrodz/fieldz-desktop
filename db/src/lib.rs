@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -24,8 +24,9 @@ use entity::time_slot::Entity as TimeSlotEntity;
 use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait, Set, TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, JoinType,
+    QueryFilter, QuerySelect, RelationTrait, Set, TransactionError, TransactionTrait, TryIntoModel,
+    UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -345,18 +346,67 @@ impl TargetExtension {
     {
         let groups = TeamGroupEntity::find()
             .join(
-                JoinType::LeftJoin,
+                JoinType::RightJoin,
                 team_group::Relation::TargetGroupJoin.def(),
             )
             .join(
                 JoinType::LeftJoin,
-                target_group_join::Relation::TeamGroup.def(),
+                target_group_join::Relation::Target.def(),
             )
-            .filter(team::Column::Id.eq(target.id))
+            .filter(target::Column::Id.eq(target.id))
             .all(connection)
             .await?;
 
         Ok(Self { target, groups })
+    }
+
+    pub async fn many_new<C>(targets: impl AsRef<[Target]>, connection: &C) -> DBResult<Vec<Self>>
+    where
+        C: ConnectionTrait,
+    {
+        let id_vec = targets.as_ref().iter().map(|x| x.id).collect::<Vec<_>>();
+        let mut result = HashMap::<i32, Vec<TeamGroup>>::with_capacity(id_vec.len());
+
+        #[derive(FromQueryResult)]
+        struct TeamGroupAndTargetId {
+            id: i32,
+            name: String,
+            usages: i32,
+            target_id: i32,
+        }
+
+        let groups: Vec<TeamGroupAndTargetId> = TeamGroupEntity::find()
+            .column_as(target::Column::Id, "target_id")
+            .join(
+                JoinType::RightJoin,
+                team_group::Relation::TargetGroupJoin.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                target_group_join::Relation::Target.def(),
+            )
+            .filter(target::Column::Id.is_in(id_vec))
+            .into_model::<TeamGroupAndTargetId>()
+            .all(connection)
+            .await?;
+
+        for group in groups {
+            let groups = result.entry(group.target_id).or_default();
+            groups.push(TeamGroup {
+                id: group.id,
+                name: group.name,
+                usages: group.usages,
+            });
+        }
+
+        Ok(targets
+            .as_ref()
+            .iter()
+            .map(|target| Self {
+                target: target.clone(),
+                groups: result.remove(&target.id).unwrap_or_default(),
+            })
+            .collect())
     }
 }
 
@@ -1109,5 +1159,17 @@ impl Client {
                 }
                 TransactionError::Transaction(t) => t,
             })
+    }
+
+    pub async fn get_targets(&self) -> DBResult<Vec<TargetExtension>> {
+        let targets = TargetEntity::find().all(&self.connection).await?;
+        TargetExtension::many_new(targets, &self.connection).await
+    }
+
+    pub async fn delete_target(&self, id: i32) -> DBResult<()> {
+        TargetEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map(|_| ())
     }
 }

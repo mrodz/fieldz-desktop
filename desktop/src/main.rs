@@ -86,6 +86,11 @@ fn main() -> Result<()> {
             load_all_teams,
             update_region,
             update_team,
+            get_targets,
+            create_target,
+            delete_target,
+            target_add_group,
+            target_delete_group,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")
