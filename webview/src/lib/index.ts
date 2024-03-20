@@ -135,3 +135,17 @@ export interface TargetExtension {
 	target: Target;
 	groups: TeamGroup[];
 }
+
+export interface DuplicateEntry {
+	team_groups: TeamGroup[];
+	used_by: TargetExtension[];
+	teams_with_group_set: number;
+}
+
+export interface PreScheduleReport {
+	target_duplicates: DuplicateEntry[];
+	target_has_duplicates: number[];
+	target_required_matches: [TargetExtension, number][];
+	total_matches_required: number;
+	total_matches_supplied: number;
+}

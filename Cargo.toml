@@ -2,3 +2,6 @@
 
 members = ["cli", "backend", "desktop", "db", "db/migration", "db/entity"]
 resolver = "2"
+
+[profile.dev.package.backend]
+opt-level = 3

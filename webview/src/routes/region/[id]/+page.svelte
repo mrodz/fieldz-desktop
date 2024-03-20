@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { dialog, invoke } from '@tauri-apps/api';
-	import { ProgressRadial, CodeBlock, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
+	import { ProgressRadial, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 
 	export let data;
 

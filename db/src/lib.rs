@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -25,8 +25,8 @@ use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, JoinType,
-    QueryFilter, QuerySelect, RelationTrait, Set, TransactionError, TransactionTrait, TryIntoModel,
-    UpdateResult, Value,
+    PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Set, TransactionError,
+    TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -188,7 +188,6 @@ impl CreateTeamInput {
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
-
 pub enum CreateGroupError {
     #[error("database was not initialized")]
     NoDatabase,
@@ -333,7 +332,7 @@ pub enum EditTeamError {
     NotFound(i32),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TargetExtension {
     target: Target,
     groups: Vec<TeamGroup>,
@@ -430,6 +429,145 @@ pub enum TargetOpError {
     TransactionError,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DuplicateEntry {
+    team_groups: Vec<TeamGroup>,
+    used_by: Vec<TargetExtension>,
+    teams_with_group_set: u64,
+}
+
+impl DuplicateEntry {
+    pub fn has_duplicates(&self) -> bool {
+        self.used_by.len() > 1
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreScheduleReport {
+    target_duplicates: Vec<DuplicateEntry>,
+    target_has_duplicates: Vec<usize>,
+    target_required_matches: Vec<(TargetExtension, u64)>,
+    total_matches_required: u64,
+    total_matches_supplied: u64,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum PreScheduleReportError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+}
+
+fn ncr(n: u64, r: u64) -> u64 {
+    fn factorial(num: u64) -> u64 {
+        let mut f = 1;
+
+        for i in 1..=num {
+            f *= i;
+        }
+
+        f
+    }
+
+    if r > n {
+        0
+    } else {
+        factorial(n) / (factorial(r) * factorial(n - r))
+    }
+}
+
+impl PreScheduleReport {
+    pub fn new(target_duplicates: Vec<DuplicateEntry>, total_matches_supplied: u64) -> Self {
+        let target_has_duplicates = target_duplicates
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| if d.has_duplicates() { Some(i) } else { None })
+            .collect();
+
+        let mut target_required_matches: BTreeMap<TargetExtension, u64> = BTreeMap::new();
+
+        let mut total_matches_required = 0;
+
+        for entry in &target_duplicates {
+            let choices = ncr(entry.teams_with_group_set, 2);
+            total_matches_required += choices;
+            for target in &entry.used_by {
+                let sum = target_required_matches.entry(target.clone()).or_default();
+                *sum += choices;
+            }
+        }
+
+        Self {
+            target_duplicates,
+            target_has_duplicates,
+            target_required_matches: target_required_matches
+                .into_iter()
+                .collect(),
+            total_matches_required,
+            total_matches_supplied,
+        }
+    }
+
+    pub async fn create<C>(connection: &C) -> Result<Self, PreScheduleReportError>
+    where
+        C: ConnectionTrait,
+    {
+        let all_targets = TargetEntity::find().all(connection).await.map_err(|e| {
+            PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+        })?;
+
+        let all_targets_extended = TargetExtension::many_new(&all_targets, connection)
+            .await
+            .map_err(|e| {
+                PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+            })?;
+
+        let mut collision_map: BTreeMap<BTreeSet<&TeamGroup>, Vec<&TargetExtension>> =
+            BTreeMap::new();
+
+        for target in &all_targets_extended {
+            let set_of_groups = BTreeSet::from_iter(&target.groups);
+            let entry = collision_map.entry(set_of_groups).or_default();
+            entry.push(target);
+        }
+
+        let mut target_duplicates = Vec::with_capacity(collision_map.len());
+
+        for (groups, targets) in collision_map {
+            let query = TeamEntity::find()
+                .join(JoinType::LeftJoin, team::Relation::TeamGroupJoin.def())
+                .join(
+                    JoinType::LeftJoin,
+                    team_group_join::Relation::TeamGroup.def(),
+                )
+                .filter(team_group::Column::Id.is_in(groups.iter().map(|g| g.id)));
+
+            println!("{}", query.build(sea_orm::DatabaseBackend::Sqlite));
+
+            let teams_with_group_set: u64 = query.count(connection).await.map_err(|e| {
+                PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+            })?;
+
+            target_duplicates.push(DuplicateEntry {
+                team_groups: groups.into_iter().cloned().collect(),
+                used_by: targets.into_iter().cloned().collect(),
+                teams_with_group_set,
+            })
+        }
+
+        let total_matches_supplied =
+            TimeSlotEntity::find()
+                .count(connection)
+                .await
+                .map_err(|e| {
+                    PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                })?;
+
+        Ok(Self::new(target_duplicates, total_matches_supplied))
+    }
+}
+
 impl Client {
     pub async fn new(config: &Config) -> Result<Self> {
         let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
@@ -441,7 +579,6 @@ impl Client {
         let result = Client { connection: db };
 
         result.up().await?;
-        // result.refresh().await?;
 
         Ok(result)
     }
@@ -1171,5 +1308,11 @@ impl Client {
             .exec(&self.connection)
             .await
             .map(|_| ())
+    }
+
+    pub async fn generate_pre_schedule_report(
+        &self,
+    ) -> Result<PreScheduleReport, PreScheduleReportError> {
+        PreScheduleReport::create(&self.connection).await
     }
 }
