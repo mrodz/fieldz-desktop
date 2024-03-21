@@ -14,6 +14,7 @@
 	export let target: TargetExtension;
 	export let groups: TeamGroup[];
 	export let popupId: any;
+	export let ok: boolean;
 
 	const dispatch = createEventDispatcher();
 
@@ -65,7 +66,7 @@
 			Remove
 		</button>
 	</div>
-	<div class="flex flex-col border-l-4 border-green-400 pl-4 pt-4">
+	<div class="flex flex-col border-l-4 {ok ? 'border-green-400' : 'border-red-400'} pl-4 pt-4">
 		A unique schedule will be created for all teams with these groups:
 		{#if inputChipList.length === 0}
 			<!-- &#129431; -->

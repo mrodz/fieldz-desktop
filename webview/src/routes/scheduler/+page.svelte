@@ -14,16 +14,19 @@
 		type Region,
 		eventFromTimeSlot,
 		type TeamGroup,
-		type TargetExtension
+		type TargetExtension,
+		type PreScheduleReport
 	} from '$lib';
 	import {
 		getModalStore,
 		Accordion,
 		AccordionItem,
+		ProgressBar,
 		Paginator,
 		SlideToggle,
 		Table,
 		type PaginationSettings,
+		type TableSource,
 		ProgressRadial
 	} from '@skeletonlabs/skeleton';
 
@@ -189,7 +192,7 @@
 			teams = await invoke<TeamExtension[]>('load_all_teams');
 			groups = await invoke<TeamGroup[]>('get_groups');
 			targets = await invoke<TargetExtension[]>('get_targets');
-			console.info(JSON.stringify(targets));
+			await generateReport();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error loading scheduler page`,
@@ -213,11 +216,36 @@
 			paginationSettings.page * paginationSettings.limit + paginationSettings.limit
 		) ?? [];
 
+	let reportTimer: NodeJS.Timeout | undefined;
+	let report: PreScheduleReport | undefined;
+	let willSendReport = false;
+
+	async function generateReport() {
+		try {
+			report = await invoke<PreScheduleReport>('generate_pre_schedule_report');
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: `Error generating pre-schedule report`,
+				type: 'error'
+			});
+		}
+	}
+
+	function updateTargets() {
+		clearTimeout(reportTimer);
+		willSendReport = true;
+		reportTimer = setTimeout(async () => {
+			await generateReport();
+			willSendReport = false;
+		}, 1_000);
+	}
+
 	async function createTarget() {
 		try {
 			const target = await invoke<TargetExtension>('create_target');
 			targets!.push(target);
 			targets = targets;
+			updateTargets();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error creating target`,
@@ -231,6 +259,7 @@
 			await invoke('delete_target', { id: target.target.id });
 			targets!.splice(index, 1);
 			targets = targets;
+			updateTargets();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error deleting target`,
@@ -242,6 +271,7 @@
 	async function targetAddGroup(target: TargetExtension, group: TeamGroup) {
 		try {
 			await invoke('target_add_group', { targetId: target.target.id, groupId: group.id });
+			updateTargets();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error adding group to target`,
@@ -253,6 +283,7 @@
 	async function targetDeleteGroup(target: TargetExtension, group: TeamGroup) {
 		try {
 			await invoke('target_delete_group', { targetId: target.target.id, groupId: group.id });
+			updateTargets();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error adding group to target`,
@@ -267,6 +298,30 @@
 	});
 
 	const key = Symbol('key for crossfade animation');
+
+	function percentFillage(totalMatchesRequired: number, totalMatchesSupplied: number): number {
+		if (totalMatchesRequired === 0) {
+			totalMatchesSupplied = 1;
+		} else {
+			totalMatchesSupplied /= totalMatchesRequired;
+		}
+
+		return Math.round(totalMatchesSupplied * 100);
+	}
+
+	$: reportTableSource = {
+		head: ['ID', 'Groups', 'Matches Required'],
+		body:
+			report?.target_required_matches.map(([target, matches]) => [
+				`${target.target.id}${target.groups.length === 0 ? ' ⚠️' : ''}`,
+				target.groups.length > 0
+					? target.groups
+							.map((g) => `<span class="chip variant-filled-success">${g.name}</span>`)
+							.join(' ')
+					: '<strong>Will Not Schedule</strong>',
+				String(matches)
+			]) ?? []
+	} satisfies TableSource;
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -324,7 +379,14 @@
 	</section>
 
 	<section class="card m-4 p-4">
-		<h2 class="h3 mb-4">Targets</h2>
+		<h2 class="h3 mb-4">
+			Targets
+			{#if report?.target_has_duplicates.length ?? 0 > 0}
+				({report?.target_has_duplicates.length} error{report?.target_has_duplicates.length === 1
+					? ''
+					: 's'})
+			{/if}
+		</h2>
 
 		{#if groups === undefined || targets === undefined}
 			<ProgressRadial />
@@ -348,6 +410,9 @@
 							{groups}
 							{target}
 							popupId={i}
+							ok={report !== undefined
+								? !report.target_has_duplicates.includes(target.target.id)
+								: false}
 							on:delete={async (e) => await deleteTarget(e.detail, i)}
 							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
 							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
@@ -372,15 +437,63 @@
 				</div>
 			{/if}
 		{/if}
-		<!-- <InputChip bind:input={inputChip} bind:value={inputChipList} name="chips" />
+	</section>
 
-		<div class="card max-h-48 w-full max-w-sm overflow-y-auto p-4" tabindex="-1">
-			<Autocomplete
-				bind:input={inputChip}
-				options={flavorOptions}
-				denylist={inputChipList}
-				on:selection={onFlavorSelection}
-			/>
-		</div> -->
+	<section class="m-4">
+		<h2 class="h2 mb-4">Reporting</h2>
+
+		{#if willSendReport}
+			<ProgressBar class="my-auto" />
+		{:else if report !== undefined}
+			{#if report.target_has_duplicates.length !== 0}
+				<div class="card m-4 bg-error-400 p-4 text-center">
+					<strong>Cannot use targets because of duplicates</strong>
+					<ul class="list">
+						{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
+							<li>
+								<span>Duplicates on targets</span>
+
+								{#each dup.used_by as badTarget}
+									<span class="variant-filled-error chip">{badTarget.target.id}</span>
+								{/each}
+
+								<span>which used labels</span>
+
+								{#each dup.team_groups as group}
+									<span class="variant-filled chip">{group.name}</span>
+								{/each}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			<div class="grid grid-cols-[auto_1fr] gap-16">
+				<div>
+					<h3 class="h4">Matches Supplied / Required</h3>
+					<ProgressRadial
+						class="mx-auto my-4"
+						strokeLinecap="round"
+						meter={report.total_matches_required <= report.total_matches_supplied
+							? 'stroke-success-500'
+							: 'stroke-warning-500'}
+						track={report.total_matches_required <= report.total_matches_supplied
+							? 'stroke-success-500/30'
+							: 'stroke-warning-500/30'}
+						value={percentFillage(report.total_matches_required, report.total_matches_supplied)}
+					>
+						{report.total_matches_supplied}/{report.total_matches_required}
+					</ProgressRadial>
+				</div>
+
+				<div>
+					<h3 class="h4">Per target</h3>
+
+					<Table class="my-4" source={reportTableSource} />
+				</div>
+			</div>
+		{:else}
+			test {report}
+		{/if}
 	</section>
 </main>

@@ -91,6 +91,7 @@ fn main() -> Result<()> {
             delete_target,
             target_add_group,
             target_delete_group,
+            generate_pre_schedule_report,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")
