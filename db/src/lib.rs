@@ -25,7 +25,7 @@ use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, JoinType,
-    PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Set, TransactionError,
+    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Set, TransactionError,
     TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
@@ -481,8 +481,9 @@ impl PreScheduleReport {
     pub fn new(target_duplicates: Vec<DuplicateEntry>, total_matches_supplied: u64) -> Self {
         let target_has_duplicates = target_duplicates
             .iter()
-            .enumerate()
-            .filter_map(|(i, d)| if d.has_duplicates() { Some(i) } else { None })
+            .filter(|d| d.has_duplicates())
+            .flat_map(|d| &d.used_by)
+            .map(|target| target.target.id.try_into().unwrap())
             .collect();
 
         let mut target_required_matches: BTreeMap<TargetExtension, u64> = BTreeMap::new();
@@ -501,9 +502,7 @@ impl PreScheduleReport {
         Self {
             target_duplicates,
             target_has_duplicates,
-            target_required_matches: target_required_matches
-                .into_iter()
-                .collect(),
+            target_required_matches: target_required_matches.into_iter().collect(),
             total_matches_required,
             total_matches_supplied,
         }
@@ -541,11 +540,17 @@ impl PreScheduleReport {
                     JoinType::LeftJoin,
                     team_group_join::Relation::TeamGroup.def(),
                 )
-                .filter(team_group::Column::Id.is_in(groups.iter().map(|g| g.id)));
+                .group_by(team::Column::Id)
+                .having(
+                    Expr::cust_with_expr(
+                        "SUM(CASE WHEN $1 THEN 1 END)",
+                        team_group::Column::Id.is_in(groups.iter().map(|g| g.id)),
+                    )
+                    .eq(team_group::Column::Id.count())
+                    .and(team_group::Column::Id.count().eq(groups.len() as i32)),
+                );
 
-            println!("{}", query.build(sea_orm::DatabaseBackend::Sqlite));
-
-            let teams_with_group_set: u64 = query.count(connection).await.map_err(|e| {
+            let teams_with_group_set = query.count(connection).await.map_err(|e| {
                 PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
             })?;
 

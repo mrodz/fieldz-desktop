@@ -576,5 +576,5 @@ pub(crate) async fn generate_pre_schedule_report(
         .database
         .as_ref()
         .ok_or(PreScheduleReportError::NoDatabase)?;
-    dbg!(client.generate_pre_schedule_report().await)
+    client.generate_pre_schedule_report().await
 }

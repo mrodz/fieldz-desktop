@@ -310,10 +310,15 @@
 	}
 
 	$: reportTableSource = {
-		head: ['ID', 'Matches Required'],
+		head: ['ID', 'Groups', 'Matches Required'],
 		body:
 			report?.target_required_matches.map(([target, matches]) => [
-				String(target.target.id),
+				`${target.target.id}${target.groups.length === 0 ? ' ⚠️' : ''}`,
+				target.groups.length > 0
+					? target.groups
+							.map((g) => `<span class="chip variant-filled-success">${g.name}</span>`)
+							.join(' ')
+					: '<strong>Will Not Schedule</strong>',
 				String(matches)
 			]) ?? []
 	} satisfies TableSource;
@@ -374,7 +379,14 @@
 	</section>
 
 	<section class="card m-4 p-4">
-		<h2 class="h3 mb-4">Targets</h2>
+		<h2 class="h3 mb-4">
+			Targets
+			{#if report?.target_has_duplicates.length ?? 0 > 0}
+				({report?.target_has_duplicates.length} error{report?.target_has_duplicates.length === 1
+					? ''
+					: 's'})
+			{/if}
+		</h2>
 
 		{#if groups === undefined || targets === undefined}
 			<ProgressRadial />
@@ -398,6 +410,9 @@
 							{groups}
 							{target}
 							popupId={i}
+							ok={report !== undefined
+								? !report.target_has_duplicates.includes(target.target.id)
+								: false}
 							on:delete={async (e) => await deleteTarget(e.detail, i)}
 							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
 							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
@@ -430,6 +445,29 @@
 		{#if willSendReport}
 			<ProgressBar class="my-auto" />
 		{:else if report !== undefined}
+			{#if report.target_has_duplicates.length !== 0}
+				<div class="card m-4 bg-error-400 p-4 text-center">
+					<strong>Cannot use targets because of duplicates</strong>
+					<ul class="list">
+						{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
+							<li>
+								<span>Duplicates on targets</span>
+
+								{#each dup.used_by as badTarget}
+									<span class="variant-filled-error chip">{badTarget.target.id}</span>
+								{/each}
+
+								<span>which used labels</span>
+
+								{#each dup.team_groups as group}
+									<span class="variant-filled chip">{group.name}</span>
+								{/each}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
 			<div class="grid grid-cols-[auto_1fr] gap-16">
 				<div>
 					<h3 class="h4">Matches Supplied / Required</h3>
