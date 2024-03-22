@@ -327,6 +327,40 @@
 				String(matches)
 			]) ?? []
 	} satisfies TableSource;
+
+	function reportHasErrors(report: PreScheduleReport): boolean {
+		return (
+			report.target_has_duplicates.length !== 0 ||
+			report.target_duplicates.find((d) => d.teams_with_group_set === 0) !== undefined ||
+			report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined
+		);
+	}
+
+	function isTargetOk(report: PreScheduleReport, target: TargetExtension): boolean {
+		const isDuplicate = report.target_has_duplicates.includes(target.target.id);
+
+		if (isDuplicate) {
+			return false;
+		}
+
+		const isImpossiblePermutation =
+			report.target_duplicates.find(
+				(d) => d.used_by.find((t2) => t2.target.id === target.target.id)!
+			)!.teams_with_group_set === 0;
+
+		if (isImpossiblePermutation) {
+			return false;
+		}
+
+		const notEnoughToPlay =
+			report.target_required_matches.find(([t2]) => t2.target.id === target.target.id)![1] === 0;
+
+		if (notEnoughToPlay) {
+			return false;
+		}
+
+		return true;
+	}
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -416,9 +450,7 @@
 							{groups}
 							{target}
 							popupId={i}
-							ok={report !== undefined
-								? !report.target_has_duplicates.includes(target.target.id)
-								: false}
+							ok={report !== undefined ? isTargetOk(report, target) : false}
 							on:delete={async (e) => await deleteTarget(e.detail, i)}
 							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
 							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
@@ -436,7 +468,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -451,28 +483,88 @@
 		{#if willSendReport}
 			<ProgressBar class="my-auto" />
 		{:else if report !== undefined}
-			{#if report.target_has_duplicates.length !== 0}
-				<div class="card m-4 bg-error-400 p-4 text-center">
-					<strong>Cannot use targets because of duplicates</strong>
-					<ul class="list">
-						{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
-							<li>
-								<span>Duplicates on targets</span>
+			{#if reportHasErrors(report)}
+				<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">
+					{#if report.target_has_duplicates.length !== 0}
+						<div>
+							<strong>Cannot use targets because of duplicates</strong>
+							<ul class="list">
+								{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
+									<li>
+										<span>Duplicates on targets</span>
 
-								{#each dup.used_by as badTarget}
-									<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-										>{badTarget.target.id}</a
-									>
+										{#each dup.used_by as badTarget}
+											<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
+												>{badTarget.target.id}</a
+											>
+										{/each}
+
+										<span>which use labels</span>
+
+										{#each dup.team_groups as group}
+											<span class="variant-filled chip">{group.name}</span>
+										{/each}
+									</li>
 								{/each}
+							</ul>
+						</div>
+					{/if}
+					{#if report.target_duplicates.find((d) => d.teams_with_group_set === 0) !== undefined}
+						<div>
+							<strong>Cannot use targets because no team has the following sets of labels</strong>
+							<ul class="list">
+								{#each report.target_duplicates.filter((d) => d.teams_with_group_set === 0) as empty}
+									<li>
+										<span>Target(s)</span>
 
-								<span>which used labels</span>
+										{#each empty.used_by as badTarget}
+											<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
+												>{badTarget.target.id}</a
+											>
+										{/each}
 
-								{#each dup.team_groups as group}
-									<span class="variant-filled chip">{group.name}</span>
+										{#if empty.team_groups.length === 0}
+											<span>reference(s) impossible team which uses no labels</span>
+										{:else}
+											<span>reference(s) impossible team which uses labels</span>
+
+											{#each empty.team_groups as group}
+												<span class="variant-filled chip">{group.name}</span>
+											{/each}
+										{/if}
+									</li>
 								{/each}
-							</li>
-						{/each}
-					</ul>
+							</ul>
+						</div>
+					{/if}
+					{#if report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined}
+						<div>
+							<strong>Cannot use targets because no games will be outputted</strong>
+							<ul class="list">
+								{#each report.target_required_matches.filter(([_, occ]) => occ === 0) as [badTarget]}
+									<li>
+										<span>Target</span>
+
+										<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
+											>{badTarget.target.id}</a
+										>
+
+										{#if badTarget.groups.length === 0}
+											<span>is empty and will not create any games</span>
+										{:else}
+											<span>which use labels</span>
+
+											{#each badTarget.groups as group}
+												<span class="variant-filled chip">{group.name}</span>
+											{/each}
+
+											<span>will not create any games</span>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
 				</div>
 			{/if}
 
