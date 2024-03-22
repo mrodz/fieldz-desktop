@@ -149,3 +149,7 @@ export interface PreScheduleReport {
 	total_matches_required: number;
 	total_matches_supplied: number;
 }
+
+export interface PreScheduleReportInput {
+	matches_to_play: number;
+}

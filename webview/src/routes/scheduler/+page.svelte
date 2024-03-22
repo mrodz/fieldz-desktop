@@ -15,7 +15,8 @@
 		eventFromTimeSlot,
 		type TeamGroup,
 		type TargetExtension,
-		type PreScheduleReport
+		type PreScheduleReport,
+		type PreScheduleReportInput
 	} from '$lib';
 	import {
 		getModalStore,
@@ -27,7 +28,8 @@
 		Table,
 		type PaginationSettings,
 		type TableSource,
-		ProgressRadial
+		ProgressRadial,
+		RangeSlider
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
@@ -222,7 +224,11 @@
 
 	async function generateReport() {
 		try {
-			report = await invoke<PreScheduleReport>('generate_pre_schedule_report');
+			const input = {
+				matches_to_play: gamesToPlay
+			} satisfies PreScheduleReportInput;
+
+			report = await invoke<PreScheduleReport>('generate_pre_schedule_report', { input });
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error generating pre-schedule report`,
@@ -361,6 +367,8 @@
 
 		return true;
 	}
+
+	let gamesToPlay = 2;
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -478,10 +486,48 @@
 	</section>
 
 	<section class="m-4">
+		<h2 class="h2 mb-4">Matches to Play</h2>
+		<RangeSlider
+			name="range-slider"
+			on:change={() => updateTargets()}
+			bind:value={gamesToPlay}
+			min={1}
+			max={7}
+			step={1}
+			ticked
+		>
+			<div class="flex items-center justify-between">
+				<div>
+					Every team will play each other {gamesToPlay} time{gamesToPlay === 1 ? '' : 's'}
+				</div>
+			</div>
+		</RangeSlider>
+	</section>
+
+	<section class="m-4">
 		<h2 class="h2 mb-4">Reporting</h2>
 
 		{#if willSendReport}
-			<ProgressBar class="my-auto" />
+			<section class="card w-full grid grid-cols-[auto_1fr] gap-16">
+				<div class="placeholder-circle mt-4 ml-4 w-32 animate-pulse" />
+
+				<div class="space-y-4 p-4">
+					<div class="placeholder" />
+					<div class="grid grid-cols-3 gap-8">
+						<div class="placeholder" />
+						<div class="placeholder" />
+						<div class="placeholder" />
+					</div>
+					<div class="grid grid-cols-4 gap-4">
+						<div class="placeholder" />
+						<div class="placeholder" />
+						<div class="placeholder" />
+						<div class="placeholder" />
+					</div>
+					<div class="placeholder" />
+				</div>
+			</section>
+			<!-- <ProgressBar class="my-auto" /> -->
 		{:else if report !== undefined}
 			{#if reportHasErrors(report)}
 				<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">

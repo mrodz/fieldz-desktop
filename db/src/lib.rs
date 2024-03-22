@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::num::NonZeroU8;
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -477,8 +478,14 @@ fn ncr(n: u64, r: u64) -> u64 {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreScheduleReportInput {
+    matches_to_play: NonZeroU8,
+    total_matches_supplied: Option<u64>,
+}
+
 impl PreScheduleReport {
-    pub fn new(target_duplicates: Vec<DuplicateEntry>, total_matches_supplied: u64) -> Self {
+    pub fn new(target_duplicates: Vec<DuplicateEntry>, input: PreScheduleReportInput) -> Self {
         let target_has_duplicates = target_duplicates
             .iter()
             .filter(|d| d.has_duplicates())
@@ -499,16 +506,23 @@ impl PreScheduleReport {
             }
         }
 
+        for m in &mut target_required_matches {
+            *m.1 *= input.matches_to_play.get() as u64;
+        }
+
         Self {
             target_duplicates,
             target_has_duplicates,
             target_required_matches: target_required_matches.into_iter().collect(),
-            total_matches_required,
-            total_matches_supplied,
+            total_matches_required: total_matches_required * input.matches_to_play.get() as u64,
+            total_matches_supplied: input.total_matches_supplied.unwrap(),
         }
     }
 
-    pub async fn create<C>(connection: &C) -> Result<Self, PreScheduleReportError>
+    pub async fn create<C>(
+        connection: &C,
+        mut input: PreScheduleReportInput,
+    ) -> Result<Self, PreScheduleReportError>
     where
         C: ConnectionTrait,
     {
@@ -560,15 +574,22 @@ impl PreScheduleReport {
             })
         }
 
-        let total_matches_supplied =
-            TimeSlotEntity::find()
-                .count(connection)
-                .await
-                .map_err(|e| {
-                    PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
-                })?;
+        if input.total_matches_supplied.is_none() {
+            input.total_matches_supplied = Some(
+                TimeSlotEntity::find()
+                    .count(connection)
+                    .await
+                    .map_err(|e| {
+                        PreScheduleReportError::DatabaseError(format!(
+                            "{}:{} {e}",
+                            file!(),
+                            line!()
+                        ))
+                    })?,
+            );
+        };
 
-        Ok(Self::new(target_duplicates, total_matches_supplied))
+        Ok(Self::new(target_duplicates, input))
     }
 }
 
@@ -1316,7 +1337,8 @@ impl Client {
 
     pub async fn generate_pre_schedule_report(
         &self,
+        input: PreScheduleReportInput,
     ) -> Result<PreScheduleReport, PreScheduleReportError> {
-        PreScheduleReport::create(&self.connection).await
+        PreScheduleReport::create(&self.connection, input).await
     }
 }

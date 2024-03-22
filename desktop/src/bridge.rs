@@ -1,9 +1,5 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput,
-    CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput,
-    FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport,
-    PreScheduleReportError, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError,
-    Validator,
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError, PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError, Validator
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -569,6 +565,7 @@ pub(crate) async fn target_delete_group(
 #[tauri::command]
 pub(crate) async fn generate_pre_schedule_report(
     app: AppHandle,
+    input: PreScheduleReportInput,
 ) -> Result<PreScheduleReport, PreScheduleReportError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
@@ -577,5 +574,5 @@ pub(crate) async fn generate_pre_schedule_report(
         .as_ref()
         .ok_or(PreScheduleReportError::NoDatabase)?;
 
-    client.generate_pre_schedule_report().await
+    client.generate_pre_schedule_report(input).await
 }
