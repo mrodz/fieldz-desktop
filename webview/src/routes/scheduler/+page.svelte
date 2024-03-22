@@ -310,7 +310,7 @@
 	}
 
 	$: reportTableSource = {
-		head: ['ID', 'Groups', 'Matches Required'],
+		head: ['ID', 'Groups', '# of Teams', 'Matches Required'],
 		body:
 			report?.target_required_matches.map(([target, matches]) => [
 				`${target.target.id}${target.groups.length === 0 ? ' ⚠️' : ''}`,
@@ -319,6 +319,11 @@
 							.map((g) => `<span class="chip variant-filled-success">${g.name}</span>`)
 							.join(' ')
 					: '<strong>Will Not Schedule</strong>',
+				String(
+					report?.target_duplicates.find((d) =>
+						d.used_by.map((u) => u.target.id).includes(target.target.id)
+					)!.teams_with_group_set ?? 0
+				) + (matches === 0 ? ' (<i>not enough teams</i>)' : ''),
 				String(matches)
 			]) ?? []
 	} satisfies TableSource;
@@ -407,6 +412,7 @@
 				>
 					{#each targets as target, i}
 						<Target
+							id="target-{target.target.id}"
 							{groups}
 							{target}
 							popupId={i}
@@ -454,7 +460,9 @@
 								<span>Duplicates on targets</span>
 
 								{#each dup.used_by as badTarget}
-									<span class="variant-filled-error chip">{badTarget.target.id}</span>
+									<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
+										>{badTarget.target.id}</a
+									>
 								{/each}
 
 								<span>which used labels</span>

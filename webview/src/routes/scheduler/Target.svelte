@@ -56,7 +56,11 @@
 	}
 </script>
 
-<div out:blur={{ opacity: 0.5, duration: 100 }} class="grid grid-cols-[auto_1fr] gap-4">
+<div
+	out:blur={{ opacity: 0.5, duration: 100 }}
+	class="grid grid-cols-[auto_1fr] gap-4"
+	{...$$restProps}
+>
 	<div class="pt-2">
 		<strong class="ml-auto inline-block text-center" in:blur={{ opacity: 0.5 }}
 			>ID. {target.target.id}</strong

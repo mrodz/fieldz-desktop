@@ -38,7 +38,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
 
-pub type DBResult<T> = anyhow::Result<T, DbErr>;
+pub type DBResult<T> = Result<T, DbErr>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -540,14 +540,13 @@ impl PreScheduleReport {
                     JoinType::LeftJoin,
                     team_group_join::Relation::TeamGroup.def(),
                 )
+                .filter(team_group::Column::Id.is_in(groups.iter().map(|g| g.id)))
                 .group_by(team::Column::Id)
                 .having(
-                    Expr::cust_with_expr(
-                        "SUM(CASE WHEN $1 THEN 1 END)",
-                        team_group::Column::Id.is_in(groups.iter().map(|g| g.id)),
-                    )
-                    .eq(team_group::Column::Id.count())
-                    .and(team_group::Column::Id.count().eq(groups.len() as i32)),
+                    team_group::Column::Id
+                        .into_expr()
+                        .count_distinct()
+                        .eq(groups.len() as i32),
                 );
 
             let teams_with_group_set = query.count(connection).await.map_err(|e| {
