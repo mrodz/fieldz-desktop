@@ -1,0 +1,14 @@
+# To compile for MacOS, either use WSL2 and the osxcross toolchain
+# or build in a VM.
+#
+# https://jamwaffles.github.io/rust/2019/02/17/rust-cross-compile-linux-to-macos.html/
+# https://github.com/tpoechtrager/osxcross
+# https://github.com/phracker/MacOSX-SDKs
+#
+# [target.x86_64-apple-darwin]
+# linker = "x86_64-apple-darwin20.4-clang"
+# ar = "x86_64-apple-darwin20.4-ar"
+#
+# [target.aarch64-apple-darwin]
+# linker = "aarch64-apple-darwin20.4-clang"
+# ar = "aarch64-apple-darwin20.4-ar"

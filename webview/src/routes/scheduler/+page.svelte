@@ -243,7 +243,7 @@
 		reportTimer = setTimeout(async () => {
 			await generateReport();
 			willSendReport = false;
-		}, 1_000);
+		}, 100);
 	}
 
 	async function createTarget() {
@@ -350,9 +350,9 @@
 		}
 
 		const isImpossiblePermutation =
-			report.target_duplicates.find(
+			(report.target_duplicates.find(
 				(d) => d.used_by.find((t2) => t2.target.id === target.target.id)!
-			)!.teams_with_group_set === 0;
+			)?.teams_with_group_set ?? 0) === 0;
 
 		if (isImpossiblePermutation) {
 			return false;
@@ -508,8 +508,11 @@
 		<h2 class="h2 mb-4">Reporting</h2>
 
 		{#if willSendReport}
-			<section class="card w-full grid grid-cols-[auto_1fr] gap-16">
-				<div class="placeholder-circle mt-4 ml-4 w-32 animate-pulse" />
+			<section class="grid w-full grid-cols-[auto_1fr] gap-16">
+				<div class="p-4">
+					<div class="placeholder h-8 md:h-8 md:w-48" />
+					<div class="placeholder-circle mx-auto my-4 w-36 animate-pulse" />
+				</div>
 
 				<div class="space-y-4 p-4">
 					<div class="placeholder" />
@@ -537,7 +540,7 @@
 							<ul class="list">
 								{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
 									<li>
-										<span>Duplicates on targets</span>
+										<span>Duplicates on {dup.team_groups.length === 0 ? 'empty' : ''} targets</span>
 
 										{#each dup.used_by as badTarget}
 											<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
@@ -545,11 +548,13 @@
 											>
 										{/each}
 
-										<span>which use labels</span>
+										{#if dup.team_groups.length !== 0}
+											<span>which use the following labels:</span>
 
-										{#each dup.team_groups as group}
-											<span class="variant-filled chip">{group.name}</span>
-										{/each}
+											{#each dup.team_groups as group}
+												<span class="variant-filled chip">{group.name}</span>
+											{/each}
+										{/if}
 									</li>
 								{/each}
 							</ul>
@@ -616,16 +621,16 @@
 
 			<div class="grid grid-cols-[auto_1fr] gap-16">
 				<div>
-					<h3 class="h4">Matches Supplied / Required</h3>
+					<h3 class="h4">Time Slots Supplied / Required</h3>
 					<ProgressRadial
 						class="mx-auto my-4"
 						strokeLinecap="round"
 						meter={report.total_matches_required <= report.total_matches_supplied
 							? 'stroke-success-500'
-							: 'stroke-warning-500'}
+							: 'stroke-error-500'}
 						track={report.total_matches_required <= report.total_matches_supplied
 							? 'stroke-success-500/30'
-							: 'stroke-warning-500/30'}
+							: 'stroke-error-500/30'}
 						value={percentFillage(report.total_matches_required, report.total_matches_supplied)}
 					>
 						{report.total_matches_supplied}/{report.total_matches_required}
