@@ -2,6 +2,8 @@
 
 pub use super::field::Entity as Field;
 pub use super::region::Entity as Region;
+pub use super::reservation_type::Entity as ReservationType;
+pub use super::reservation_type_time_slot_join::Entity as ReservationTypeTimeSlotJoin;
 pub use super::target::Entity as Target;
 pub use super::target_group_join::Entity as TargetGroupJoin;
 pub use super::team::Entity as Team;

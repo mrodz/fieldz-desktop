@@ -55,6 +55,7 @@ export interface TimeSlot {
 
 export interface CreateTimeSlotInput {
 	field_id: number;
+	reservation_type_id: number;
 	start: number;
 	end: number;
 }

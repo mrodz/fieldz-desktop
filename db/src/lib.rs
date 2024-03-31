@@ -11,6 +11,9 @@ use entity::field::Model as Field;
 use entity::region::ActiveModel as ActiveRegion;
 use entity::region::Entity as RegionEntity;
 use entity::region::Model as Region;
+use entity::reservation_type::ActiveModel as ActiveReservationType;
+use entity::reservation_type::Entity as ReservationTypeEntity;
+use entity::reservation_type::Model as ReservationType;
 use entity::target::ActiveModel as ActiveTarget;
 use entity::target::Entity as TargetEntity;
 use entity::target::Model as Target;
@@ -227,6 +230,7 @@ impl TeamExtension {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTimeSlotInput {
     field_id: i32,
+    reservation_type_id: i32,
     #[serde(with = "ts_milliseconds")]
     start: DateTime<Utc>,
     #[serde(with = "ts_milliseconds")]
@@ -245,10 +249,17 @@ pub enum TimeSlotError {
         #[serde(with = "ts_milliseconds")]
         o_end: DateTime<Utc>,
     },
+    #[error("the supplied reservation type id ({0}) does not exist")]
+    ReservationTypeDoesNotExist(i32),
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("could not parse date: `{0}`")]
     ParseError(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeSlotExtension {
+    time_slot: TimeSlot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -984,6 +995,10 @@ impl Client {
         &self,
         input: CreateTimeSlotInput,
     ) -> Result<TimeSlot, TimeSlotError> {
+        /*
+         * Potential denial of service if the database gets filled with lots
+         * of time slots.
+         */
         Self::conflicts(
             &self.connection,
             input.field_id,
@@ -993,19 +1008,53 @@ impl Client {
         )
         .await?;
 
+        if ReservationTypeEntity::find_by_id(input.reservation_type_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
+            .is_none()
+        {
+            return Err(TimeSlotError::ReservationTypeDoesNotExist(
+                input.reservation_type_id,
+            ));
+        }
+
         /*
          * No conflicts; good to go.
          */
 
-        TimeSlotEntity::insert(ActiveTimeSlot {
-            start: Set(input.start.to_utc().to_rfc3339()),
-            end: Set(input.end.to_utc().to_rfc3339()),
-            field_id: Set(input.field_id),
-            ..Default::default()
-        })
-        .exec_with_returning(&self.connection)
-        .await
-        .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))
+        self.connection
+            .transaction(move |connection| {
+                Box::pin(async move {
+                    let time_slot = TimeSlotEntity::insert(ActiveTimeSlot {
+                        start: Set(input.start.to_utc().to_rfc3339()),
+                        end: Set(input.end.to_utc().to_rfc3339()),
+                        field_id: Set(input.field_id),
+                        ..Default::default()
+                    })
+                    .exec_with_returning(connection)
+                    .await?;
+
+                    let new_join_table_record =
+                        entity::reservation_type_time_slot_join::ActiveModel {
+                            time_slot: Set(time_slot.id),
+                            reservation_type: Set(input.reservation_type_id),
+                        };
+
+                    new_join_table_record.insert(connection).await?;
+
+                    Ok(time_slot)
+                })
+            })
+            .await
+            .map_err(|e: TransactionError<DbErr>| match e {
+                TransactionError::Connection(db) => {
+                    TimeSlotError::DatabaseError(format!("{db} {}:{}", line!(), column!()))
+                }
+                TransactionError::Transaction(transaction) => TimeSlotError::DatabaseError(
+                    format!("transaction error: {transaction} {}:{}", line!(), column!()),
+                ),
+            })
     }
 
     pub async fn delete_time_slot(&self, id: i32) -> DBResult<DeleteResult> {

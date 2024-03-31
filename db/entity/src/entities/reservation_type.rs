@@ -6,33 +6,18 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize, PartialOrd, Ord,
 )]
-#[sea_orm(table_name = "time_slot")]
+#[sea_orm(table_name = "reservation_type")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub field_id: i32,
-    pub start: String,
-    pub end: String,
+    pub name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::field::Entity",
-        from = "Column::FieldId",
-        to = "super::field::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    Field,
     #[sea_orm(has_many = "super::reservation_type_time_slot_join::Entity")]
     ReservationTypeTimeSlotJoin,
-}
-
-impl Related<super::field::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Field.def()
-    }
 }
 
 impl Related<super::reservation_type_time_slot_join::Entity> for Entity {
@@ -41,13 +26,13 @@ impl Related<super::reservation_type_time_slot_join::Entity> for Entity {
     }
 }
 
-impl Related<super::reservation_type::Entity> for Entity {
+impl Related<super::time_slot::Entity> for Entity {
     fn to() -> RelationDef {
-        super::reservation_type_time_slot_join::Relation::ReservationType.def()
+        super::reservation_type_time_slot_join::Relation::TimeSlot.def()
     }
     fn via() -> Option<RelationDef> {
         Some(
-            super::reservation_type_time_slot_join::Relation::TimeSlot
+            super::reservation_type_time_slot_join::Relation::ReservationType
                 .def()
                 .rev(),
         )
