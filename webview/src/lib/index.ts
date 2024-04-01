@@ -97,11 +97,18 @@ const CALENDAR_TIME_SLOT_COLORS = [
 	'#5b9fba',
 	'#d136c9',
 	'#d1aa36',
-	'#86a86c'
-];
+	'#86a86c',
+	'#a134eb',
+	'#c2729d',
+	'#12a108',
+] as const;
 
 function colorForTimeSlot(input: TimeSlot): string {
 	return CALENDAR_TIME_SLOT_COLORS[input.field_id % CALENDAR_TIME_SLOT_COLORS.length];
+}
+
+export function randomCalendarColor(): typeof CALENDAR_TIME_SLOT_COLORS extends readonly (infer HexCode)[] ? HexCode : never {
+	return CALENDAR_TIME_SLOT_COLORS[Math.floor(Math.random() * CALENDAR_TIME_SLOT_COLORS.length)];
 }
 
 export function eventFromTimeSlot(input: TimeSlot, title?: string): CalendarEvent {
@@ -157,6 +164,12 @@ export interface PreScheduleReportInput {
 
 export interface ReservationType {
 	id: number;
+	name: string;
+	color: string;
+	description?: string;
+}
+
+export interface CreateReservationTypeInput {
 	name: string;
 	color: string;
 	description?: string;

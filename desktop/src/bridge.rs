@@ -579,6 +579,23 @@ pub(crate) async fn generate_pre_schedule_report(
 }
 
 #[tauri::command]
+pub(crate) async fn get_reservation_types(
+    app: AppHandle,
+) -> Result<Vec<db::reservation_type::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_reservation_types()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
 pub(crate) async fn create_reservation_type(
     app: AppHandle,
     input: CreateReservationTypeInput,
@@ -591,4 +608,34 @@ pub(crate) async fn create_reservation_type(
         .ok_or(CreateReservationTypeError::NoDatabase)?;
 
     client.create_reservation_type(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn delete_reservation_type(app: AppHandle, id: i32) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .delete_reservation_type(id)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn update_reservation_type(
+    app: AppHandle,
+    reservation_type: db::reservation_type::Model,
+) -> Result<(), CreateReservationTypeError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CreateReservationTypeError::NoDatabase)?;
+
+    client.edit_reservation_type(reservation_type).await
 }

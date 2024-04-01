@@ -204,6 +204,7 @@
 							const input: CreateTimeSlotInput = {
 								start: e.start.valueOf(),
 								end: e.end.valueOf(),
+								reservation_type_id: NaN,
 								field_id: data.fieldId
 							};
 

@@ -28,8 +28,8 @@ use entity::time_slot::Entity as TimeSlotEntity;
 use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, JoinType,
-    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Set, TransactionError,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
+    JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Set, TransactionError,
     TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
@@ -1468,5 +1468,35 @@ impl Client {
         .exec_with_returning(&self.connection)
         .await
         .map_err(|e| CreateReservationTypeError::DatabaseError(e.to_string()))
+    }
+
+    pub async fn get_reservation_types(&self) -> DBResult<Vec<ReservationType>> {
+        ReservationTypeEntity::find().all(&self.connection).await
+    }
+
+    pub async fn delete_reservation_type(&self, id: i32) -> DBResult<()> {
+        ReservationTypeEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn edit_reservation_type(
+        &self,
+        mut reservation_type: ReservationType,
+    ) -> Result<(), CreateReservationTypeError> {
+        let name_to_validate = NameMax64(reservation_type.name);
+        name_to_validate.validate()?;
+        reservation_type.name = name_to_validate.0;
+
+        match reservation_type
+            .into_active_model()
+            .reset_all()
+            .update(&self.connection)
+            .await
+        {
+            Ok(..) => Ok(()),
+            Err(e) => Err(CreateReservationTypeError::DatabaseError(e.to_string())),
+        }
     }
 }
