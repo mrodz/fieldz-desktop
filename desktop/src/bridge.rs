@@ -1,5 +1,10 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError, PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError, Validator
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateReservationTypeError,
+    CreateReservationTypeInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput,
+    EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError,
+    ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError,
+    PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError,
+    Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -418,11 +423,7 @@ pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), Stri
         .as_ref()
         .ok_or("database was not initialized".to_owned())?;
 
-    match client.delete_time_slot(id).await {
-        Ok(d) if d.rows_affected == 1 => Ok(()),
-        Ok(d) => Err(format!("expected to delete 1 row, instead executed {d:?}")),
-        Err(e) => Err(e.to_string()),
-    }
+    client.delete_time_slot(id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -575,4 +576,19 @@ pub(crate) async fn generate_pre_schedule_report(
         .ok_or(PreScheduleReportError::NoDatabase)?;
 
     client.generate_pre_schedule_report(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn create_reservation_type(
+    app: AppHandle,
+    input: CreateReservationTypeInput,
+) -> Result<db::reservation_type::Model, CreateReservationTypeError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CreateReservationTypeError::NoDatabase)?;
+
+    client.create_reservation_type(input).await
 }

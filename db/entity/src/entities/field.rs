@@ -24,6 +24,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Region,
+    #[sea_orm(has_many = "super::reservation_type_field_size_join::Entity")]
+    ReservationTypeFieldSizeJoin,
     #[sea_orm(has_many = "super::time_slot::Entity")]
     TimeSlot,
 }
@@ -34,9 +36,28 @@ impl Related<super::region::Entity> for Entity {
     }
 }
 
+impl Related<super::reservation_type_field_size_join::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ReservationTypeFieldSizeJoin.def()
+    }
+}
+
 impl Related<super::time_slot::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::TimeSlot.def()
+    }
+}
+
+impl Related<super::reservation_type::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::reservation_type_field_size_join::Relation::ReservationType.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::reservation_type_field_size_join::Relation::Field
+                .def()
+                .rev(),
+        )
     }
 }
 

@@ -149,26 +149,26 @@ impl CreateFieldInput {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(transparent)]
-struct TeamName(String);
+struct NameMax64(String);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTeamInput {
-    name: TeamName,
+    name: NameMax64,
     region_id: i32,
     tags: Vec<String>,
 }
 
-impl Validator for TeamName {
-    type Error = TeamValidationError;
+impl Validator for NameMax64 {
+    type Error = NameMax64ValidationError;
     fn validate(&self) -> Result<(), Self::Error> {
         let len = self.0.len();
 
         if self.0.is_empty() {
-            return Err(TeamValidationError::EmptyName);
+            return Err(NameMax64ValidationError::EmptyName);
         }
 
         if len > 64 {
-            return Err(TeamValidationError::NameTooLong { len });
+            return Err(NameMax64ValidationError::NameTooLong { len });
         }
 
         Ok(())
@@ -176,7 +176,7 @@ impl Validator for TeamName {
 }
 
 #[derive(Debug, Error, Serialize, Deserialize)]
-pub enum TeamValidationError {
+pub enum NameMax64ValidationError {
     #[error("field name cannot be empty")]
     EmptyName,
     #[error("field name is {len} characters which is larger than the max, 64")]
@@ -184,7 +184,7 @@ pub enum TeamValidationError {
 }
 
 impl CreateTeamInput {
-    pub fn validate(&self) -> Result<(), TeamValidationError> {
+    pub fn validate(&self) -> Result<(), NameMax64ValidationError> {
         self.name.validate()?;
 
         Ok(())
@@ -206,7 +206,7 @@ pub enum CreateTeamError {
     #[error("database was not initialized")]
     NoDatabase,
     #[error("bad input")]
-    ValidationError(TeamValidationError),
+    ValidationError(NameMax64ValidationError),
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("the following tags do not exist: {0:?}")]
@@ -312,7 +312,7 @@ impl Validator for EditRegionInput {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditTeamInput {
     id: i32,
-    name: Option<TeamName>,
+    name: Option<NameMax64>,
     tags: Option<Vec<String>>,
 }
 
@@ -333,7 +333,7 @@ pub enum EditTeamError {
     #[error("database was not initialized")]
     NoDatabase,
     #[error("bad input")]
-    ValidationError(TeamValidationError),
+    ValidationError(NameMax64ValidationError),
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("the following tags do not exist: {0:?}")]
@@ -601,6 +601,57 @@ impl PreScheduleReport {
         };
 
         Ok(Self::new(target_duplicates, input))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Color(String);
+
+impl Color {
+    pub fn new(input: String) -> Option<Self> {
+        if input.len() != 7 {
+            return None;
+        }
+
+        let mut bytes = input.bytes();
+
+        let Some(b'#') = bytes.next() else {
+            return None;
+        };
+
+        for byte in bytes {
+            if !byte.is_ascii_digit() {
+                return None;
+            }
+        }
+
+        Some(Self(input))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateReservationTypeInput {
+    name: NameMax64,
+    description: Option<String>,
+    color: Color,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CreateReservationTypeError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error(transparent)]
+    Name(#[from] NameMax64ValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+}
+
+impl Validator for CreateReservationTypeInput {
+    type Error = CreateReservationTypeError;
+    fn validate(&self) -> Result<(), Self::Error> {
+        self.name
+            .validate()
+            .map_err(CreateReservationTypeError::Name)
     }
 }
 
@@ -1057,13 +1108,25 @@ impl Client {
             })
     }
 
-    pub async fn delete_time_slot(&self, id: i32) -> DBResult<DeleteResult> {
-        TimeSlotEntity::delete(ActiveTimeSlot {
-            id: Set(id),
-            ..Default::default()
-        })
-        .exec(&self.connection)
-        .await
+    pub async fn delete_time_slot(&self, id: i32) -> Result<(), TransactionError<DbErr>> {
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    TimeSlotEntity::delete(ActiveTimeSlot {
+                        id: Set(id),
+                        ..Default::default()
+                    })
+                    .exec(connection)
+                    .await?;
+
+                    entity::reservation_type_time_slot_join::Entity::delete_many()
+                        .filter(entity::reservation_type_time_slot_join::Column::TimeSlot.eq(id))
+                        .exec(connection)
+                        .await
+                })
+            })
+            .await
+            .map(|_| ())
     }
 
     pub async fn move_time_slot(&self, input: MoveTimeSlotInput) -> Result<(), TimeSlotError> {
@@ -1389,5 +1452,21 @@ impl Client {
         input: PreScheduleReportInput,
     ) -> Result<PreScheduleReport, PreScheduleReportError> {
         PreScheduleReport::create(&self.connection, input).await
+    }
+
+    pub async fn create_reservation_type(
+        &self,
+        input: CreateReservationTypeInput,
+    ) -> Result<ReservationType, CreateReservationTypeError> {
+        input.validate()?;
+        ReservationTypeEntity::insert(ActiveReservationType {
+            name: Set(input.name.0),
+            description: Set(input.description),
+            color: Set(input.color.0),
+            ..Default::default()
+        })
+        .exec_with_returning(&self.connection)
+        .await
+        .map_err(|e| CreateReservationTypeError::DatabaseError(e.to_string()))
     }
 }

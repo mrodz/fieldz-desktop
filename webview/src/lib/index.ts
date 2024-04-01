@@ -154,3 +154,10 @@ export interface PreScheduleReport {
 export interface PreScheduleReportInput {
 	matches_to_play: number;
 }
+
+export interface ReservationType {
+	id: number;
+	name: string;
+	color: string;
+	description?: string;
+}

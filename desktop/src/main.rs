@@ -92,6 +92,7 @@ fn main() -> Result<()> {
             target_add_group,
             target_delete_group,
             generate_pre_schedule_report,
+            create_reservation_type,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

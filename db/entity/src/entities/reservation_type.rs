@@ -12,17 +12,39 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub description: Option<String>,
+    pub color: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::reservation_type_field_size_join::Entity")]
+    ReservationTypeFieldSizeJoin,
     #[sea_orm(has_many = "super::reservation_type_time_slot_join::Entity")]
     ReservationTypeTimeSlotJoin,
+}
+
+impl Related<super::reservation_type_field_size_join::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ReservationTypeFieldSizeJoin.def()
+    }
 }
 
 impl Related<super::reservation_type_time_slot_join::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ReservationTypeTimeSlotJoin.def()
+    }
+}
+
+impl Related<super::field::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::reservation_type_field_size_join::Relation::Field.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::reservation_type_field_size_join::Relation::ReservationType
+                .def()
+                .rev(),
+        )
     }
 }
 
