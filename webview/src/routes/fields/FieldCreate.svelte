@@ -69,14 +69,15 @@
 			<span>Field Name</span>
 			<div class="input-group input-group-divider grid-cols-[1fr_auto]">
 				<input
-					class="input {fieldNameError === undefined ? '' : 'input-error'}"
+					class:input-error={fieldNameError !== undefined}
+					class="input"
 					type="text"
 					bind:value={fieldNameInput}
 					on:keypress={() => (fieldNameError = undefined)}
 					on:change={() => (fieldNameError = undefined)}
 					placeholder="eg. Rolling Hills Sports Complex - North"
 				/>
-				<div class="input-group-shim {(fieldNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
+				<div class:input-error={(fieldNameInput?.length ?? 0) > 64} class="input-group-shim">
 					{fieldNameInput?.length ?? 0}/64
 				</div>
 			</div>

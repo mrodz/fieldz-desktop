@@ -80,8 +80,6 @@
 				reservationType.name = options?.nameOnLoad ?? 'New Reservation Type (?)';
 			}
 
-			console.log(reservationType);
-
 			await invoke<ReservationType>('update_reservation_type', { reservationType });
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {

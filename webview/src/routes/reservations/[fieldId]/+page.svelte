@@ -12,6 +12,7 @@
 		type CalendarEvent,
 		type Field,
 		type MoveTimeSlotInput,
+		type ReservationType,
 		eventFromTimeSlot
 	} from '$lib';
 
@@ -24,15 +25,18 @@
 
 	let field: Field | undefined;
 
+	let reservationTypes: ReservationType[] | undefined;
+
 	onMount(async () => {
 		try {
-			[rawEvents, field] = await Promise.all([
+			[rawEvents, field, reservationTypes] = await Promise.all([
 				invoke<TimeSlot[]>('get_time_slots', {
 					fieldId: data.fieldId
 				}),
 				invoke<Field>('get_field', {
 					fieldId: data.fieldId
-				})
+				}),
+				invoke<ReservationType[]>('get_reservation_types')
 			]);
 
 			for (let event of rawEvents) {
@@ -92,8 +96,6 @@
 				return;
 			}
 
-			console.info(e);
-
 			try {
 				const input: MoveTimeSlotInput = {
 					field_id: data.fieldId,
@@ -137,8 +139,6 @@
 			if (canSkip) {
 				return;
 			}
-
-			console.info(e);
 
 			try {
 				const input: MoveTimeSlotInput = {
@@ -240,7 +240,7 @@
 		<h1 class="h1 my-4">Availability: {field?.name}</h1>
 	{/if}
 
-	<section class="my-4 grid grid-cols-3 justify-items-center">
+	<section class="my-4 grid grid-cols-4 justify-items-center">
 		<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
 			<strong>Click and drag</strong> over empty space to create a time slot
 		</div>
@@ -250,7 +250,24 @@
 		<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
 			<strong>Click</strong> an event to delete it
 		</div>
+		<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
+			<strong>Select</strong> a field type to switch between reservation sizes
+		</div>
 	</section>
+
+	<hr class="hr my-5" />
+
+	{#if reservationTypes === undefined}
+		<ProgressRadial />
+	{:else}
+		<section>
+			{#each reservationTypes as reservationType}
+				<div class="flex" style="background-color: {reservationType.color}">
+					{reservationType.name}
+				</div>
+			{/each}
+		</section>
+	{/if}
 
 	<Calendar bind:this={calendar} {plugins} {options} />
 </main>
