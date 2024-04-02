@@ -53,6 +53,11 @@ export interface TimeSlot {
 	end: string;
 }
 
+export interface TimeSlotExtension {
+	time_slot: TimeSlot;
+	reservation_type: ReservationType;
+}
+
 export interface CreateTimeSlotInput {
 	field_id: number;
 	reservation_type_id: number;
@@ -100,26 +105,28 @@ const CALENDAR_TIME_SLOT_COLORS = [
 	'#86a86c',
 	'#a134eb',
 	'#c2729d',
-	'#12a108',
+	'#12a108'
 ] as const;
 
 function colorForTimeSlot(input: TimeSlot): string {
 	return CALENDAR_TIME_SLOT_COLORS[input.field_id % CALENDAR_TIME_SLOT_COLORS.length];
 }
 
-export function randomCalendarColor(): typeof CALENDAR_TIME_SLOT_COLORS extends readonly (infer HexCode)[] ? HexCode : never {
+export function randomCalendarColor(): typeof CALENDAR_TIME_SLOT_COLORS extends readonly (infer HexCode)[]
+	? HexCode
+	: never {
 	return CALENDAR_TIME_SLOT_COLORS[Math.floor(Math.random() * CALENDAR_TIME_SLOT_COLORS.length)];
 }
 
-export function eventFromTimeSlot(input: TimeSlot, title?: string): CalendarEvent {
+export function eventFromTimeSlot(input: TimeSlotExtension, title?: string): CalendarEvent {
 	return {
 		allDay: false,
 		display: 'auto',
-		id: String(input.id),
+		id: String(input.time_slot.id),
 		resources: [],
-		start: new Date(input.start),
-		end: new Date(input.end),
-		backgroundColor: colorForTimeSlot(input),
+		start: new Date(input.time_slot.start),
+		end: new Date(input.time_slot.end),
+		backgroundColor: input.reservation_type.color,
 		...(title !== undefined ? { title } : {})
 	};
 }

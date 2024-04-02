@@ -24,8 +24,8 @@
 		deleting = true;
 		modalStore.trigger({
 			type: 'confirm',
-			title: 'Please Confirm',
-			body: `Deleting a reservation type is PERMANENT! Are you sure you wish to proceed? You will NOT be able to recover "${reservation.name}"`,
+			title: 'Please Confirm—This one is really important',
+			body: `Deleting a reservation type is PERMANENT! Are you sure you wish to proceed?<br/><br/><b>⚠️ DELETING A FIELD TYPE WILL PERMANENTLY ERASE ALL CALENDAR EVENTS THAT USE THIS FIELD SIZE</b><br/><br/>You will NOT be able to recover "${reservation.name}". Only proceed if you are sure this is what you want. You may have to input a lot of time records again.`,
 			response(r) {
 				if (r) {
 					dispatch('delete', reservation);
@@ -58,7 +58,7 @@
 
 <div class="card p-4 duration-1000" class:animate-pulse={deleting}>
 	<div class="grid grid-cols-[auto_1fr_auto] gap-4">
-		<div class="grid grid-rows-2 h-full items-center justify-center">
+		<div class="grid h-full grid-rows-2 items-center justify-center">
 			<input
 				class="input m-2 shadow-2xl"
 				type="color"
@@ -67,11 +67,11 @@
 			/>
 			{#if pendingPost}
 				<div class="flex flex-col items-center">
-					<Fa class="inline m-auto animate-spin" size="lg" icon={faSpinner} />
+					<Fa class="m-auto inline animate-spin" size="lg" icon={faSpinner} />
 					Saving
 				</div>
 			{:else}
-				<button class="m-auto btn-icon btn-icon-md" on:click={() => onDelete()}>
+				<button class="btn-icon-md btn-icon m-auto" on:click={() => onDelete()}>
 					<Fa class="inline" size="lg" icon={faTrash} />
 				</button>
 			{/if}

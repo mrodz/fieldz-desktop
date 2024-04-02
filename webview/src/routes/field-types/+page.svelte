@@ -116,12 +116,12 @@
 
 			<hr class="hr my-5" />
 
-			<button class="btn variant-filled" on:click={() => newType()}>+ New Type</button>
+			<button class="variant-filled btn" on:click={() => newType()}>+ New Type</button>
 		{:else}
 			<div class="card m-4 p-4 text-center">
 				<i class="my-4 block">You haven't created any reservation types yet</i>
 				<hr class="hr my-5" />
-				<button class="btn variant-filled" on:click={() => newType()}>+ New Type</button>
+				<button class="variant-filled btn" on:click={() => newType()}>+ New Type</button>
 			</div>
 		{/if}
 		<!-- <ReservationTypeComponent reservation={{ id: 1, name: 'small field', color: '#ffffff' }} /> -->

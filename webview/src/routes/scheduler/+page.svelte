@@ -7,7 +7,6 @@
 	import List from '@event-calendar/list';
 	import {
 		type ListReservationsBetweenInput,
-		type TimeSlot,
 		type Field,
 		type CalendarEvent,
 		type TeamExtension,
@@ -16,7 +15,9 @@
 		type TeamGroup,
 		type TargetExtension,
 		type PreScheduleReport,
-		type PreScheduleReportInput
+		type PreScheduleReportInput,
+		type ReservationType,
+		type TimeSlotExtension
 	} from '$lib';
 	import {
 		getModalStore,
@@ -43,7 +44,7 @@
 
 	let compact = false;
 
-	const datesQueried: Map<string, TimeSlot[]> = new Map();
+	const datesQueried: Map<string, TimeSlotExtension[]> = new Map();
 	const fieldsCache: Map<number, Field> = new Map();
 	const regionCache: Map<number, Region> = new Map();
 
@@ -67,14 +68,14 @@
 		return region;
 	}
 
-	async function titleFromTimeSlot(input: TimeSlot): Promise<string | undefined> {
+	async function titleFromTimeSlot(input: TimeSlotExtension): Promise<string | undefined> {
 		try {
-			const field = await loadField(input.field_id);
+			const field = await loadField(input.time_slot.field_id);
 			const region = await loadRegion(field.region_owner);
 			return `Region: ${region.title}\nField: ${field.name}`;
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
-				title: `Error getting field (field id: ${input.field_id})`,
+				title: `Error getting field (field id: ${input.time_slot.field_id})`,
 				type: 'error'
 			});
 		}
@@ -107,9 +108,9 @@
 				return;
 			}
 
-			let newEvents: TimeSlot[];
+			let newEvents: TimeSlotExtension[];
 			try {
-				newEvents = await invoke<TimeSlot[]>('list_reservations_between', { input });
+				newEvents = await invoke<TimeSlotExtension[]>('list_reservations_between', { input });
 			} catch (e) {
 				dialog.message(JSON.stringify(e), {
 					title: `Error loading reservations ({})`,
@@ -127,7 +128,7 @@
 					calendar.addEvent(asCalendarEvent);
 				} catch (e) {
 					dialog.message(JSON.stringify(e), {
-						title: `Error getting field (field id: ${event.field_id})`,
+						title: `Error getting field (field id: ${event.time_slot.field_id})`,
 						type: 'error'
 					});
 				}
@@ -141,7 +142,7 @@
 			// If the event was loaded, it was cached.
 			const backingEvent = Array.from(datesQueried.values())
 				.flatMap((x) => x)
-				.find((event) => event.id === clickedId);
+				.find((event) => event.time_slot.id === clickedId);
 
 			if (backingEvent === undefined) {
 				dialog.message('backing event = undefined', {
@@ -154,12 +155,12 @@
 			modalStore.trigger({
 				type: 'confirm',
 				title: 'View calendar',
-				body: `<div>Event start: ${backingEvent.start}</div><div>Event end: ${backingEvent.end}</div><br/>Would you like to visit this event's source calendar?`,
+				body: `<div>Event start: ${backingEvent.time_slot.start}</div><div>Event end: ${backingEvent.time_slot.end}</div><br/>Would you like to visit this event's source calendar?`,
 				buttonTextConfirm: 'Visit Calendar',
 				buttonTextCancel: 'Back',
 				async response(r: boolean) {
 					if (r) {
-						document.location.href = `/reservations/${backingEvent.field_id}?d=${e.event.start.valueOf()}`;
+						document.location.href = `/reservations/${backingEvent.time_slot.field_id}?d=${e.event.start.valueOf()}`;
 					}
 				}
 			});
@@ -186,14 +187,18 @@
 	}
 
 	let teams: TeamExtension[] | undefined;
+	let reservationTypes: ReservationType[] | undefined;
 	let groups: TeamGroup[] | undefined;
 	let targets: TargetExtension[] | undefined;
 
 	onMount(async () => {
 		try {
-			teams = await invoke<TeamExtension[]>('load_all_teams');
-			groups = await invoke<TeamGroup[]>('get_groups');
-			targets = await invoke<TargetExtension[]>('get_targets');
+			[teams, groups, targets, reservationTypes] = await Promise.all([
+				invoke<TeamExtension[]>('load_all_teams'),
+				invoke<TeamGroup[]>('get_groups'),
+				invoke<TargetExtension[]>('get_targets'),
+				invoke<ReservationType[]>('get_reservation_types')
+			]);
 			await generateReport();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
@@ -379,6 +384,24 @@
 
 		<Accordion class="my-4">
 			<AccordionItem>
+				<svelte:fragment slot="summary">Field Sizes</svelte:fragment>
+				<svelte:fragment slot="content">
+					{#if reservationTypes === undefined}
+						<ProgressRadial />
+					{:else if reservationTypes.length === 0}
+						<span class="ml-4">You have not created any reservation types.</span>
+					{:else}
+						<div class="grid grid-cols-3 gap-8">
+							{#each reservationTypes as reservationType}
+								<div class="block p-5" style="background-color: {reservationType.color}">
+									{reservationType.name}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</svelte:fragment>
+			</AccordionItem>
+			<AccordionItem>
 				<svelte:fragment slot="summary">Time Slots</svelte:fragment>
 				<svelte:fragment slot="content">
 					<div class="m-4 p-4 text-center">
@@ -476,7 +499,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -534,7 +557,7 @@
 				<!-- <ProgressBar class="my-auto" /> -->
 			{:else if report !== undefined}
 				{#if reportHasErrors(report)}
-					<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">
+					<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
 						{#if report.target_has_duplicates.length !== 0}
 							<div>
 								<strong>Cannot use targets because of duplicates</strong>

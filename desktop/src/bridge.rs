@@ -4,7 +4,7 @@ use db::{
     EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError,
     ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError,
     PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError,
-    Validator,
+    TimeSlotExtension, Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -376,7 +376,7 @@ pub(crate) async fn delete_group(app: AppHandle, id: i32) -> Result<(), DeleteGr
 pub(crate) async fn get_time_slots(
     app: AppHandle,
     field_id: i32,
-) -> Result<Vec<db::time_slot::Model>, String> {
+) -> Result<Vec<TimeSlotExtension>, String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -394,7 +394,7 @@ pub(crate) async fn get_time_slots(
 pub(crate) async fn create_time_slot(
     app: AppHandle,
     input: CreateTimeSlotInput,
-) -> Result<db::time_slot::Model, TimeSlotError> {
+) -> Result<TimeSlotExtension, TimeSlotError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock.database.as_ref().ok_or(TimeSlotError::NoDatabase)?;
@@ -430,7 +430,7 @@ pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), Stri
 pub(crate) async fn list_reservations_between(
     app: AppHandle,
     input: ListReservationsBetweenInput,
-) -> Result<Vec<db::time_slot::Model>, String> {
+) -> Result<Vec<TimeSlotExtension>, String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock

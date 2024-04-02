@@ -29,8 +29,8 @@ use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
-    JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Set, TransactionError,
-    TransactionTrait, TryIntoModel, UpdateResult, Value,
+    JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, Set,
+    TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -260,6 +260,71 @@ pub enum TimeSlotError {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeSlotExtension {
     time_slot: TimeSlot,
+    reservation_type: ReservationType,
+}
+
+#[derive(FromQueryResult)]
+struct TimeSlotSelectionTypeAggregate {
+    /// [`TimeSlot`]
+    time_slot_id: i32,
+    /// [`TimeSlot`]
+    field_id: i32,
+    /// [`TimeSlot`]
+    start: String,
+    /// [`TimeSlot`]
+    end: String,
+    /// [`ReservationType`]
+    reservation_type_id: i32,
+    /// [`ReservationType`]
+    name: String,
+    /// [`ReservationType`]
+    description: Option<String>,
+    /// [`ReservationType`]
+    color: String,
+}
+
+fn select_time_slot_extension() -> Select<TimeSlotEntity> {
+    use reservation_type::Column as R;
+    use time_slot::Column as T;
+
+    TimeSlotEntity::find()
+        .select_only()
+        .column_as(T::Id, "time_slot_id")
+        .column_as(T::FieldId, "field_id")
+        .column_as(T::Start, "start")
+        .column_as(T::End, "end")
+        .column_as(R::Id, "reservation_type_id")
+        .column_as(R::Name, "name")
+        .column_as(R::Description, "description")
+        .column_as(R::Color, "color")
+        .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+        .join(
+            JoinType::LeftJoin,
+            time_slot::Relation::ReservationTypeTimeSlotJoin.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            reservation_type_time_slot_join::Relation::ReservationType.def(),
+        )
+}
+
+impl From<TimeSlotSelectionTypeAggregate> for TimeSlotExtension {
+    fn from(value: TimeSlotSelectionTypeAggregate) -> Self {
+        Self {
+            reservation_type: ReservationType {
+                id: value.reservation_type_id,
+                color: value.color,
+                description: value.description,
+                name: value.name,
+            },
+            time_slot: TimeSlot {
+                id: value.time_slot_id,
+                field_id: value.field_id,
+                start: value.start,
+                end: value.end,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -994,12 +1059,13 @@ impl Client {
             .await
     }
 
-    pub async fn get_time_slots(&self, field_id: i32) -> Result<Vec<TimeSlot>, DbErr> {
-        TimeSlotEntity::find()
-            .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+    pub async fn get_time_slots(&self, field_id: i32) -> Result<Vec<TimeSlotExtension>, DbErr> {
+        select_time_slot_extension()
             .filter(Condition::all().add(field::Column::Id.eq(field_id)))
+            .into_model::<TimeSlotSelectionTypeAggregate>()
             .all(&self.connection)
             .await
+            .map(|v| v.into_iter().map(Into::into).collect())
     }
 
     async fn conflicts(
@@ -1045,7 +1111,7 @@ impl Client {
     pub async fn create_time_slot(
         &self,
         input: CreateTimeSlotInput,
-    ) -> Result<TimeSlot, TimeSlotError> {
+    ) -> Result<TimeSlotExtension, TimeSlotError> {
         /*
          * Potential denial of service if the database gets filled with lots
          * of time slots.
@@ -1059,16 +1125,15 @@ impl Client {
         )
         .await?;
 
-        if ReservationTypeEntity::find_by_id(input.reservation_type_id)
+        let Some(reservation_type) = ReservationTypeEntity::find_by_id(input.reservation_type_id)
             .one(&self.connection)
             .await
             .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
-            .is_none()
-        {
+        else {
             return Err(TimeSlotError::ReservationTypeDoesNotExist(
                 input.reservation_type_id,
             ));
-        }
+        };
 
         /*
          * No conflicts; good to go.
@@ -1094,7 +1159,10 @@ impl Client {
 
                     new_join_table_record.insert(connection).await?;
 
-                    Ok(time_slot)
+                    Ok(TimeSlotExtension {
+                        time_slot,
+                        reservation_type,
+                    })
                 })
             })
             .await
@@ -1161,11 +1229,13 @@ impl Client {
     pub async fn list_reservations_between(
         &self,
         input: ListReservationsBetweenInput,
-    ) -> DBResult<Vec<TimeSlot>> {
-        TimeSlotEntity::find()
+    ) -> DBResult<Vec<TimeSlotExtension>> {
+        select_time_slot_extension()
             .filter(time_slot::Column::Start.between(input.start, input.end))
+            .into_model::<TimeSlotSelectionTypeAggregate>()
             .all(&self.connection)
             .await
+            .map(|v| v.into_iter().map(Into::into).collect())
     }
 
     pub async fn load_all_teams(&self) -> DBResult<Vec<TeamExtension>> {
@@ -1474,11 +1544,54 @@ impl Client {
         ReservationTypeEntity::find().all(&self.connection).await
     }
 
-    pub async fn delete_reservation_type(&self, id: i32) -> DBResult<()> {
-        ReservationTypeEntity::delete_by_id(id)
-            .exec(&self.connection)
+    pub async fn delete_reservation_type(&self, id: i32) -> Result<(), String> {
+        /*
+         * In SQLite, you cannot join on a DELETE.
+         * We must search by ID using a JOIN, which
+         * will cache the result and thus speed up the
+         * subsequent DELETE.
+         */
+
+        let time_slots_to_delete = TimeSlotEntity::find()
+            .join(
+                JoinType::LeftJoin,
+                time_slot::Relation::ReservationTypeTimeSlotJoin.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                reservation_type_time_slot_join::Relation::ReservationType.def(),
+            )
+            .filter(reservation_type::Column::Id.eq(id))
+            .all(&self.connection)
             .await
-            .map(|_| ())
+            .map_err(|e| format!("{e} {}:{}", line!(), column!()))?;
+
+        let time_slot_ids = time_slots_to_delete
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>();
+
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    TimeSlotEntity::delete_many()
+                        .filter(time_slot::Column::Id.is_in(time_slot_ids))
+                        .exec(connection)
+                        .await?;
+
+                    ReservationTypeEntity::delete_by_id(id)
+                        .exec(connection)
+                        .await
+                        .map(|_| ())
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                TransactionError::Connection(e) => format!("{e} {}:{}", line!(), column!()),
+                TransactionError::Transaction(trans) => {
+                    format!("transaction: {trans} {}:{}", line!(), column!())
+                }
+            })
     }
 
     pub async fn edit_reservation_type(
