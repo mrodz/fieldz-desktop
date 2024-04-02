@@ -5,6 +5,7 @@ mod m20240221_004555_create_field;
 mod m20240223_053746_create_team;
 mod m20240302_033333_create_time_slots;
 mod m20240316_053808_create_target;
+mod m20240331_003613_create_reservation_type;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240223_053746_create_team::Migration),
             Box::new(m20240302_033333_create_time_slots::Migration),
             Box::new(m20240316_053808_create_target::Migration),
+            Box::new(m20240331_003613_create_reservation_type::Migration),
         ]
     }
 }

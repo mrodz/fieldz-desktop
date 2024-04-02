@@ -16,7 +16,11 @@
 	export let popupId: any;
 	export let ok: boolean;
 
-	const dispatch = createEventDispatcher();
+	const dispatch = createEventDispatcher<{
+		groupAdd: TeamGroup;
+		groupDelete: TeamGroup;
+		delete: TargetExtension;
+	}>();
 
 	let inputChipList: TeamGroup[] = [...target.groups];
 

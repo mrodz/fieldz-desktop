@@ -60,7 +60,8 @@
 			<span>Region Name</span>
 			<div class="input-group input-group-divider grid-cols-[1fr_auto]">
 				<input
-					class="input {regionNameError === undefined ? '' : 'input-error'}"
+					class:input-error={regionNameError !== undefined}
+					class="input"
 					type="text"
 					bind:value={regionNameInput}
 					on:keypress={() => (regionNameError = undefined)}

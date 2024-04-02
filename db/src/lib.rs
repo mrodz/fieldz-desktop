@@ -11,6 +11,9 @@ use entity::field::Model as Field;
 use entity::region::ActiveModel as ActiveRegion;
 use entity::region::Entity as RegionEntity;
 use entity::region::Model as Region;
+use entity::reservation_type::ActiveModel as ActiveReservationType;
+use entity::reservation_type::Entity as ReservationTypeEntity;
+use entity::reservation_type::Model as ReservationType;
 use entity::target::ActiveModel as ActiveTarget;
 use entity::target::Entity as TargetEntity;
 use entity::target::Model as Target;
@@ -25,9 +28,9 @@ use entity::time_slot::Entity as TimeSlotEntity;
 use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, JoinType,
-    PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Set, TransactionError,
-    TransactionTrait, TryIntoModel, UpdateResult, Value,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
+    JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, Set,
+    TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -146,26 +149,26 @@ impl CreateFieldInput {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(transparent)]
-struct TeamName(String);
+struct NameMax64(String);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTeamInput {
-    name: TeamName,
+    name: NameMax64,
     region_id: i32,
     tags: Vec<String>,
 }
 
-impl Validator for TeamName {
-    type Error = TeamValidationError;
+impl Validator for NameMax64 {
+    type Error = NameMax64ValidationError;
     fn validate(&self) -> Result<(), Self::Error> {
         let len = self.0.len();
 
         if self.0.is_empty() {
-            return Err(TeamValidationError::EmptyName);
+            return Err(NameMax64ValidationError::EmptyName);
         }
 
         if len > 64 {
-            return Err(TeamValidationError::NameTooLong { len });
+            return Err(NameMax64ValidationError::NameTooLong { len });
         }
 
         Ok(())
@@ -173,7 +176,7 @@ impl Validator for TeamName {
 }
 
 #[derive(Debug, Error, Serialize, Deserialize)]
-pub enum TeamValidationError {
+pub enum NameMax64ValidationError {
     #[error("field name cannot be empty")]
     EmptyName,
     #[error("field name is {len} characters which is larger than the max, 64")]
@@ -181,7 +184,7 @@ pub enum TeamValidationError {
 }
 
 impl CreateTeamInput {
-    pub fn validate(&self) -> Result<(), TeamValidationError> {
+    pub fn validate(&self) -> Result<(), NameMax64ValidationError> {
         self.name.validate()?;
 
         Ok(())
@@ -203,7 +206,7 @@ pub enum CreateTeamError {
     #[error("database was not initialized")]
     NoDatabase,
     #[error("bad input")]
-    ValidationError(TeamValidationError),
+    ValidationError(NameMax64ValidationError),
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("the following tags do not exist: {0:?}")]
@@ -227,6 +230,7 @@ impl TeamExtension {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTimeSlotInput {
     field_id: i32,
+    reservation_type_id: i32,
     #[serde(with = "ts_milliseconds")]
     start: DateTime<Utc>,
     #[serde(with = "ts_milliseconds")]
@@ -245,10 +249,82 @@ pub enum TimeSlotError {
         #[serde(with = "ts_milliseconds")]
         o_end: DateTime<Utc>,
     },
+    #[error("the supplied reservation type id ({0}) does not exist")]
+    ReservationTypeDoesNotExist(i32),
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("could not parse date: `{0}`")]
     ParseError(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeSlotExtension {
+    time_slot: TimeSlot,
+    reservation_type: ReservationType,
+}
+
+#[derive(FromQueryResult)]
+struct TimeSlotSelectionTypeAggregate {
+    /// [`TimeSlot`]
+    time_slot_id: i32,
+    /// [`TimeSlot`]
+    field_id: i32,
+    /// [`TimeSlot`]
+    start: String,
+    /// [`TimeSlot`]
+    end: String,
+    /// [`ReservationType`]
+    reservation_type_id: i32,
+    /// [`ReservationType`]
+    name: String,
+    /// [`ReservationType`]
+    description: Option<String>,
+    /// [`ReservationType`]
+    color: String,
+}
+
+fn select_time_slot_extension() -> Select<TimeSlotEntity> {
+    use reservation_type::Column as R;
+    use time_slot::Column as T;
+
+    TimeSlotEntity::find()
+        .select_only()
+        .column_as(T::Id, "time_slot_id")
+        .column_as(T::FieldId, "field_id")
+        .column_as(T::Start, "start")
+        .column_as(T::End, "end")
+        .column_as(R::Id, "reservation_type_id")
+        .column_as(R::Name, "name")
+        .column_as(R::Description, "description")
+        .column_as(R::Color, "color")
+        .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+        .join(
+            JoinType::LeftJoin,
+            time_slot::Relation::ReservationTypeTimeSlotJoin.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            reservation_type_time_slot_join::Relation::ReservationType.def(),
+        )
+}
+
+impl From<TimeSlotSelectionTypeAggregate> for TimeSlotExtension {
+    fn from(value: TimeSlotSelectionTypeAggregate) -> Self {
+        Self {
+            reservation_type: ReservationType {
+                id: value.reservation_type_id,
+                color: value.color,
+                description: value.description,
+                name: value.name,
+            },
+            time_slot: TimeSlot {
+                id: value.time_slot_id,
+                field_id: value.field_id,
+                start: value.start,
+                end: value.end,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,7 +377,7 @@ impl Validator for EditRegionInput {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditTeamInput {
     id: i32,
-    name: Option<TeamName>,
+    name: Option<NameMax64>,
     tags: Option<Vec<String>>,
 }
 
@@ -322,7 +398,7 @@ pub enum EditTeamError {
     #[error("database was not initialized")]
     NoDatabase,
     #[error("bad input")]
-    ValidationError(TeamValidationError),
+    ValidationError(NameMax64ValidationError),
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
     #[error("the following tags do not exist: {0:?}")]
@@ -590,6 +666,57 @@ impl PreScheduleReport {
         };
 
         Ok(Self::new(target_duplicates, input))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Color(String);
+
+impl Color {
+    pub fn new(input: String) -> Option<Self> {
+        if input.len() != 7 {
+            return None;
+        }
+
+        let mut bytes = input.bytes();
+
+        let Some(b'#') = bytes.next() else {
+            return None;
+        };
+
+        for byte in bytes {
+            if !byte.is_ascii_digit() {
+                return None;
+            }
+        }
+
+        Some(Self(input))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateReservationTypeInput {
+    name: NameMax64,
+    description: Option<String>,
+    color: Color,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CreateReservationTypeError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error(transparent)]
+    Name(#[from] NameMax64ValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+}
+
+impl Validator for CreateReservationTypeInput {
+    type Error = CreateReservationTypeError;
+    fn validate(&self) -> Result<(), Self::Error> {
+        self.name
+            .validate()
+            .map_err(CreateReservationTypeError::Name)
     }
 }
 
@@ -932,12 +1059,13 @@ impl Client {
             .await
     }
 
-    pub async fn get_time_slots(&self, field_id: i32) -> Result<Vec<TimeSlot>, DbErr> {
-        TimeSlotEntity::find()
-            .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+    pub async fn get_time_slots(&self, field_id: i32) -> Result<Vec<TimeSlotExtension>, DbErr> {
+        select_time_slot_extension()
             .filter(Condition::all().add(field::Column::Id.eq(field_id)))
+            .into_model::<TimeSlotSelectionTypeAggregate>()
             .all(&self.connection)
             .await
+            .map(|v| v.into_iter().map(Into::into).collect())
     }
 
     async fn conflicts(
@@ -983,7 +1111,11 @@ impl Client {
     pub async fn create_time_slot(
         &self,
         input: CreateTimeSlotInput,
-    ) -> Result<TimeSlot, TimeSlotError> {
+    ) -> Result<TimeSlotExtension, TimeSlotError> {
+        /*
+         * Potential denial of service if the database gets filled with lots
+         * of time slots.
+         */
         Self::conflicts(
             &self.connection,
             input.field_id,
@@ -993,28 +1125,76 @@ impl Client {
         )
         .await?;
 
+        let Some(reservation_type) = ReservationTypeEntity::find_by_id(input.reservation_type_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
+        else {
+            return Err(TimeSlotError::ReservationTypeDoesNotExist(
+                input.reservation_type_id,
+            ));
+        };
+
         /*
          * No conflicts; good to go.
          */
 
-        TimeSlotEntity::insert(ActiveTimeSlot {
-            start: Set(input.start.to_utc().to_rfc3339()),
-            end: Set(input.end.to_utc().to_rfc3339()),
-            field_id: Set(input.field_id),
-            ..Default::default()
-        })
-        .exec_with_returning(&self.connection)
-        .await
-        .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))
+        self.connection
+            .transaction(move |connection| {
+                Box::pin(async move {
+                    let time_slot = TimeSlotEntity::insert(ActiveTimeSlot {
+                        start: Set(input.start.to_utc().to_rfc3339()),
+                        end: Set(input.end.to_utc().to_rfc3339()),
+                        field_id: Set(input.field_id),
+                        ..Default::default()
+                    })
+                    .exec_with_returning(connection)
+                    .await?;
+
+                    let new_join_table_record =
+                        entity::reservation_type_time_slot_join::ActiveModel {
+                            time_slot: Set(time_slot.id),
+                            reservation_type: Set(input.reservation_type_id),
+                        };
+
+                    new_join_table_record.insert(connection).await?;
+
+                    Ok(TimeSlotExtension {
+                        time_slot,
+                        reservation_type,
+                    })
+                })
+            })
+            .await
+            .map_err(|e: TransactionError<DbErr>| match e {
+                TransactionError::Connection(db) => {
+                    TimeSlotError::DatabaseError(format!("{db} {}:{}", line!(), column!()))
+                }
+                TransactionError::Transaction(transaction) => TimeSlotError::DatabaseError(
+                    format!("transaction error: {transaction} {}:{}", line!(), column!()),
+                ),
+            })
     }
 
-    pub async fn delete_time_slot(&self, id: i32) -> DBResult<DeleteResult> {
-        TimeSlotEntity::delete(ActiveTimeSlot {
-            id: Set(id),
-            ..Default::default()
-        })
-        .exec(&self.connection)
-        .await
+    pub async fn delete_time_slot(&self, id: i32) -> Result<(), TransactionError<DbErr>> {
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    TimeSlotEntity::delete(ActiveTimeSlot {
+                        id: Set(id),
+                        ..Default::default()
+                    })
+                    .exec(connection)
+                    .await?;
+
+                    entity::reservation_type_time_slot_join::Entity::delete_many()
+                        .filter(entity::reservation_type_time_slot_join::Column::TimeSlot.eq(id))
+                        .exec(connection)
+                        .await
+                })
+            })
+            .await
+            .map(|_| ())
     }
 
     pub async fn move_time_slot(&self, input: MoveTimeSlotInput) -> Result<(), TimeSlotError> {
@@ -1049,11 +1229,13 @@ impl Client {
     pub async fn list_reservations_between(
         &self,
         input: ListReservationsBetweenInput,
-    ) -> DBResult<Vec<TimeSlot>> {
-        TimeSlotEntity::find()
+    ) -> DBResult<Vec<TimeSlotExtension>> {
+        select_time_slot_extension()
             .filter(time_slot::Column::Start.between(input.start, input.end))
+            .into_model::<TimeSlotSelectionTypeAggregate>()
             .all(&self.connection)
             .await
+            .map(|v| v.into_iter().map(Into::into).collect())
     }
 
     pub async fn load_all_teams(&self) -> DBResult<Vec<TeamExtension>> {
@@ -1340,5 +1522,94 @@ impl Client {
         input: PreScheduleReportInput,
     ) -> Result<PreScheduleReport, PreScheduleReportError> {
         PreScheduleReport::create(&self.connection, input).await
+    }
+
+    pub async fn create_reservation_type(
+        &self,
+        input: CreateReservationTypeInput,
+    ) -> Result<ReservationType, CreateReservationTypeError> {
+        input.validate()?;
+        ReservationTypeEntity::insert(ActiveReservationType {
+            name: Set(input.name.0),
+            description: Set(input.description),
+            color: Set(input.color.0),
+            ..Default::default()
+        })
+        .exec_with_returning(&self.connection)
+        .await
+        .map_err(|e| CreateReservationTypeError::DatabaseError(e.to_string()))
+    }
+
+    pub async fn get_reservation_types(&self) -> DBResult<Vec<ReservationType>> {
+        ReservationTypeEntity::find().all(&self.connection).await
+    }
+
+    pub async fn delete_reservation_type(&self, id: i32) -> Result<(), String> {
+        /*
+         * In SQLite, you cannot join on a DELETE.
+         * We must search by ID using a JOIN, which
+         * will cache the result and thus speed up the
+         * subsequent DELETE.
+         */
+
+        let time_slots_to_delete = TimeSlotEntity::find()
+            .join(
+                JoinType::LeftJoin,
+                time_slot::Relation::ReservationTypeTimeSlotJoin.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                reservation_type_time_slot_join::Relation::ReservationType.def(),
+            )
+            .filter(reservation_type::Column::Id.eq(id))
+            .all(&self.connection)
+            .await
+            .map_err(|e| format!("{e} {}:{}", line!(), column!()))?;
+
+        let time_slot_ids = time_slots_to_delete
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>();
+
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    TimeSlotEntity::delete_many()
+                        .filter(time_slot::Column::Id.is_in(time_slot_ids))
+                        .exec(connection)
+                        .await?;
+
+                    ReservationTypeEntity::delete_by_id(id)
+                        .exec(connection)
+                        .await
+                        .map(|_| ())
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                TransactionError::Connection(e) => format!("{e} {}:{}", line!(), column!()),
+                TransactionError::Transaction(trans) => {
+                    format!("transaction: {trans} {}:{}", line!(), column!())
+                }
+            })
+    }
+
+    pub async fn edit_reservation_type(
+        &self,
+        mut reservation_type: ReservationType,
+    ) -> Result<(), CreateReservationTypeError> {
+        let name_to_validate = NameMax64(reservation_type.name);
+        name_to_validate.validate()?;
+        reservation_type.name = name_to_validate.0;
+
+        match reservation_type
+            .into_active_model()
+            .reset_all()
+            .update(&self.connection)
+            .await
+        {
+            Ok(..) => Ok(()),
+            Err(e) => Err(CreateReservationTypeError::DatabaseError(e.to_string())),
+        }
     }
 }

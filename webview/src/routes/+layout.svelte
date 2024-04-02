@@ -55,6 +55,7 @@
 			<ul>
 				<li><a href="/">Home</a></li>
 				<li><a href="/groups">Groups</a></li>
+				<li><a href="/field-types">Field Types</a></li>
 				<li><a href="/scheduler">Scheduler</a></li>
 			</ul>
 		</nav>

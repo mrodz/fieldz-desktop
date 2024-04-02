@@ -7,7 +7,6 @@
 	import List from '@event-calendar/list';
 	import {
 		type ListReservationsBetweenInput,
-		type TimeSlot,
 		type Field,
 		type CalendarEvent,
 		type TeamExtension,
@@ -16,7 +15,9 @@
 		type TeamGroup,
 		type TargetExtension,
 		type PreScheduleReport,
-		type PreScheduleReportInput
+		type PreScheduleReportInput,
+		type ReservationType,
+		type TimeSlotExtension
 	} from '$lib';
 	import {
 		getModalStore,
@@ -43,7 +44,7 @@
 
 	let compact = false;
 
-	const datesQueried: Map<string, TimeSlot[]> = new Map();
+	const datesQueried: Map<string, TimeSlotExtension[]> = new Map();
 	const fieldsCache: Map<number, Field> = new Map();
 	const regionCache: Map<number, Region> = new Map();
 
@@ -67,14 +68,14 @@
 		return region;
 	}
 
-	async function titleFromTimeSlot(input: TimeSlot): Promise<string | undefined> {
+	async function titleFromTimeSlot(input: TimeSlotExtension): Promise<string | undefined> {
 		try {
-			const field = await loadField(input.field_id);
+			const field = await loadField(input.time_slot.field_id);
 			const region = await loadRegion(field.region_owner);
 			return `Region: ${region.title}\nField: ${field.name}`;
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
-				title: `Error getting field (field id: ${input.field_id})`,
+				title: `Error getting field (field id: ${input.time_slot.field_id})`,
 				type: 'error'
 			});
 		}
@@ -107,9 +108,9 @@
 				return;
 			}
 
-			let newEvents: TimeSlot[];
+			let newEvents: TimeSlotExtension[];
 			try {
-				newEvents = await invoke<TimeSlot[]>('list_reservations_between', { input });
+				newEvents = await invoke<TimeSlotExtension[]>('list_reservations_between', { input });
 			} catch (e) {
 				dialog.message(JSON.stringify(e), {
 					title: `Error loading reservations ({})`,
@@ -127,7 +128,7 @@
 					calendar.addEvent(asCalendarEvent);
 				} catch (e) {
 					dialog.message(JSON.stringify(e), {
-						title: `Error getting field (field id: ${event.field_id})`,
+						title: `Error getting field (field id: ${event.time_slot.field_id})`,
 						type: 'error'
 					});
 				}
@@ -141,7 +142,7 @@
 			// If the event was loaded, it was cached.
 			const backingEvent = Array.from(datesQueried.values())
 				.flatMap((x) => x)
-				.find((event) => event.id === clickedId);
+				.find((event) => event.time_slot.id === clickedId);
 
 			if (backingEvent === undefined) {
 				dialog.message('backing event = undefined', {
@@ -154,12 +155,12 @@
 			modalStore.trigger({
 				type: 'confirm',
 				title: 'View calendar',
-				body: `<div>Event start: ${backingEvent.start}</div><div>Event end: ${backingEvent.end}</div><br/>Would you like to visit this event's source calendar?`,
+				body: `<div>Event start: ${backingEvent.time_slot.start}</div><div>Event end: ${backingEvent.time_slot.end}</div><br/>Would you like to visit this event's source calendar?`,
 				buttonTextConfirm: 'Visit Calendar',
 				buttonTextCancel: 'Back',
 				async response(r: boolean) {
 					if (r) {
-						document.location.href = `/reservations/${backingEvent.field_id}?d=${e.event.start.valueOf()}`;
+						document.location.href = `/reservations/${backingEvent.time_slot.field_id}?d=${e.event.start.valueOf()}`;
 					}
 				}
 			});
@@ -186,14 +187,18 @@
 	}
 
 	let teams: TeamExtension[] | undefined;
+	let reservationTypes: ReservationType[] | undefined;
 	let groups: TeamGroup[] | undefined;
 	let targets: TargetExtension[] | undefined;
 
 	onMount(async () => {
 		try {
-			teams = await invoke<TeamExtension[]>('load_all_teams');
-			groups = await invoke<TeamGroup[]>('get_groups');
-			targets = await invoke<TargetExtension[]>('get_targets');
+			[teams, groups, targets, reservationTypes] = await Promise.all([
+				invoke<TeamExtension[]>('load_all_teams'),
+				invoke<TeamGroup[]>('get_groups'),
+				invoke<TargetExtension[]>('get_targets'),
+				invoke<ReservationType[]>('get_reservation_types')
+			]);
 			await generateReport();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
@@ -379,6 +384,24 @@
 
 		<Accordion class="my-4">
 			<AccordionItem>
+				<svelte:fragment slot="summary">Field Sizes</svelte:fragment>
+				<svelte:fragment slot="content">
+					{#if reservationTypes === undefined}
+						<ProgressRadial />
+					{:else if reservationTypes.length === 0}
+						<span class="ml-4">You have not created any reservation types.</span>
+					{:else}
+						<div class="grid grid-cols-3 gap-8">
+							{#each reservationTypes as reservationType}
+								<div class="block p-5" style="background-color: {reservationType.color}">
+									{reservationType.name}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</svelte:fragment>
+			</AccordionItem>
+			<AccordionItem>
 				<svelte:fragment slot="summary">Time Slots</svelte:fragment>
 				<svelte:fragment slot="content">
 					<div class="m-4 p-4 text-center">
@@ -476,7 +499,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -485,166 +508,172 @@
 		{/if}
 	</section>
 
-	<section class="m-4">
-		<h2 class="h2 mb-4">Matches to Play</h2>
-		<RangeSlider
-			name="range-slider"
-			on:change={() => updateTargets()}
-			bind:value={gamesToPlay}
-			min={1}
-			max={7}
-			step={1}
-			ticked
-		>
-			<div class="flex items-center justify-between">
-				<div>
-					Every team will play each other {gamesToPlay} time{gamesToPlay === 1 ? '' : 's'}
+	{#if groups?.length ?? 0 !== 0}
+		<section class="m-4">
+			<h2 class="h2 mb-4">Matches to Play</h2>
+			<RangeSlider
+				name="range-slider"
+				on:change={() => updateTargets()}
+				bind:value={gamesToPlay}
+				min={1}
+				max={7}
+				step={1}
+				ticked
+			>
+				<div class="flex items-center justify-between">
+					<div>
+						Every team will play each other {gamesToPlay} time{gamesToPlay === 1 ? '' : 's'}
+					</div>
 				</div>
-			</div>
-		</RangeSlider>
-	</section>
+			</RangeSlider>
+		</section>
 
-	<section class="m-4">
-		<h2 class="h2 mb-4">Reporting</h2>
+		<section class="m-4">
+			<h2 class="h2 mb-4">Reporting</h2>
 
-		{#if willSendReport}
-			<section class="grid w-full grid-cols-[auto_1fr] gap-16">
-				<div class="p-4">
-					<div class="placeholder h-8 md:h-8 md:w-48" />
-					<div class="placeholder-circle mx-auto my-4 w-36 animate-pulse" />
-				</div>
+			{#if willSendReport}
+				<section class="grid w-full grid-cols-[auto_1fr] gap-16">
+					<div class="p-4">
+						<div class="placeholder h-8 md:h-8 md:w-48" />
+						<div class="placeholder-circle mx-auto my-4 w-36 animate-pulse" />
+					</div>
 
-				<div class="space-y-4 p-4">
-					<div class="placeholder" />
-					<div class="grid grid-cols-3 gap-8">
+					<div class="space-y-4 p-4">
 						<div class="placeholder" />
-						<div class="placeholder" />
+						<div class="grid grid-cols-3 gap-8">
+							<div class="placeholder" />
+							<div class="placeholder" />
+							<div class="placeholder" />
+						</div>
+						<div class="grid grid-cols-4 gap-4">
+							<div class="placeholder" />
+							<div class="placeholder" />
+							<div class="placeholder" />
+							<div class="placeholder" />
+						</div>
 						<div class="placeholder" />
 					</div>
-					<div class="grid grid-cols-4 gap-4">
-						<div class="placeholder" />
-						<div class="placeholder" />
-						<div class="placeholder" />
-						<div class="placeholder" />
-					</div>
-					<div class="placeholder" />
-				</div>
-			</section>
-			<!-- <ProgressBar class="my-auto" /> -->
-		{:else if report !== undefined}
-			{#if reportHasErrors(report)}
-				<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">
-					{#if report.target_has_duplicates.length !== 0}
-						<div>
-							<strong>Cannot use targets because of duplicates</strong>
-							<ul class="list">
-								{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
-									<li>
-										<span>Duplicates on {dup.team_groups.length === 0 ? 'empty' : ''} targets</span>
+				</section>
+				<!-- <ProgressBar class="my-auto" /> -->
+			{:else if report !== undefined}
+				{#if reportHasErrors(report)}
+					<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
+						{#if report.target_has_duplicates.length !== 0}
+							<div>
+								<strong>Cannot use targets because of duplicates</strong>
+								<ul class="list">
+									{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
+										<li>
+											<span
+												>Duplicates on {dup.team_groups.length === 0 ? 'empty' : ''} targets</span
+											>
 
-										{#each dup.used_by as badTarget}
+											{#each dup.used_by as badTarget}
+												<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
+													>{badTarget.target.id}</a
+												>
+											{/each}
+
+											{#if dup.team_groups.length !== 0}
+												<span>which use the following labels:</span>
+
+												{#each dup.team_groups as group}
+													<span class="variant-filled chip">{group.name}</span>
+												{/each}
+											{/if}
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+						{#if report.target_duplicates.find((d) => d.teams_with_group_set === 0) !== undefined}
+							<div>
+								<strong>Cannot use targets because no team has the following sets of labels</strong>
+								<ul class="list">
+									{#each report.target_duplicates.filter((d) => d.teams_with_group_set === 0) as empty}
+										<li>
+											<span>Target(s)</span>
+
+											{#each empty.used_by as badTarget}
+												<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
+													>{badTarget.target.id}</a
+												>
+											{/each}
+
+											{#if empty.team_groups.length === 0}
+												<span>reference(s) impossible team which uses no labels</span>
+											{:else}
+												<span>reference(s) impossible team which uses labels</span>
+
+												{#each empty.team_groups as group}
+													<span class="variant-filled chip">{group.name}</span>
+												{/each}
+											{/if}
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+						{#if report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined}
+							<div>
+								<strong>Cannot use targets because no games will be outputted</strong>
+								<ul class="list">
+									{#each report.target_required_matches.filter(([_, occ]) => occ === 0) as [badTarget]}
+										<li>
+											<span>Target</span>
+
 											<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
 												>{badTarget.target.id}</a
 											>
-										{/each}
 
-										{#if dup.team_groups.length !== 0}
-											<span>which use the following labels:</span>
+											{#if badTarget.groups.length === 0}
+												<span>is empty and will not create any games</span>
+											{:else}
+												<span>which use labels</span>
 
-											{#each dup.team_groups as group}
-												<span class="variant-filled chip">{group.name}</span>
-											{/each}
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
-					{#if report.target_duplicates.find((d) => d.teams_with_group_set === 0) !== undefined}
-						<div>
-							<strong>Cannot use targets because no team has the following sets of labels</strong>
-							<ul class="list">
-								{#each report.target_duplicates.filter((d) => d.teams_with_group_set === 0) as empty}
-									<li>
-										<span>Target(s)</span>
+												{#each badTarget.groups as group}
+													<span class="variant-filled chip">{group.name}</span>
+												{/each}
 
-										{#each empty.used_by as badTarget}
-											<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-												>{badTarget.target.id}</a
-											>
-										{/each}
+												<span>will not create any games</span>
+											{/if}
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</div>
+				{/if}
 
-										{#if empty.team_groups.length === 0}
-											<span>reference(s) impossible team which uses no labels</span>
-										{:else}
-											<span>reference(s) impossible team which uses labels</span>
+				<div class="grid grid-cols-[auto_1fr] gap-16">
+					<div>
+						<h3 class="h4">Time Slots Supplied / Required</h3>
+						<ProgressRadial
+							class="mx-auto my-4"
+							strokeLinecap="round"
+							meter={report.total_matches_required <= report.total_matches_supplied
+								? 'stroke-success-500'
+								: 'stroke-error-500'}
+							track={report.total_matches_required <= report.total_matches_supplied
+								? 'stroke-success-500/30'
+								: 'stroke-error-500/30'}
+							value={percentFillage(report.total_matches_required, report.total_matches_supplied)}
+						>
+							{report.total_matches_supplied}/{report.total_matches_required}
+						</ProgressRadial>
+					</div>
 
-											{#each empty.team_groups as group}
-												<span class="variant-filled chip">{group.name}</span>
-											{/each}
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
-					{#if report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined}
-						<div>
-							<strong>Cannot use targets because no games will be outputted</strong>
-							<ul class="list">
-								{#each report.target_required_matches.filter(([_, occ]) => occ === 0) as [badTarget]}
-									<li>
-										<span>Target</span>
+					<div>
+						<h3 class="h4">Per target</h3>
 
-										<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-											>{badTarget.target.id}</a
-										>
-
-										{#if badTarget.groups.length === 0}
-											<span>is empty and will not create any games</span>
-										{:else}
-											<span>which use labels</span>
-
-											{#each badTarget.groups as group}
-												<span class="variant-filled chip">{group.name}</span>
-											{/each}
-
-											<span>will not create any games</span>
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
+						<Table class="my-4" source={reportTableSource} />
+					</div>
 				</div>
 			{/if}
-
-			<div class="grid grid-cols-[auto_1fr] gap-16">
-				<div>
-					<h3 class="h4">Time Slots Supplied / Required</h3>
-					<ProgressRadial
-						class="mx-auto my-4"
-						strokeLinecap="round"
-						meter={report.total_matches_required <= report.total_matches_supplied
-							? 'stroke-success-500'
-							: 'stroke-error-500'}
-						track={report.total_matches_required <= report.total_matches_supplied
-							? 'stroke-success-500/30'
-							: 'stroke-error-500/30'}
-						value={percentFillage(report.total_matches_required, report.total_matches_supplied)}
-					>
-						{report.total_matches_supplied}/{report.total_matches_required}
-					</ProgressRadial>
-				</div>
-
-				<div>
-					<h3 class="h4">Per target</h3>
-
-					<Table class="my-4" source={reportTableSource} />
-				</div>
-			</div>
-		{:else}
-			test {report}
-		{/if}
-	</section>
+		</section>
+	{:else}
+		<section class="card m-4 p-4">
+			You will be able to preview your schedule control parameters here once you add a target.
+		</section>
+	{/if}
 </main>

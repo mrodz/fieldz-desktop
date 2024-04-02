@@ -1,5 +1,10 @@
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput, EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError, ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError, PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError, Validator
+    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateReservationTypeError,
+    CreateReservationTypeInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput,
+    EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError,
+    ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError,
+    PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError,
+    TimeSlotExtension, Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -371,7 +376,7 @@ pub(crate) async fn delete_group(app: AppHandle, id: i32) -> Result<(), DeleteGr
 pub(crate) async fn get_time_slots(
     app: AppHandle,
     field_id: i32,
-) -> Result<Vec<db::time_slot::Model>, String> {
+) -> Result<Vec<TimeSlotExtension>, String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -389,7 +394,7 @@ pub(crate) async fn get_time_slots(
 pub(crate) async fn create_time_slot(
     app: AppHandle,
     input: CreateTimeSlotInput,
-) -> Result<db::time_slot::Model, TimeSlotError> {
+) -> Result<TimeSlotExtension, TimeSlotError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock.database.as_ref().ok_or(TimeSlotError::NoDatabase)?;
@@ -418,18 +423,14 @@ pub(crate) async fn delete_time_slot(app: AppHandle, id: i32) -> Result<(), Stri
         .as_ref()
         .ok_or("database was not initialized".to_owned())?;
 
-    match client.delete_time_slot(id).await {
-        Ok(d) if d.rows_affected == 1 => Ok(()),
-        Ok(d) => Err(format!("expected to delete 1 row, instead executed {d:?}")),
-        Err(e) => Err(e.to_string()),
-    }
+    client.delete_time_slot(id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub(crate) async fn list_reservations_between(
     app: AppHandle,
     input: ListReservationsBetweenInput,
-) -> Result<Vec<db::time_slot::Model>, String> {
+) -> Result<Vec<TimeSlotExtension>, String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -575,4 +576,66 @@ pub(crate) async fn generate_pre_schedule_report(
         .ok_or(PreScheduleReportError::NoDatabase)?;
 
     client.generate_pre_schedule_report(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_reservation_types(
+    app: AppHandle,
+) -> Result<Vec<db::reservation_type::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_reservation_types()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn create_reservation_type(
+    app: AppHandle,
+    input: CreateReservationTypeInput,
+) -> Result<db::reservation_type::Model, CreateReservationTypeError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CreateReservationTypeError::NoDatabase)?;
+
+    client.create_reservation_type(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn delete_reservation_type(app: AppHandle, id: i32) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .delete_reservation_type(id)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn update_reservation_type(
+    app: AppHandle,
+    reservation_type: db::reservation_type::Model,
+) -> Result<(), CreateReservationTypeError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CreateReservationTypeError::NoDatabase)?;
+
+    client.edit_reservation_type(reservation_type).await
 }

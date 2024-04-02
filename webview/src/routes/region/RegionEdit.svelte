@@ -100,13 +100,14 @@
 				<span>Region Name</span>
 				<div class="input-group input-group-divider grid-cols-[1fr_auto]">
 					<input
-						class="input {regionNameError === undefined ? '' : 'input-error'}"
+						class:input-error={regionNameError !== undefined}
+						class="input"
 						type="text"
 						bind:value={regionNameInput}
 						on:keypress={() => (regionNameError = undefined)}
 						on:change={() => (regionNameError = undefined)}
 					/>
-					<div class="input-group-shim {(regionNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
+					<div class:input-error={(regionNameInput?.length ?? 0) > 64} class="input-group-shim">
 						{regionNameInput?.length ?? 0}/64
 					</div>
 				</div>

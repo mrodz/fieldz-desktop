@@ -107,14 +107,15 @@
 			<span>Team Name</span>
 			<div class="input-group input-group-divider grid-cols-[1fr_auto]">
 				<input
-					class="input {teamNameError === undefined ? '' : 'input-error'}"
+					class:input-error={teamNameError !== undefined}
+					class="input"
 					type="text"
 					bind:value={teamNameInput}
 					on:keypress={() => (teamNameError = undefined)}
 					on:change={() => (teamNameError = undefined)}
 					placeholder="eg. Green Dragons"
 				/>
-				<div class="input-group-shim {(teamNameInput?.length ?? 0) > 64 ? 'input-error' : ''}">
+				<div class:input-error={(teamNameInput?.length ?? 0) > 64} class="input-group-shim">
 					{teamNameInput?.length ?? 0}/64
 				</div>
 			</div>
