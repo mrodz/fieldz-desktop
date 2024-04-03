@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ReservationType } from '$lib';
+	import { MAX_GAMES_PER_FIELD_TYPE, MIN_GAMES_PER_FIELD_TYPE, type ReservationType } from '$lib';
 	import { faSpinner, faTrash } from '@fortawesome/free-solid-svg-icons';
 	import { getModalStore } from '@skeletonlabs/skeleton';
 	import { createEventDispatcher } from 'svelte';
@@ -53,11 +53,25 @@
 		}, 1_000);
 	}
 
+	function increaseCount() {
+		if (reservation.default_sizing < MAX_GAMES_PER_FIELD_TYPE) {
+			reservation.default_sizing++;
+			requestUpdate();
+		}
+	}
+
+	function decreaseCount() {
+		if (reservation.default_sizing > MIN_GAMES_PER_FIELD_TYPE) {
+			reservation.default_sizing--;
+			requestUpdate();
+		}
+	}
+
 	let deleting = false;
 </script>
 
 <div class="card p-4 duration-1000" class:animate-pulse={deleting}>
-	<div class="grid grid-cols-[auto_1fr_auto] gap-4">
+	<div class="grid grid-cols-[auto_1fr] gap-4">
 		<div class="grid h-full grid-rows-2 items-center justify-center">
 			<input
 				class="input m-2 shadow-2xl"
@@ -85,7 +99,7 @@
 					placeholder="Give your classification a name"
 				/>
 			</strong>
-			<div class="mt-2">
+			<div class="mt-2 grid grid-cols-[1fr_auto] gap-2">
 				<textarea
 					class="textarea variant-form-material resize-none"
 					placeholder="No description"
@@ -93,6 +107,20 @@
 					on:keydown={() => requestUpdate()}
 					bind:value={reservation.description}
 				/>
+				<div class="max-w-20 text-center">
+					Default matches per field
+					<div class="mx-auto grid grid-cols-[1fr_auto_1fr]">
+						<button class="-x-variant-ghost btn-icon btn-icon-sm mr-auto" on:click={decreaseCount}
+							>-</button
+						>
+						<div class="mx-2 text-center align-middle leading-loose">
+							{reservation.default_sizing}
+						</div>
+						<button class="-x-variant-ghost btn-icon btn-icon-sm ml-auto" on:click={increaseCount}
+							>+</button
+						>
+					</div>
+				</div>
 			</div>
 		</div>
 	</div>

@@ -281,6 +281,8 @@ struct TimeSlotSelectionTypeAggregate {
     description: Option<String>,
     /// [`ReservationType`]
     color: String,
+    /// [`ReservationType`]
+    default_sizing: i32,
 }
 
 fn select_time_slot_extension() -> Select<TimeSlotEntity> {
@@ -297,6 +299,7 @@ fn select_time_slot_extension() -> Select<TimeSlotEntity> {
         .column_as(R::Name, "name")
         .column_as(R::Description, "description")
         .column_as(R::Color, "color")
+        .column_as(R::DefaultSizing, "default_sizing")
         .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
         .join(
             JoinType::LeftJoin,
@@ -316,6 +319,7 @@ impl From<TimeSlotSelectionTypeAggregate> for TimeSlotExtension {
                 color: value.color,
                 description: value.description,
                 name: value.name,
+                default_sizing: value.default_sizing,
             },
             time_slot: TimeSlot {
                 id: value.time_slot_id,
@@ -718,6 +722,26 @@ impl Validator for CreateReservationTypeInput {
             .validate()
             .map_err(CreateReservationTypeError::Name)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldSupportedConcurrencyInput {
+    reservation_type_ids: Vec<i32>,
+    field_id: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldConcurrency {
+    reservation_type_id: i32,
+    concurrency: i32,
+    is_custom: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateReservationTypeConcurrencyForFieldInput {
+    reservation_type_id: i32,
+    field_id: i32,
+    new_concurrency: i32,
 }
 
 impl Client {
@@ -1611,5 +1635,103 @@ impl Client {
             Ok(..) => Ok(()),
             Err(e) => Err(CreateReservationTypeError::DatabaseError(e.to_string())),
         }
+    }
+
+    pub async fn get_supported_concurrency_for_field(
+        &self,
+        input: FieldSupportedConcurrencyInput,
+    ) -> DBResult<Vec<FieldConcurrency>> {
+        let mut result = HashMap::with_capacity(input.reservation_type_ids.len());
+
+        let custom_associations = reservation_type_field_size_join::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(reservation_type_field_size_join::Column::Field.eq(input.field_id))
+                    .add(
+                        reservation_type_field_size_join::Column::ReservationType
+                            .is_in(input.reservation_type_ids.clone()),
+                    ),
+            )
+            .all(&self.connection)
+            .await?;
+
+        for custom_association in custom_associations {
+            result.insert(
+                custom_association.reservation_type,
+                (custom_association.size, true),
+            );
+        }
+
+        let ids_non_custom = input
+            .reservation_type_ids
+            .into_iter()
+            .filter(|id| !result.contains_key(id))
+            .collect::<Vec<_>>();
+
+        let default_associations = ReservationTypeEntity::find()
+            .filter(reservation_type::Column::Id.is_in(ids_non_custom))
+            .all(&self.connection)
+            .await?;
+
+        for default_association in default_associations {
+            result.insert(
+                default_association.id,
+                (default_association.default_sizing, false),
+            );
+        }
+
+        Ok(result
+            .into_iter()
+            .map(
+                |(reservation_type_id, (concurrency, is_custom))| FieldConcurrency {
+                    reservation_type_id,
+                    concurrency,
+                    is_custom,
+                },
+            )
+            .collect())
+    }
+
+    pub async fn update_reservation_type_concurrency_for_field(
+        &self,
+        input: UpdateReservationTypeConcurrencyForFieldInput,
+    ) -> DBResult<()> {
+        /*
+         * There is no UPSERT support in SeaORM :(
+         * At least we are hot with caching.
+         */
+
+        let maybe_join_table_record = reservation_type_field_size_join::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(reservation_type_field_size_join::Column::Field.eq(input.field_id))
+                    .add(
+                        reservation_type_field_size_join::Column::ReservationType
+                            .eq(input.reservation_type_id),
+                    ),
+            )
+            .one(&self.connection)
+            .await?;
+
+        if let Some(join_table_record) = maybe_join_table_record {
+            let mut to_update = join_table_record.into_active_model();
+
+            to_update.set(
+                reservation_type_field_size_join::Column::Size,
+                input.new_concurrency.into(),
+            );
+
+            to_update.update(&self.connection).await?;
+        } else {
+            reservation_type_field_size_join::ActiveModel {
+                field: Set(input.field_id),
+                reservation_type: Set(input.reservation_type_id),
+                size: Set(input.new_concurrency),
+            }
+            .insert(&self.connection)
+            .await?;
+        }
+
+        Ok(())
     }
 }

@@ -6,6 +6,7 @@ mod m20240223_053746_create_team;
 mod m20240302_033333_create_time_slots;
 mod m20240316_053808_create_target;
 mod m20240331_003613_create_reservation_type;
+mod m20240402_222730_add_default_concurrency_count;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240302_033333_create_time_slots::Migration),
             Box::new(m20240316_053808_create_target::Migration),
             Box::new(m20240331_003613_create_reservation_type::Migration),
+            Box::new(m20240402_222730_add_default_concurrency_count::Migration),
         ]
     }
 }

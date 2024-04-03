@@ -13,6 +13,7 @@ pub struct Model {
     pub name: String,
     pub description: Option<String>,
     pub color: String,
+    pub default_sizing: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -391,7 +391,7 @@
 					{:else if reservationTypes.length === 0}
 						<span class="ml-4">You have not created any reservation types.</span>
 					{:else}
-						<div class="grid grid-cols-3 gap-8">
+						<div class="grid grid-cols-2 gap-8 xl:grid-cols-3">
 							{#each reservationTypes as reservationType}
 								<div class="block p-5" style="background-color: {reservationType.color}">
 									{reservationType.name}

@@ -7,14 +7,18 @@
 	import { onMount } from 'svelte';
 	import { dialog, invoke } from '@tauri-apps/api';
 	import {
-		type TimeSlot,
 		type CreateTimeSlotInput,
 		type CalendarEvent,
 		type Field,
 		type MoveTimeSlotInput,
 		type ReservationType,
+		type TimeSlotExtension,
+		type FieldSupportedConcurrencyInput,
+		type UpdateReservationTypeConcurrencyForFieldInput,
 		eventFromTimeSlot,
-		type TimeSlotExtension
+		MAX_GAMES_PER_FIELD_TYPE,
+		MIN_GAMES_PER_FIELD_TYPE,
+		type FieldConcurrency
 	} from '$lib';
 	import Fa from 'svelte-fa';
 	import { faPaintRoller } from '@fortawesome/free-solid-svg-icons';
@@ -34,23 +38,42 @@
 
 	let activeScheduleType: ReservationType | undefined;
 
+	let gamesPerFieldType: FieldConcurrency[] | undefined;
+
 	onMount(async () => {
 		try {
-			[rawEvents, field, reservationTypes] = await Promise.all([
-				invoke<TimeSlotExtension[]>('get_time_slots', {
-					fieldId: data.fieldId
-				}),
+			[field, reservationTypes] = await Promise.all([
 				invoke<Field>('get_field', {
 					fieldId: data.fieldId
 				}),
 				invoke<ReservationType[]>('get_reservation_types')
 			]);
 
+			/*
+			 * Avoid fetching lots of data if the calendar won't render.
+			 */
+			if (reservationTypes.length !== 0) {
+				rawEvents = await invoke<TimeSlotExtension[]>('get_time_slots', {
+					fieldId: data.fieldId
+				});
+			} else {
+				rawEvents = [];
+			}
+
+			const input = {
+				reservation_type_ids: reservationTypes.map((t) => t.id),
+				field_id: data.fieldId
+			} satisfies FieldSupportedConcurrencyInput;
+
 			activeScheduleType = reservationTypes.at(0);
 
 			for (let event of rawEvents) {
 				calendar.addEvent(eventFromTimeSlot(event));
 			}
+
+			gamesPerFieldType = await invoke<FieldConcurrency[]>('get_supported_concurrency_for_field', {
+				input
+			});
 		} catch (e) {
 			console.error(e);
 			dialog.message(JSON.stringify(e), {
@@ -240,6 +263,48 @@
 			});
 		}
 	} as const;
+
+	async function signalCustomConcurrencyUpdate(fc: FieldConcurrency) {
+		try {
+			const input = {
+				field_id: data.fieldId,
+				reservation_type_id: fc.reservation_type_id,
+				new_concurrency: fc.concurrency
+			} satisfies UpdateReservationTypeConcurrencyForFieldInput;
+
+			await invoke('update_reservation_type_concurrency_for_field', {
+				input
+			});
+
+			// signal UI refresh
+			gamesPerFieldType = gamesPerFieldType;
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				title: 'Could not set custom field type concurrency',
+				type: 'error'
+			});
+		}
+	}
+
+	async function increaseCount(typeId: number) {
+		const thisType = gamesPerFieldType!.find((fc) => fc.reservation_type_id === typeId);
+
+		if (thisType!.concurrency < MAX_GAMES_PER_FIELD_TYPE) {
+			thisType!.concurrency++;
+			await signalCustomConcurrencyUpdate(thisType!);
+			gamesPerFieldType = gamesPerFieldType;
+		}
+	}
+
+	async function decreaseCount(typeId: number) {
+		const thisType = gamesPerFieldType!.find((fc) => fc.reservation_type_id === typeId);
+
+		if (thisType!.concurrency > MIN_GAMES_PER_FIELD_TYPE) {
+			thisType!.concurrency--;
+			await signalCustomConcurrencyUpdate(thisType!);
+			gamesPerFieldType = gamesPerFieldType;
+		}
+	}
 </script>
 
 <main class="p-4" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
@@ -281,20 +346,36 @@
 		</div>
 	{:else}
 		<section>
-			<div class="grid grid-cols-3 gap-8">
+			<div class="grid grid-cols-2 gap-8 xl:grid-cols-3">
 				{#each reservationTypes as reservationType}
-					<button
-						class="btn block grid grid-cols-[auto_1fr]"
-						disabled={activeScheduleType?.id === reservationType.id}
-						on:click={() => (activeScheduleType = reservationType)}
-					>
-						<span>
-							<Fa icon={faPaintRoller} size="lg" />
-						</span>
-						<div class="flex p-5" style="background-color: {reservationType.color}">
-							{reservationType.name}
+					<div class="flex flex-col">
+						<button
+							class="btn block grid grid-cols-[auto_1fr]"
+							disabled={activeScheduleType?.id === reservationType.id}
+							on:click={() => (activeScheduleType = reservationType)}
+						>
+							<span>
+								<Fa icon={faPaintRoller} size="lg" />
+							</span>
+							<div class="flex p-5" style="background-color: {reservationType.color}">
+								{reservationType.name}
+							</div>
+						</button>
+						<div class="mx-auto grid w-1/3 grid-cols-[1fr_auto_1fr]">
+							<button
+								class="-x-variant-ghost btn-icon btn-icon-sm mr-auto"
+								on:click={() => decreaseCount(reservationType.id)}>-</button
+							>
+							<div class="mx-2 text-center align-middle leading-loose">
+								{gamesPerFieldType?.find((fc) => fc.reservation_type_id === reservationType.id)
+									?.concurrency}
+							</div>
+							<button
+								class="-x-variant-ghost btn-icon btn-icon-sm ml-auto"
+								on:click={() => increaseCount(reservationType.id)}>+</button
+							>
 						</div>
-					</button>
+					</div>
 				{/each}
 			</div>
 
