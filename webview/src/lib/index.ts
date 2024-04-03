@@ -173,6 +173,7 @@ export interface ReservationType {
 	id: number;
 	name: string;
 	color: string;
+	default_sizing: number;
 	description?: string;
 }
 
@@ -180,4 +181,25 @@ export interface CreateReservationTypeInput {
 	name: string;
 	color: string;
 	description?: string;
+}
+
+export const MAX_GAMES_PER_FIELD_TYPE = 8;
+export const MIN_GAMES_PER_FIELD_TYPE = 1;
+
+export interface FieldSupportedConcurrencyInput {
+	reservation_type_ids: number[];
+	field_id: number;
+}
+
+export interface FieldConcurrency {
+	reservation_type_id: number;
+	field_id: number;
+	concurrency: number;
+	is_custom: boolean;
+}
+
+export interface UpdateReservationTypeConcurrencyForFieldInput {
+	reservation_type_id: number;
+	field_id: number;
+	new_concurrency: number;
 }

@@ -96,6 +96,9 @@ fn main() -> Result<()> {
             get_reservation_types,
             delete_reservation_type,
             update_reservation_type,
+            get_supported_concurrency_for_field,
+            update_reservation_type_concurrency_for_field,
+            get_non_default_reservation_type_concurrency_associations,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

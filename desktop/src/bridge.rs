@@ -1,10 +1,11 @@
 use db::{
     CreateFieldInput, CreateGroupError, CreateRegionInput, CreateReservationTypeError,
     CreateReservationTypeInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput,
-    EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldValidationError,
-    ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError,
-    PreScheduleReportInput, RegionValidationError, TargetExtension, TeamExtension, TimeSlotError,
-    TimeSlotExtension, Validator,
+    EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldConcurrency,
+    FieldSupportedConcurrencyInput, FieldValidationError, ListReservationsBetweenInput,
+    MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError, PreScheduleReportInput,
+    RegionValidationError, TargetExtension, TeamExtension, TimeSlotError, TimeSlotExtension,
+    UpdateReservationTypeConcurrencyForFieldInput, Validator,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -638,4 +639,57 @@ pub(crate) async fn update_reservation_type(
         .ok_or(CreateReservationTypeError::NoDatabase)?;
 
     client.edit_reservation_type(reservation_type).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_supported_concurrency_for_field(
+    app: AppHandle,
+    input: FieldSupportedConcurrencyInput,
+) -> Result<Vec<FieldConcurrency>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_supported_concurrency_for_field(input)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn update_reservation_type_concurrency_for_field(
+    app: AppHandle,
+    input: UpdateReservationTypeConcurrencyForFieldInput,
+) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .update_reservation_type_concurrency_for_field(input)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn get_non_default_reservation_type_concurrency_associations(
+    app: AppHandle,
+) -> Result<Vec<FieldConcurrency>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_non_default_reservation_type_concurrency_associations()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
 }

@@ -4,6 +4,7 @@
 	import ReservationTypeComponent from './ReservationType.svelte';
 	import { type ReservationType, type CreateReservationTypeInput, randomCalendarColor } from '$lib';
 	import { invoke, dialog } from '@tauri-apps/api';
+	import { ProgressRadial } from '@skeletonlabs/skeleton';
 
 	let reservations: ReservationType[] | undefined;
 
@@ -103,8 +104,10 @@
 	</section>
 
 	<section class="m-4">
-		{#if reservations !== undefined && reservations.length !== 0}
-			<div class="grid gap-2 sm:grid-cols-1 md:grid-cols-2 2xl:grid-cols-3">
+		{#if reservations === undefined}
+			<ProgressRadial />
+		{:else if reservations.length !== 0}
+			<div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
 				{#each reservations as reservation, i}
 					<ReservationTypeComponent
 						{reservation}
