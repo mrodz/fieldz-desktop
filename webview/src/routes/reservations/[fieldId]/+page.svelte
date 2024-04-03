@@ -359,7 +359,7 @@
 	{#if reservationTypes === undefined}
 		<ProgressRadial />
 	{:else if reservationTypes.length === 0}
-		<div class="card bg-warning-500 m-4 mx-auto p-8 text-center">
+		<div class="card m-4 mx-auto bg-warning-500 p-8 text-center">
 			You must create at least one reservation type before you can craft a schedule. You can do so <a
 				class="btn underline"
 				href="/field-types">here</a
@@ -417,9 +417,9 @@
 				</h2>
 				<div class="grow" />
 				{#if Object.values(mismatches).some((isDefault) => isDefault)}
-				<span in:fade out:fade>
-					<span style="color: red">*</span> = custom reservation type/field partitioning in place.
-				</span>
+					<span in:fade out:fade>
+						<span style="color: red">*</span> = custom reservation type/field partitioning in place.
+					</span>
 				{/if}
 			</div>
 		</section>

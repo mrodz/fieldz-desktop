@@ -542,7 +542,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -600,7 +600,7 @@
 				<!-- <ProgressBar class="my-auto" /> -->
 			{:else if report !== undefined}
 				{#if reportHasErrors(report)}
-					<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">
+					<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
 						{#if report.target_has_duplicates.length !== 0}
 							<div>
 								<strong>Cannot use targets because of duplicates</strong>
