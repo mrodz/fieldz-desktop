@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { blur, slide, crossfade } from 'svelte/transition';
+	import { slide, crossfade } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import { onMount } from 'svelte';
 	import Calendar from '@event-calendar/core';
@@ -17,13 +17,13 @@
 		type PreScheduleReport,
 		type PreScheduleReportInput,
 		type ReservationType,
-		type TimeSlotExtension
+		type TimeSlotExtension,
+		type FieldConcurrency
 	} from '$lib';
 	import {
 		getModalStore,
 		Accordion,
 		AccordionItem,
-		ProgressBar,
 		Paginator,
 		SlideToggle,
 		Table,
@@ -84,6 +84,7 @@
 	const options = {
 		allDaySlot: false,
 		view: compact ? 'listWeek' : 'timeGridWeek',
+		firstDay: 1,
 		editable: true,
 		selectable: true,
 		events: [],
@@ -190,14 +191,16 @@
 	let reservationTypes: ReservationType[] | undefined;
 	let groups: TeamGroup[] | undefined;
 	let targets: TargetExtension[] | undefined;
+	let customResTypeSizePerField: FieldConcurrency[] | undefined;
 
 	onMount(async () => {
 		try {
-			[teams, groups, targets, reservationTypes] = await Promise.all([
+			[teams, groups, targets, reservationTypes, customResTypeSizePerField] = await Promise.all([
 				invoke<TeamExtension[]>('load_all_teams'),
 				invoke<TeamGroup[]>('get_groups'),
 				invoke<TargetExtension[]>('get_targets'),
-				invoke<ReservationType[]>('get_reservation_types')
+				invoke<ReservationType[]>('get_reservation_types'),
+				invoke<FieldConcurrency[]>('get_non_default_reservation_type_concurrency_associations')
 			]);
 			await generateReport();
 		} catch (e) {
@@ -391,10 +394,46 @@
 					{:else if reservationTypes.length === 0}
 						<span class="ml-4">You have not created any reservation types.</span>
 					{:else}
+						<blockquote class="blockquote">
+							These are the amount of concurrent games that can be played on each field type.
+						</blockquote>
+						<hr class="hr" />
+
+						{#if customResTypeSizePerField?.length ?? 0 !== 0}
+							<div>
+								<span style="color: red">*</span> = custom reservation type/field partitioning in place.
+							</div>
+						{/if}
 						<div class="grid grid-cols-2 gap-8 xl:grid-cols-3">
 							{#each reservationTypes as reservationType}
 								<div class="block p-5" style="background-color: {reservationType.color}">
-									{reservationType.name}
+									<strong>
+										{reservationType.name}
+									</strong>
+									{#if customResTypeSizePerField === undefined}
+										<ProgressRadial />
+									{:else}
+										<ul class="list" id="field-size-dist">
+											{#each customResTypeSizePerField.filter((fc) => fc.reservation_type_id === reservationType.id) as nonDefaultAssociation}
+												<li>
+													{#await loadField(nonDefaultAssociation.field_id)}
+														<ProgressRadial />
+													{:then field}
+														<span>{field.name}</span>
+														<span class="!ml-0" style="color: red">*</span
+														>{nonDefaultAssociation.concurrency}
+													{:catch error}
+														Error: {JSON.stringify(error)}
+													{/await}
+												</li>
+											{/each}
+
+											<li>
+												<span>Default</span>
+												{reservationType.default_sizing}
+											</li>
+										</ul>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -404,10 +443,13 @@
 			<AccordionItem>
 				<svelte:fragment slot="summary">Time Slots</svelte:fragment>
 				<svelte:fragment slot="content">
-					<div class="m-4 p-4 text-center">
+					<!-- <div class="m-4 p-4 text-center"> -->
+					<blockquote class="blockquote">
 						These are the time slots that you've created across your regions. They will each be
 						candidates for scheduling.
-					</div>
+					</blockquote>
+					<hr class="hr" />
+					<!-- </div> -->
 
 					<SlideToggle name="slider-label" class="mt-4" bind:checked={compact}>
 						Switch to {#if compact}
@@ -423,10 +465,11 @@
 			<AccordionItem>
 				<svelte:fragment slot="summary">Teams</svelte:fragment>
 				<svelte:fragment slot="content">
-					<div class="m-4 p-4 text-center">
+					<blockquote class="blockquote">
 						These are the teams that you've created across your regions. They will be scheduled
 						according to the ruleset you define for a given schedule.
-					</div>
+					</blockquote>
+					<hr class="hr" />
 
 					{#await Promise.all(paginatedSource.map(async (p) => {
 							const region = await loadRegion(p.team.region_owner);
@@ -499,7 +542,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -557,7 +600,7 @@
 				<!-- <ProgressBar class="my-auto" /> -->
 			{:else if report !== undefined}
 				{#if reportHasErrors(report)}
-					<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
+					<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">
 						{#if report.target_has_duplicates.length !== 0}
 							<div>
 								<strong>Cannot use targets because of duplicates</strong>
@@ -677,3 +720,22 @@
 		</section>
 	{/if}
 </main>
+
+<style>
+	#field-size-dist > li > span:first-child {
+		display: flex;
+		width: 100%;
+		margin-right: 0.5em;
+	}
+
+	#field-size-dist > li > span:first-child::after {
+		content: '';
+		flex-grow: 1;
+		height: 5px;
+		border-bottom: dotted black 2px;
+		position: relative;
+		bottom: 0;
+		transform: translateY(150%);
+		margin-left: 0.5em;
+	}
+</style>

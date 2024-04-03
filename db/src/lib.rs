@@ -733,6 +733,7 @@ pub struct FieldSupportedConcurrencyInput {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldConcurrency {
     reservation_type_id: i32,
+    field_id: i32,
     concurrency: i32,
     is_custom: bool,
 }
@@ -1687,6 +1688,7 @@ impl Client {
                     reservation_type_id,
                     concurrency,
                     is_custom,
+                    field_id: input.field_id,
                 },
             )
             .collect())
@@ -1733,5 +1735,33 @@ impl Client {
         }
 
         Ok(())
+    }
+
+    pub async fn get_non_default_reservation_type_concurrency_associations(
+        &self,
+    ) -> DBResult<Vec<FieldConcurrency>> {
+        reservation_type_field_size_join::Entity::find()
+            .group_by(reservation_type_field_size_join::Column::ReservationType)
+            .join(
+                JoinType::LeftJoin,
+                reservation_type_field_size_join::Relation::ReservationType.def(),
+            )
+            .having(
+                reservation_type_field_size_join::Column::Size
+                    .into_expr()
+                    .not_equals(reservation_type::Column::DefaultSizing),
+            )
+            .all(&self.connection)
+            .await
+            .map(|m| {
+                m.into_iter()
+                    .map(|m| FieldConcurrency {
+                        concurrency: m.size,
+                        is_custom: true,
+                        reservation_type_id: m.reservation_type,
+                        field_id: m.field,
+                    })
+                    .collect::<Vec<_>>()
+            })
     }
 }

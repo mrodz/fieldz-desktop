@@ -102,13 +102,13 @@
 			<div class="mt-2 grid grid-cols-[1fr_auto] gap-2">
 				<textarea
 					class="textarea variant-form-material resize-none"
-					placeholder="No description"
+					placeholder="Write a note for yourself to add any additional information you need"
 					rows="2"
 					on:keydown={() => requestUpdate()}
 					bind:value={reservation.description}
 				/>
 				<div class="max-w-20 text-center">
-					Default matches per field
+					Default matches per field space
 					<div class="mx-auto grid grid-cols-[1fr_auto_1fr]">
 						<button class="-x-variant-ghost btn-icon btn-icon-sm mr-auto" on:click={decreaseCount}
 							>-</button

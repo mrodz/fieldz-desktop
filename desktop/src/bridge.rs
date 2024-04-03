@@ -676,3 +676,20 @@ pub(crate) async fn update_reservation_type_concurrency_for_field(
         .await
         .map_err(|e| format!("{}:{} {e}", file!(), line!()))
 }
+
+#[tauri::command]
+pub(crate) async fn get_non_default_reservation_type_concurrency_associations(
+    app: AppHandle,
+) -> Result<Vec<FieldConcurrency>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_non_default_reservation_type_concurrency_associations()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}

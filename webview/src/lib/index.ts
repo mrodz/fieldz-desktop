@@ -193,6 +193,7 @@ export interface FieldSupportedConcurrencyInput {
 
 export interface FieldConcurrency {
 	reservation_type_id: number;
+	field_id: number;
 	concurrency: number;
 	is_custom: boolean;
 }

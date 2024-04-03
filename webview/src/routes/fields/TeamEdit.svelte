@@ -155,8 +155,7 @@
 							<input class="checkbox" type="checkbox" value={group.name} bind:group={tags} />
 							<p>{group.name}</p>
 						</label>
-					{/each}
-					{#if groups.length === 0}
+					{:else}
 						<span
 							>You have not created any labels. <a
 								class="btn underline"
@@ -164,7 +163,7 @@
 								on:click={parent.onClose}>Create a group here</a
 							></span
 						>
-					{/if}
+					{/each}
 				{:else}
 					<ProgressRadial />
 				{/if}

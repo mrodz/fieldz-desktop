@@ -2,7 +2,7 @@
 	import Calendar from '@event-calendar/core';
 	import TimeGrid from '@event-calendar/time-grid';
 	import Interaction from '@event-calendar/interaction';
-	import { slide } from 'svelte/transition';
+	import { slide, fade } from 'svelte/transition';
 	import { getModalStore, getToastStore, ProgressRadial } from '@skeletonlabs/skeleton';
 	import { onMount } from 'svelte';
 	import { dialog, invoke } from '@tauri-apps/api';
@@ -40,6 +40,8 @@
 
 	let gamesPerFieldType: FieldConcurrency[] | undefined;
 
+	let mismatches: Record<number, boolean> = {};
+
 	onMount(async () => {
 		try {
 			[field, reservationTypes] = await Promise.all([
@@ -67,13 +69,22 @@
 
 			activeScheduleType = reservationTypes.at(0);
 
-			for (let event of rawEvents) {
+			for (const event of rawEvents) {
 				calendar.addEvent(eventFromTimeSlot(event));
 			}
 
 			gamesPerFieldType = await invoke<FieldConcurrency[]>('get_supported_concurrency_for_field', {
 				input
 			});
+
+			for (const reservationType of reservationTypes) {
+				const fieldConcurrency = gamesPerFieldType?.find(
+					(fc) => fc.reservation_type_id === reservationType.id
+				)!;
+
+				mismatches[reservationType.id] =
+					reservationType.default_sizing !== fieldConcurrency.concurrency;
+			}
 		} catch (e) {
 			console.error(e);
 			dialog.message(JSON.stringify(e), {
@@ -103,6 +114,7 @@
 	const options = {
 		allDaySlot: false,
 		view: 'timeGridWeek',
+		firstDay: 1,
 		editable: true,
 		selectable: true,
 		events: [],
@@ -276,6 +288,11 @@
 				input
 			});
 
+			const isDefaultSize =
+				reservationTypes?.find((rt) => rt.id === fc.reservation_type_id)?.default_sizing !==
+				fc.concurrency;
+			mismatches[fc.reservation_type_id] = isDefaultSize;
+
 			// signal UI refresh
 			gamesPerFieldType = gamesPerFieldType;
 		} catch (e) {
@@ -290,9 +307,11 @@
 		const thisType = gamesPerFieldType!.find((fc) => fc.reservation_type_id === typeId);
 
 		if (thisType!.concurrency < MAX_GAMES_PER_FIELD_TYPE) {
+			// eagerly re-render
 			thisType!.concurrency++;
-			await signalCustomConcurrencyUpdate(thisType!);
 			gamesPerFieldType = gamesPerFieldType;
+
+			await signalCustomConcurrencyUpdate(thisType!);
 		}
 	}
 
@@ -300,9 +319,11 @@
 		const thisType = gamesPerFieldType!.find((fc) => fc.reservation_type_id === typeId);
 
 		if (thisType!.concurrency > MIN_GAMES_PER_FIELD_TYPE) {
+			// eagerly re-render
 			thisType!.concurrency--;
-			await signalCustomConcurrencyUpdate(thisType!);
 			gamesPerFieldType = gamesPerFieldType;
+
+			await signalCustomConcurrencyUpdate(thisType!);
 		}
 	}
 </script>
@@ -338,7 +359,7 @@
 	{#if reservationTypes === undefined}
 		<ProgressRadial />
 	{:else if reservationTypes.length === 0}
-		<div class="card m-4 mx-auto bg-warning-500 p-8 text-center">
+		<div class="card bg-warning-500 m-4 mx-auto p-8 text-center">
 			You must create at least one reservation type before you can craft a schedule. You can do so <a
 				class="btn underline"
 				href="/field-types">here</a
@@ -348,6 +369,10 @@
 		<section>
 			<div class="grid grid-cols-2 gap-8 xl:grid-cols-3">
 				{#each reservationTypes as reservationType}
+					{@const concurrency = gamesPerFieldType?.find(
+						(fc) => fc.reservation_type_id === reservationType.id
+					)?.concurrency}
+
 					<div class="flex flex-col">
 						<button
 							class="btn block grid grid-cols-[auto_1fr]"
@@ -361,14 +386,18 @@
 								{reservationType.name}
 							</div>
 						</button>
-						<div class="mx-auto grid w-1/3 grid-cols-[1fr_auto_1fr]">
+						<div class="card mx-auto grid w-1/3 grid-cols-[1fr_auto_1fr]">
 							<button
 								class="-x-variant-ghost btn-icon btn-icon-sm mr-auto"
 								on:click={() => decreaseCount(reservationType.id)}>-</button
 							>
 							<div class="mx-2 text-center align-middle leading-loose">
-								{gamesPerFieldType?.find((fc) => fc.reservation_type_id === reservationType.id)
-									?.concurrency}
+								<span class="inline">
+									{concurrency}
+								</span>
+								{#if concurrency !== reservationType.default_sizing}
+									<span class="inline" style="color: red">*</span>
+								{/if}
 							</div>
 							<button
 								class="-x-variant-ghost btn-icon btn-icon-sm ml-auto"
@@ -379,12 +408,20 @@
 				{/each}
 			</div>
 
-			<h2 class="h3 mt-4">
-				Using type:
-				<strong style="color: {activeScheduleType?.color}">
-					{activeScheduleType?.name}
-				</strong>
-			</h2>
+			<div class="mt-4 flex items-center">
+				<h2 class="h3">
+					Using type:
+					<strong style="color: {activeScheduleType?.color}">
+						{activeScheduleType?.name}
+					</strong>
+				</h2>
+				<div class="grow" />
+				{#if Object.values(mismatches).some((isDefault) => isDefault)}
+				<span in:fade out:fade>
+					<span style="color: red">*</span> = custom reservation type/field partitioning in place.
+				</span>
+				{/if}
+			</div>
 		</section>
 	{/if}
 
