@@ -28,9 +28,10 @@ use entity::time_slot::Entity as TimeSlotEntity;
 use entity::time_slot::Model as TimeSlot;
 use migration::{Expr, Migrator, MigratorTrait};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
-    JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, Set,
-    TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DeriveColumn, EnumIter,
+    FromQueryResult, IntoActiveModel, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
+    RelationTrait, Select, SelectColumns, Set, TransactionError, TransactionTrait, TryIntoModel,
+    UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -511,10 +512,16 @@ pub enum TargetOpError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TeamsWithGroupSet {
+    Interregional(u64),
+    Regional(Vec<(i32, u64)>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuplicateEntry {
     team_groups: Vec<TeamGroup>,
     used_by: Vec<TargetExtension>,
-    teams_with_group_set: u64,
+    teams_with_group_set: TeamsWithGroupSet,
 }
 
 impl DuplicateEntry {
@@ -561,6 +568,8 @@ fn ncr(n: u64, r: u64) -> u64 {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PreScheduleReportInput {
     matches_to_play: NonZeroU8,
+    interregional: bool,
+    #[serde(skip)]
     total_matches_supplied: Option<u64>,
 }
 
@@ -578,7 +587,17 @@ impl PreScheduleReport {
         let mut total_matches_required = 0;
 
         for entry in &target_duplicates {
-            let choices = ncr(entry.teams_with_group_set, 2);
+            let choices = match &entry.teams_with_group_set {
+                TeamsWithGroupSet::Interregional(teams_with_group_set) => {
+                    ncr(*teams_with_group_set, 2)
+                }
+                TeamsWithGroupSet::Regional(teams_with_group_per_region) => {
+                    teams_with_group_per_region
+                        .iter()
+                        .fold(0, |ctr, (_, c)| ctr + c)
+                }
+            };
+
             total_matches_required += choices;
             for target in &entry.used_by {
                 let sum = target_required_matches.entry(target.clone()).or_default();
@@ -587,14 +606,15 @@ impl PreScheduleReport {
         }
 
         for m in &mut target_required_matches {
-            *m.1 *= input.matches_to_play.get() as u64;
+            *m.1 *= u64::try_from(input.matches_to_play.get()).unwrap();
         }
 
         Self {
             target_duplicates,
             target_has_duplicates,
             target_required_matches: target_required_matches.into_iter().collect(),
-            total_matches_required: total_matches_required * input.matches_to_play.get() as u64,
+            total_matches_required: total_matches_required
+                * u64::try_from(input.matches_to_play.get()).unwrap(),
             total_matches_supplied: input.total_matches_supplied.unwrap(),
         }
     }
@@ -628,36 +648,103 @@ impl PreScheduleReport {
         let mut target_duplicates = Vec::with_capacity(collision_map.len());
 
         for (groups, targets) in collision_map {
+            let group_ids = groups.iter().map(|g| g.id).collect::<Vec<_>>();
+            let groups_len = groups.len();
+            let team_groups = groups.into_iter().cloned().collect();
+            let used_by = targets.into_iter().cloned().collect();
+
             let query = TeamEntity::find()
                 .join(JoinType::LeftJoin, team::Relation::TeamGroupJoin.def())
                 .join(
                     JoinType::LeftJoin,
                     team_group_join::Relation::TeamGroup.def(),
                 )
-                .filter(team_group::Column::Id.is_in(groups.iter().map(|g| g.id)))
+                .filter(team_group::Column::Id.is_in(group_ids))
                 .group_by(team::Column::Id)
                 .having(
                     team_group::Column::Id
                         .into_expr()
                         .count_distinct()
-                        .eq(groups.len() as i32),
+                        .eq(i32::try_from(groups_len).unwrap()),
                 );
 
-            let teams_with_group_set = query.count(connection).await.map_err(|e| {
-                PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
-            })?;
+            if input.interregional {
+                let teams_with_group_set = query.count(connection).await.map_err(|e| {
+                    PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                })?;
 
-            target_duplicates.push(DuplicateEntry {
-                team_groups: groups.into_iter().cloned().collect(),
-                used_by: targets.into_iter().cloned().collect(),
-                teams_with_group_set,
-            })
+                target_duplicates.push(DuplicateEntry {
+                    team_groups,
+                    used_by,
+                    teams_with_group_set: TeamsWithGroupSet::Interregional(teams_with_group_set),
+                });
+            } else {
+                let mut ordering = HashMap::new();
+                let all_teams = query.all(connection).await.map_err(|e| {
+                    PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                })?;
+
+                for team in all_teams {
+                    let cnt = ordering.entry(team.region_owner).or_default();
+                    *cnt += 1_u64;
+                }
+
+                target_duplicates.push(DuplicateEntry {
+                    team_groups,
+                    used_by,
+                    teams_with_group_set: TeamsWithGroupSet::Regional(
+                        ordering.into_iter().collect::<Vec<_>>(),
+                    ),
+                });
+            }
         }
 
         if input.total_matches_supplied.is_none() {
-            input.total_matches_supplied = Some(
-                TimeSlotEntity::find()
-                    .count(connection)
+            // field_id -> res size
+            // let mut sizing = HashMap::new();
+            let custom_sizing = reservation_type_field_size_join::Entity::find()
+                .all(connection)
+                .await
+                .map_err(|e| {
+                    PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                })?;
+
+            let mut result = 0;
+
+            for join_table_record in custom_sizing {
+                dbg!(&join_table_record);
+                let matching_time_slot_records = TimeSlotEntity::find()
+                    /*
+                     * For some reason, I kept getting duplicate values, which 
+                     * doesn't make sense for this query. The `SELECT DISTINCT`
+                     * addresses that.
+                     */
+                    .distinct()
+                    .join(
+                        JoinType::LeftJoin,
+                        time_slot::Relation::ReservationTypeTimeSlotJoin.def(),
+                    )
+                    .join(
+                        JoinType::LeftJoin,
+                        reservation_type_time_slot_join::Relation::ReservationType.def(),
+                    )
+                    .join(
+                        JoinType::LeftJoin,
+                        reservation_type::Relation::ReservationTypeFieldSizeJoin.def(),
+                    )
+                    .filter(
+                        Condition::all()
+                            .add(
+                                reservation_type::Column::Id.eq(join_table_record.reservation_type),
+                            )
+                            .add(time_slot::Column::FieldId.eq(join_table_record.field))
+                            .add(
+                                reservation_type::Column::DefaultSizing
+                                    .into_expr()
+                                    .not_equals(reservation_type_field_size_join::Column::Size),
+                            ),
+                    )
+                    .all(connection)
                     .await
                     .map_err(|e| {
                         PreScheduleReportError::DatabaseError(format!(
@@ -665,8 +752,84 @@ impl PreScheduleReport {
                             file!(),
                             line!()
                         ))
-                    })?,
-            );
+                    })?;
+
+                dbg!(&matching_time_slot_records);
+
+                result += u64::try_from(matching_time_slot_records.len()).unwrap()
+                    * u64::try_from(join_table_record.size).unwrap();
+            }
+
+            #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
+            enum QueryAs {
+                Ty,
+                DS,
+                Count,
+            }
+
+            let defaults = TimeSlotEntity::find()
+                .select_only()
+                .column_as(reservation_type::Column::Name, "ty")
+                .column_as(reservation_type::Column::DefaultSizing, "ds")
+                .column_as(
+                    /*
+                     * Same thing here; I got duplicate values, which skewed with
+                     * the count.
+                     */
+                    time_slot::Column::Id.into_expr().count_distinct(),
+                    "count",
+                )
+                .join(
+                    JoinType::LeftJoin,
+                    time_slot::Relation::ReservationTypeTimeSlotJoin.def(),
+                )
+                .join(
+                    JoinType::LeftJoin,
+                    reservation_type_time_slot_join::Relation::ReservationType.def(),
+                )
+                .join(
+                    JoinType::LeftJoin,
+                    reservation_type::Relation::ReservationTypeFieldSizeJoin.def(),
+                )
+                .group_by(reservation_type_field_size_join::Column::ReservationType)
+                .having(
+                    Condition::any()
+                        .add(
+                            reservation_type::Column::DefaultSizing
+                                .into_expr()
+                                .equals(reservation_type_field_size_join::Column::Size),
+                        )
+                        .add(reservation_type::Column::Id.count().eq(0)),
+                )
+                .into_values::<(String, i32, i32), QueryAs>()
+                .all(connection)
+                .await
+                .map_err(|e| {
+                    PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
+                })?;
+
+            dbg!(&defaults);
+
+            for default in defaults {
+                println!("{default:?}");
+                result += u64::try_from(default.1 * default.2).unwrap();
+            }
+
+            input.total_matches_supplied = Some(result);
+
+            // input.total_matches_supplied = Some(
+
+            // TimeSlotEntity::find()
+            //     .count(connection)
+            //     .await
+            //     .map_err(|e| {
+            //         PreScheduleReportError::DatabaseError(format!(
+            //             "{}:{} {e}",
+            //             file!(),
+            //             line!()
+            //         ))
+            //     })?,
+            // );
         };
 
         Ok(Self::new(target_duplicates, input))

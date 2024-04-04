@@ -338,17 +338,19 @@
 	{/if}
 
 	{#if activeScheduleType !== undefined}
-		<section class="my-4 grid grid-cols-4 justify-items-center">
-			<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
+		<section
+			class="my-4 grid grid-cols-1 md:grid-cols-2 justify-items-center sm:gap-2 md:gap-4 lg:grid-cols-4 lg:gap-8 [&>div]:w-4/5 md:[&>div]:w-full"
+		>
+			<div class="card max-w-md p-4 text-center">
 				<strong>Click and drag</strong> over empty space to create a time slot
 			</div>
-			<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
+			<div class="card max-w-md p-4 text-center">
 				<strong>Click and drag</strong> an event to move it or resize it
 			</div>
-			<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
+			<div class="card max-w-md p-4 text-center">
 				<strong>Click</strong> an event to delete it
 			</div>
-			<div class="card max-w-md p-4 text-center sm:mx-2 md:mx-4 lg:mx-8">
+			<div class="card max-w-md p-4 text-center">
 				<strong>Select</strong> a field type to switch between reservation sizes
 			</div>
 		</section>
@@ -359,7 +361,7 @@
 	{#if reservationTypes === undefined}
 		<ProgressRadial />
 	{:else if reservationTypes.length === 0}
-		<div class="card m-4 mx-auto bg-warning-500 p-8 text-center">
+		<div class="card bg-warning-500 m-4 mx-auto p-8 text-center">
 			You must create at least one reservation type before you can craft a schedule. You can do so <a
 				class="btn underline"
 				href="/field-types">here</a
@@ -386,7 +388,7 @@
 								{reservationType.name}
 							</div>
 						</button>
-						<div class="card mx-auto grid w-1/3 grid-cols-[1fr_auto_1fr]">
+						<div class="card mx-auto grid grid-cols-[1fr_auto_1fr]">
 							<button
 								class="-x-variant-ghost btn-icon btn-icon-sm mr-auto"
 								on:click={() => decreaseCount(reservationType.id)}>-</button
@@ -409,7 +411,7 @@
 			</div>
 
 			<div class="mt-4 flex items-center">
-				<h2 class="h3">
+				<h2 class="h3 min-w-36">
 					Using type:
 					<strong style="color: {activeScheduleType?.color}">
 						{activeScheduleType?.name}
