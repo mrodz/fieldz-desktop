@@ -8,6 +8,11 @@
 
 	export let report: PreScheduleReport;
 
+	/**
+	 * @param totalMatchesRequired the total number of matches required to create a schedule, as an integer
+	 * @param totalMatchesSupplied the total number of matches that have been supplied, as an integer
+	 * @returns the percentage as an integer in the interval of [0, 100]
+	 */
 	function percentFillage(totalMatchesRequired: number, totalMatchesSupplied: number): number {
 		if (totalMatchesRequired === 0) {
 			totalMatchesSupplied = 1;
@@ -15,7 +20,7 @@
 			totalMatchesSupplied /= totalMatchesRequired;
 		}
 
-		return Math.round(totalMatchesSupplied * 100);
+		return Math.min(Math.round(totalMatchesSupplied * 100), 100);
 	}
 
 	let numberOfTeams = (target_ext: TargetExtension) =>

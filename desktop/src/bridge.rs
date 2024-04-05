@@ -1,15 +1,17 @@
+use db::errors::{
+    CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
+    CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError,
+    EditRegionError, EditTeamError, LoadFieldsError, LoadRegionError, LoadTeamsError,
+    PreScheduleReportError, TimeSlotError,
+};
 use db::{
-    CreateFieldInput, CreateGroupError, CreateRegionInput, CreateReservationTypeError,
-    CreateReservationTypeInput, CreateTeamError, CreateTeamInput, CreateTimeSlotInput,
-    EditRegionError, EditRegionInput, EditTeamError, EditTeamInput, FieldConcurrency,
-    FieldSupportedConcurrencyInput, FieldValidationError, ListReservationsBetweenInput,
-    MoveTimeSlotInput, PreScheduleReport, PreScheduleReportError, PreScheduleReportInput,
-    RegionValidationError, TargetExtension, TeamExtension, TimeSlotError, TimeSlotExtension,
+    CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput,
+    CreateTimeSlotInput, EditRegionInput, EditTeamInput, FieldConcurrency,
+    FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput,
+    PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamExtension, TimeSlotExtension,
     UpdateReservationTypeConcurrencyForFieldInput, Validator,
 };
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use thiserror::Error;
 
 use crate::SafeAppState;
 
@@ -23,16 +25,6 @@ pub(crate) async fn get_regions(app: AppHandle) -> Result<Vec<db::region::Model>
         .ok_or("database was not initialized".to_owned())?;
 
     client.get_regions().await.map_err(|e| e.to_string())
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum CreateRegionError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("bad input")]
-    ValidationError(RegionValidationError),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
 }
 
 #[tauri::command]
@@ -55,16 +47,6 @@ pub(crate) async fn create_region(
         .create_region(input)
         .await
         .map_err(|e| CreateRegionError::DatabaseError(e.to_string()))
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum DeleteRegionError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("this record (id = {0}) was not found")]
-    NotFound(i32),
 }
 
 #[tauri::command]
@@ -90,16 +72,6 @@ pub(crate) async fn delete_region(app: AppHandle, id: i32) -> Result<(), DeleteR
     }
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum LoadRegionError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("this record (id = {0}) was not found")]
-    NotFound(i32),
-}
-
 #[tauri::command]
 pub(crate) async fn load_region(
     app: AppHandle,
@@ -121,14 +93,6 @@ pub(crate) async fn load_region(
         }
         Err(e) => Err(LoadRegionError::DatabaseError(e.to_string())),
     }
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum LoadFieldsError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
 }
 
 #[tauri::command]
@@ -168,16 +132,6 @@ pub(crate) async fn get_field(
     }
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum CreateFieldError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("bad input")]
-    ValidationError(FieldValidationError),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-}
-
 #[tauri::command]
 pub(crate) async fn create_field(
     app: AppHandle,
@@ -195,16 +149,6 @@ pub(crate) async fn create_field(
         .create_field(input)
         .await
         .map_err(|e| CreateFieldError::DatabaseError(e.to_string()))
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum DeleteFieldError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("this record (id = {0}) was not found")]
-    NotFound(i32),
 }
 
 #[tauri::command]
@@ -225,14 +169,6 @@ pub(crate) async fn delete_field(app: AppHandle, id: i32) -> Result<(), DeleteFi
         }
         Err(e) => Err(DeleteFieldError::DatabaseError(e.to_string())),
     }
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum LoadTeamsError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
 }
 
 #[tauri::command]
@@ -280,16 +216,6 @@ pub(crate) async fn create_team(
         .create_team(input)
         .await
         .map_err(|e| CreateTeamError::DatabaseError(e.to_string()))
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum DeleteTeamError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("this record (id = {0}) was not found")]
-    NotFound(i32),
 }
 
 #[tauri::command]
@@ -348,16 +274,6 @@ pub(crate) async fn create_group(
     let client = lock.database.as_ref().ok_or(CreateGroupError::NoDatabase)?;
 
     client.create_group(tag).await
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum DeleteGroupError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("this record (id = {0}) was not found")]
-    NotFound(i32),
 }
 
 #[tauri::command]

@@ -248,14 +248,14 @@
 				input: normalSeasonInput
 			});
 
-			// const postSeasonInput = {
-			// 	matches_to_play: postSeasonGamesToPlay,
-			// 	interregional: postSeasonInter
-			// } satisfies PreScheduleReportInput;
+			const postSeasonInput = {
+				matches_to_play: postSeasonGamesToPlay,
+				interregional: postSeasonInter
+			} satisfies PreScheduleReportInput;
 
-			// postSeasonReport = await invoke<PreScheduleReport>('generate_pre_schedule_report', {
-			// 	input: postSeasonInput
-			// });
+			postSeasonReport = await invoke<PreScheduleReport>('generate_pre_schedule_report', {
+				input: postSeasonInput
+			});
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error generating pre-schedule report`,
@@ -270,7 +270,7 @@
 		reportTimer = setTimeout(async () => {
 			await generateReport();
 			willSendReport = false;
-		}, 500);
+		}, 1_000);
 	}
 
 	async function createTarget() {
@@ -536,7 +536,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>

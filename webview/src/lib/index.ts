@@ -56,6 +56,7 @@ export interface TimeSlot {
 export interface TimeSlotExtension {
 	time_slot: TimeSlot;
 	reservation_type: ReservationType;
+	custom_matches?: number;
 }
 
 export interface CreateTimeSlotInput {
@@ -154,15 +155,17 @@ export interface TargetExtension {
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
 	used_by: TargetExtension[];
-	teams_with_group_set: {
-		"Interregional": number
-	} | {
-		"Regional": [number, number][]
-	};
+	teams_with_group_set:
+		| {
+				Interregional: number;
+		  }
+		| {
+				Regional: [number, number][];
+		  };
 }
 
 export function totalNumberOfTeamsWithGroupset(duplicate: DuplicateEntry): number {
-	if ("Interregional" in duplicate.teams_with_group_set) {
+	if ('Interregional' in duplicate.teams_with_group_set) {
 		return duplicate.teams_with_group_set.Interregional;
 	}
 

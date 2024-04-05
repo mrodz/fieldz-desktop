@@ -339,7 +339,7 @@
 
 	{#if activeScheduleType !== undefined}
 		<section
-			class="my-4 grid grid-cols-1 md:grid-cols-2 justify-items-center sm:gap-2 md:gap-4 lg:grid-cols-4 lg:gap-8 [&>div]:w-4/5 md:[&>div]:w-full"
+			class="my-4 grid grid-cols-1 justify-items-center sm:gap-2 md:grid-cols-2 md:gap-4 lg:grid-cols-4 lg:gap-8 [&>div]:w-4/5 md:[&>div]:w-full"
 		>
 			<div class="card max-w-md p-4 text-center">
 				<strong>Click and drag</strong> over empty space to create a time slot
@@ -361,7 +361,7 @@
 	{#if reservationTypes === undefined}
 		<ProgressRadial />
 	{:else if reservationTypes.length === 0}
-		<div class="card bg-warning-500 m-4 mx-auto p-8 text-center">
+		<div class="card m-4 mx-auto bg-warning-500 p-8 text-center">
 			You must create at least one reservation type before you can craft a schedule. You can do so <a
 				class="btn underline"
 				href="/field-types">here</a
