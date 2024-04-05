@@ -515,6 +515,12 @@ pub struct UpdateReservationTypeConcurrencyForFieldInput {
     new_concurrency: i32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateTargetReservationTypeInput {
+    target_id: i32,
+    new_reservation_type_id: Option<i32>,
+}
+
 impl Client {
     pub async fn new(config: &Config) -> Result<Self> {
         let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
@@ -1547,5 +1553,22 @@ impl Client {
                     })
                     .collect::<Vec<_>>()
             })
+    }
+
+    pub async fn update_target_reservation_type(
+        &self,
+        input: UpdateTargetReservationTypeInput,
+    ) -> DBResult<()> {
+        println!("test");
+        ActiveTarget {
+            id: Set(input.target_id),
+            maybe_reservation_type: Set(input.new_reservation_type_id),
+        }
+        .update(&self.connection)
+        .await
+        .map(|nr| {
+            dbg!(&nr);
+            ()
+        })
     }
 }

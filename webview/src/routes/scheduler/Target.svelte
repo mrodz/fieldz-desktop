@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TargetExtension, TeamGroup } from '$lib';
+	import type { ReservationType, TargetExtension, TeamGroup } from '$lib';
 	import { faCircleXmark, faTrash } from '@fortawesome/free-solid-svg-icons';
 	import {
 		Autocomplete,
@@ -12,6 +12,7 @@
 	import { blur } from 'svelte/transition';
 
 	export let target: TargetExtension;
+	export let reservationTypes: ReservationType[];
 	export let groups: TeamGroup[];
 	export let popupId: any;
 	export let ok: boolean;
@@ -20,6 +21,7 @@
 		groupAdd: TeamGroup;
 		groupDelete: TeamGroup;
 		delete: TargetExtension;
+		modifyReservationType: ReservationType | undefined;
 	}>();
 
 	let inputChipList: TeamGroup[] = [...target.groups];
@@ -57,6 +59,25 @@
 		dispatch('delete', {
 			...target
 		});
+	}
+
+	let selectedReservationType: number | undefined = reservationTypes.findIndex((r) => r.id === target.target.maybe_reservation_type);
+
+	if (selectedReservationType === -1) {
+		selectedReservationType = 1;
+	} else {
+		selectedReservationType += 2;
+	}
+
+	console.log(selectedReservationType);
+
+	$: {
+		dispatch(
+			'modifyReservationType',
+			selectedReservationType === 1 || selectedReservationType === undefined
+				? undefined
+				: reservationTypes[selectedReservationType - 2]
+		);
 	}
 </script>
 
@@ -102,6 +123,21 @@
 			placeholder="Select Group Name..."
 			use:popup={popupSettings}
 		/>
+
+		<label class="label mt-2">
+			<span>This target will use the field type:</span>
+			<select bind:value={selectedReservationType} class="select">
+				<option value="1">Any Reservation Type</option>
+
+				{#each reservationTypes as reservationType, i}
+					<option value={i + 2}>{reservationType.name}</option>
+				{/each}
+				<!-- <option value="2">Option 2</option>
+				<option value="3">Option 3</option>
+				<option value="4">Option 4</option>
+				<option value="5">Option 5</option> -->
+			</select>
+		</label>
 
 		<div data-popup="popupAutocomplete-{popupId}" class="card p-4">
 			<Autocomplete

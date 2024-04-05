@@ -145,6 +145,7 @@ export interface EditTeamInput {
 
 export interface Target {
 	id: number;
+	maybe_reservation_type?: number;
 }
 
 export interface TargetExtension {
@@ -156,12 +157,12 @@ export interface DuplicateEntry {
 	team_groups: TeamGroup[];
 	used_by: TargetExtension[];
 	teams_with_group_set:
-		| {
-				Interregional: number;
-		  }
-		| {
-				Regional: [number, number][];
-		  };
+	| {
+		Interregional: number;
+	}
+	| {
+		Regional: [number, number][];
+	};
 }
 
 export function totalNumberOfTeamsWithGroupset(duplicate: DuplicateEntry): number {
@@ -224,4 +225,9 @@ export interface UpdateReservationTypeConcurrencyForFieldInput {
 	reservation_type_id: number;
 	field_id: number;
 	new_concurrency: number;
+}
+
+export interface UpdateTargetReservationTypeInput {
+	target_id: number;
+	new_reservation_type_id: number | undefined;
 }

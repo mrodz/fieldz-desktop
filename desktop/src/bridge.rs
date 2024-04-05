@@ -9,7 +9,7 @@ use db::{
     CreateTimeSlotInput, EditRegionInput, EditTeamInput, FieldConcurrency,
     FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput,
     PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamExtension, TimeSlotExtension,
-    UpdateReservationTypeConcurrencyForFieldInput, Validator,
+    UpdateReservationTypeConcurrencyForFieldInput, UpdateTargetReservationTypeInput, Validator,
 };
 use tauri::{AppHandle, Manager};
 
@@ -606,6 +606,24 @@ pub(crate) async fn get_non_default_reservation_type_concurrency_associations(
 
     client
         .get_non_default_reservation_type_concurrency_associations()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn update_target_reservation_type(
+    app: AppHandle,
+    input: UpdateTargetReservationTypeInput,
+) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .update_target_reservation_type(input)
         .await
         .map_err(|e| format!("{}:{} {e}", file!(), line!()))
 }

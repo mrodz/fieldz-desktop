@@ -18,7 +18,10 @@
 		type PreScheduleReportInput,
 		type ReservationType,
 		type TimeSlotExtension,
-		type FieldConcurrency
+		type FieldConcurrency,
+
+		type UpdateTargetReservationTypeInput
+
 	} from '$lib';
 	import {
 		getModalStore,
@@ -28,7 +31,6 @@
 		SlideToggle,
 		Table,
 		type PaginationSettings,
-		type TableSource,
 		ProgressRadial,
 		RangeSlider
 	} from '@skeletonlabs/skeleton';
@@ -319,7 +321,30 @@
 			updateTargets();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
-				title: `Error adding group to target`,
+				title: `Error removing group from target`,
+				type: 'error'
+			});
+		}
+	}
+
+	async function modifyReservationType(
+		target: TargetExtension,
+		newReservationType: ReservationType | undefined
+	) {
+		try {
+			// null when the user does not click any input (aka. on first render)
+			if (newReservationType !== null) {
+				const input = {
+					target_id: target.target.id,
+					new_reservation_type_id: newReservationType?.id
+				} satisfies UpdateTargetReservationTypeInput;
+
+				await invoke('update_target_reservation_type', { input });
+			}
+		} catch (e) {
+			console.error(e);
+			dialog.message(JSON.stringify(e), {
+				title: `Error updating this target's reservation type`,
 				type: 'error'
 			});
 		}
@@ -488,7 +513,7 @@
 			{/if}
 		</h2>
 
-		{#if groups === undefined || targets === undefined}
+		{#if groups === undefined || targets === undefined || reservationTypes === undefined}
 			<ProgressRadial />
 		{:else}
 			{#if targets.length === 0}
@@ -517,11 +542,13 @@
 							id="target-{target.target.id}"
 							{groups}
 							{target}
+							{reservationTypes}
 							popupId={i}
 							ok={normalOK && postOK}
 							on:delete={async (e) => await deleteTarget(e.detail, i)}
 							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
 							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
+							on:modifyReservationType={async (e) => await modifyReservationType(target, e.detail)}
 						/>
 					{/each}
 				</div>
@@ -536,7 +563,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>

@@ -22,6 +22,8 @@ pub enum Relation {
     ReservationTypeFieldSizeJoin,
     #[sea_orm(has_many = "super::reservation_type_time_slot_join::Entity")]
     ReservationTypeTimeSlotJoin,
+    #[sea_orm(has_many = "super::target::Entity")]
+    Target,
 }
 
 impl Related<super::reservation_type_field_size_join::Entity> for Entity {
@@ -33,6 +35,12 @@ impl Related<super::reservation_type_field_size_join::Entity> for Entity {
 impl Related<super::reservation_type_time_slot_join::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ReservationTypeTimeSlotJoin.def()
+    }
+}
+
+impl Related<super::target::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Target.def()
     }
 }
 

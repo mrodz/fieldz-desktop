@@ -10,12 +10,27 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i32,
+    pub maybe_reservation_type: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::reservation_type::Entity",
+        from = "Column::MaybeReservationType",
+        to = "super::reservation_type::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    ReservationType,
     #[sea_orm(has_many = "super::target_group_join::Entity")]
     TargetGroupJoin,
+}
+
+impl Related<super::reservation_type::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ReservationType.def()
+    }
 }
 
 impl Related<super::target_group_join::Entity> for Entity {
