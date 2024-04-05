@@ -35,6 +35,8 @@
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
 	import Target from './Target.svelte';
+	import ScheduleErrorReport from './ScheduleErrorReport.svelte';
+	import ReportTable from './ReportTable.svelte';
 
 	let modalStore = getModalStore();
 
@@ -137,7 +139,7 @@
 
 			datesQueried.set(inputString, newEvents);
 		},
-		eventClick(e: { event: CalendarEvent }) {
+		async eventClick(e: { event: CalendarEvent }) {
 			const clickedId = Number(e.event.id);
 
 			// If the event was loaded, it was cached.
@@ -153,10 +155,13 @@
 				return;
 			}
 
+			const field = await loadField(backingEvent.time_slot.field_id);
+			const region = await loadRegion(field.region_owner);
+
 			modalStore.trigger({
 				type: 'confirm',
 				title: 'View calendar',
-				body: `<div>Event start: ${backingEvent.time_slot.start}</div><div>Event end: ${backingEvent.time_slot.end}</div><br/>Would you like to visit this event's source calendar?`,
+				body: `<div><strong>Region:&nbsp;</strong>${region.title}</br><strong>Field:&nbsp;</strong>${field.name}<br/><br/>Event start: ${backingEvent.time_slot.start}</div><div>Event end: ${backingEvent.time_slot.end}</div><br/>Would you like to visit this event's source calendar?`,
 				buttonTextConfirm: 'Visit Calendar',
 				buttonTextCancel: 'Back',
 				async response(r: boolean) {
@@ -227,16 +232,30 @@
 		) ?? [];
 
 	let reportTimer: NodeJS.Timeout | undefined;
-	let report: PreScheduleReport | undefined;
+	let normalSeasonReport: PreScheduleReport | undefined;
+	let postSeasonReport: PreScheduleReport | undefined;
+
 	let willSendReport = false;
 
 	async function generateReport() {
 		try {
-			const input = {
-				matches_to_play: gamesToPlay
+			const normalSeasonInput = {
+				matches_to_play: normalSeasonGamesToPlay,
+				interregional: normalSeasonInter
 			} satisfies PreScheduleReportInput;
 
-			report = await invoke<PreScheduleReport>('generate_pre_schedule_report', { input });
+			normalSeasonReport = await invoke<PreScheduleReport>('generate_pre_schedule_report', {
+				input: normalSeasonInput
+			});
+
+			const postSeasonInput = {
+				matches_to_play: postSeasonGamesToPlay,
+				interregional: postSeasonInter
+			} satisfies PreScheduleReportInput;
+
+			postSeasonReport = await invoke<PreScheduleReport>('generate_pre_schedule_report', {
+				input: postSeasonInput
+			});
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: `Error generating pre-schedule report`,
@@ -251,7 +270,7 @@
 		reportTimer = setTimeout(async () => {
 			await generateReport();
 			willSendReport = false;
-		}, 100);
+		}, 1_000);
 	}
 
 	async function createTarget() {
@@ -313,43 +332,6 @@
 
 	const key = Symbol('key for crossfade animation');
 
-	function percentFillage(totalMatchesRequired: number, totalMatchesSupplied: number): number {
-		if (totalMatchesRequired === 0) {
-			totalMatchesSupplied = 1;
-		} else {
-			totalMatchesSupplied /= totalMatchesRequired;
-		}
-
-		return Math.round(totalMatchesSupplied * 100);
-	}
-
-	$: reportTableSource = {
-		head: ['ID', 'Groups', '# of Teams', 'Matches Required'],
-		body:
-			report?.target_required_matches.map(([target, matches]) => [
-				`${target.target.id}${target.groups.length === 0 ? ' ⚠️' : ''}`,
-				target.groups.length > 0
-					? target.groups
-							.map((g) => `<span class="chip variant-filled-success">${g.name}</span>`)
-							.join(' ')
-					: '<strong>Will Not Schedule</strong>',
-				String(
-					report?.target_duplicates.find((d) =>
-						d.used_by.map((u) => u.target.id).includes(target.target.id)
-					)!.teams_with_group_set ?? 0
-				) + (matches === 0 ? ' (<i>not enough teams</i>)' : ''),
-				String(matches)
-			]) ?? []
-	} satisfies TableSource;
-
-	function reportHasErrors(report: PreScheduleReport): boolean {
-		return (
-			report.target_has_duplicates.length !== 0 ||
-			report.target_duplicates.find((d) => d.teams_with_group_set === 0) !== undefined ||
-			report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined
-		);
-	}
-
 	function isTargetOk(report: PreScheduleReport, target: TargetExtension): boolean {
 		const isDuplicate = report.target_has_duplicates.includes(target.target.id);
 
@@ -376,7 +358,11 @@
 		return true;
 	}
 
-	let gamesToPlay = 2;
+	let normalSeasonGamesToPlay = 2;
+	let normalSeasonInter = false;
+	let postSeasonGamesToPlay: number = 1;
+	let postSeasonInter = true;
+	let hasPostSeason = true;
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -494,8 +480,9 @@
 	<section class="card m-4 p-4">
 		<h2 class="h3 mb-4">
 			Targets
-			{#if report?.target_has_duplicates.length ?? 0 > 0}
-				({report?.target_has_duplicates.length} error{report?.target_has_duplicates.length === 1
+			{#if normalSeasonReport?.target_has_duplicates.length ?? 0 > 0}
+				({normalSeasonReport?.target_has_duplicates.length} error{normalSeasonReport
+					?.target_has_duplicates.length === 1
 					? ''
 					: 's'})
 			{/if}
@@ -519,12 +506,19 @@
 					out:receive={{ key }}
 				>
 					{#each targets as target, i}
+						{@const normalOK =
+							normalSeasonReport !== undefined ? isTargetOk(normalSeasonReport, target) : false}
+						{@const postOK =
+							normalSeasonReport !== undefined && postSeasonReport !== undefined
+								? isTargetOk(postSeasonReport, target)
+								: false}
+
 						<Target
 							id="target-{target.target.id}"
 							{groups}
 							{target}
 							popupId={i}
-							ok={report !== undefined ? isTargetOk(report, target) : false}
+							ok={normalOK && postOK}
 							on:delete={async (e) => await deleteTarget(e.detail, i)}
 							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
 							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
@@ -551,25 +545,118 @@
 		{/if}
 	</section>
 
+	<hr class="hr" />
+
 	{#if groups?.length ?? 0 !== 0}
 		<section class="m-4">
 			<h2 class="h2 mb-4">Matches to Play</h2>
-			<RangeSlider
-				name="range-slider"
-				on:change={() => updateTargets()}
-				bind:value={gamesToPlay}
-				min={1}
-				max={7}
-				step={1}
-				ticked
-			>
-				<div class="flex items-center justify-between">
-					<div>
-						Every team will play each other {gamesToPlay} time{gamesToPlay === 1 ? '' : 's'}
-					</div>
-				</div>
-			</RangeSlider>
+			<div class="flex items-center justify-between">
+				<Accordion>
+					<AccordionItem>
+						<svelte:fragment slot="summary">
+							<strong> Normal Season </strong>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<RangeSlider
+								name="range-slider"
+								on:change={() => updateTargets()}
+								bind:value={normalSeasonGamesToPlay}
+								min={1}
+								max={7}
+								step={1}
+								ticked
+							>
+								<div class="flex items-center">
+									<span>
+										Every team
+
+										{#if normalSeasonInter}
+											across all regions
+										{:else}
+											(limited to a region)
+										{/if}
+
+										will play each other {normalSeasonGamesToPlay} time{normalSeasonGamesToPlay ===
+										1
+											? ''
+											: 's'}
+									</span>
+
+									<div class="grow" />
+
+									<label class="mx-4" for="normal-season-inter">
+										Allow interregional matches?
+
+										<span
+											class:text-red-500={!normalSeasonInter}
+											class:text-green-500={normalSeasonInter}
+										>
+											{normalSeasonInter ? 'yes' : 'no'}
+										</span>
+									</label>
+									<SlideToggle
+										size="sm"
+										name="normal-season-inter"
+										bind:checked={normalSeasonInter}
+										on:change={() => updateTargets()}
+									/>
+								</div>
+							</RangeSlider>
+						</svelte:fragment>
+					</AccordionItem>
+					<AccordionItem>
+						<svelte:fragment slot="summary">
+							<strong> Post Season </strong>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<RangeSlider
+								name="range-slider"
+								on:change={() => updateTargets()}
+								bind:value={postSeasonGamesToPlay}
+								min={1}
+								max={7}
+								step={1}
+								ticked
+							>
+								<div class="flex items-center">
+									<span>
+										Every team
+
+										{#if postSeasonInter}
+											across all regions
+										{:else}
+											(limited to a region)
+										{/if}
+
+										will play each other {postSeasonGamesToPlay} time{postSeasonGamesToPlay === 1
+											? ''
+											: 's'}
+									</span>
+
+									<div class="grow" />
+
+									<label class="mx-4" for="normal-season-inter">
+										Allow interregional matches?
+
+										<span class={postSeasonInter ? 'text-green-500' : 'text-red-500'}>
+											{postSeasonInter ? 'yes' : 'no'}
+										</span>
+									</label>
+									<SlideToggle
+										size="sm"
+										name="normal-season-inter"
+										bind:checked={postSeasonInter}
+										on:change={() => updateTargets()}
+									/>
+								</div>
+							</RangeSlider>
+						</svelte:fragment>
+					</AccordionItem>
+				</Accordion>
+			</div>
 		</section>
+
+		<hr class="hr" />
 
 		<section class="m-4">
 			<h2 class="h2 mb-4">Reporting</h2>
@@ -598,120 +685,34 @@
 					</div>
 				</section>
 				<!-- <ProgressBar class="my-auto" /> -->
-			{:else if report !== undefined}
-				{#if reportHasErrors(report)}
-					<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
-						{#if report.target_has_duplicates.length !== 0}
-							<div>
-								<strong>Cannot use targets because of duplicates</strong>
-								<ul class="list">
-									{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
-										<li>
-											<span
-												>Duplicates on {dup.team_groups.length === 0 ? 'empty' : ''} targets</span
-											>
-
-											{#each dup.used_by as badTarget}
-												<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-													>{badTarget.target.id}</a
-												>
-											{/each}
-
-											{#if dup.team_groups.length !== 0}
-												<span>which use the following labels:</span>
-
-												{#each dup.team_groups as group}
-													<span class="variant-filled chip">{group.name}</span>
-												{/each}
-											{/if}
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-						{#if report.target_duplicates.find((d) => d.teams_with_group_set === 0) !== undefined}
-							<div>
-								<strong>Cannot use targets because no team has the following sets of labels</strong>
-								<ul class="list">
-									{#each report.target_duplicates.filter((d) => d.teams_with_group_set === 0) as empty}
-										<li>
-											<span>Target(s)</span>
-
-											{#each empty.used_by as badTarget}
-												<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-													>{badTarget.target.id}</a
-												>
-											{/each}
-
-											{#if empty.team_groups.length === 0}
-												<span>reference(s) impossible team which uses no labels</span>
-											{:else}
-												<span>reference(s) impossible team which uses labels</span>
-
-												{#each empty.team_groups as group}
-													<span class="variant-filled chip">{group.name}</span>
-												{/each}
-											{/if}
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-						{#if report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined}
-							<div>
-								<strong>Cannot use targets because no games will be outputted</strong>
-								<ul class="list">
-									{#each report.target_required_matches.filter(([_, occ]) => occ === 0) as [badTarget]}
-										<li>
-											<span>Target</span>
-
-											<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-												>{badTarget.target.id}</a
-											>
-
-											{#if badTarget.groups.length === 0}
-												<span>is empty and will not create any games</span>
-											{:else}
-												<span>which use labels</span>
-
-												{#each badTarget.groups as group}
-													<span class="variant-filled chip">{group.name}</span>
-												{/each}
-
-												<span>will not create any games</span>
-											{/if}
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-					</div>
-				{/if}
-
-				<div class="grid grid-cols-[auto_1fr] gap-16">
-					<div>
-						<h3 class="h4">Time Slots Supplied / Required</h3>
-						<ProgressRadial
-							class="mx-auto my-4"
-							strokeLinecap="round"
-							meter={report.total_matches_required <= report.total_matches_supplied
-								? 'stroke-success-500'
-								: 'stroke-error-500'}
-							track={report.total_matches_required <= report.total_matches_supplied
-								? 'stroke-success-500/30'
-								: 'stroke-error-500/30'}
-							value={percentFillage(report.total_matches_required, report.total_matches_supplied)}
-						>
-							{report.total_matches_supplied}/{report.total_matches_required}
-						</ProgressRadial>
-					</div>
-
-					<div>
-						<h3 class="h4">Per target</h3>
-
-						<Table class="my-4" source={reportTableSource} />
-					</div>
-				</div>
+			{:else}
+				<Accordion>
+					{#if normalSeasonReport !== undefined}
+						<AccordionItem open>
+							<svelte:fragment slot="summary">
+								<h3 class="h3">Normal Season</h3>
+								<ScheduleErrorReport report={normalSeasonReport} />
+							</svelte:fragment>
+							<svelte:fragment slot="content">
+								<ReportTable report={normalSeasonReport} />
+								<hr class="hr" />
+							</svelte:fragment>
+						</AccordionItem>
+					{:else}
+						<ProgressRadial />
+					{/if}
+					{#if postSeasonReport !== undefined}
+						<AccordionItem open>
+							<svelte:fragment slot="summary">
+								<h3 class="h3">Post Season</h3>
+								<ScheduleErrorReport report={postSeasonReport} />
+							</svelte:fragment>
+							<svelte:fragment slot="content">
+								<ReportTable report={postSeasonReport} />
+							</svelte:fragment>
+						</AccordionItem>
+					{/if}
+				</Accordion>
 			{/if}
 		</section>
 	{:else}

@@ -1,36 +1,41 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::num::NonZeroU8;
+mod pre_schedule_report;
+pub use pre_schedule_report::*;
+
+pub mod errors;
+use errors::*;
+
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use chrono::{serde::ts_milliseconds, DateTime};
-use entity::field::ActiveModel as ActiveField;
-use entity::field::Entity as FieldEntity;
-use entity::field::Model as Field;
-use entity::region::ActiveModel as ActiveRegion;
-use entity::region::Entity as RegionEntity;
-use entity::region::Model as Region;
-use entity::reservation_type::ActiveModel as ActiveReservationType;
-use entity::reservation_type::Entity as ReservationTypeEntity;
-use entity::reservation_type::Model as ReservationType;
-use entity::target::ActiveModel as ActiveTarget;
-use entity::target::Entity as TargetEntity;
-use entity::target::Model as Target;
-use entity::team::ActiveModel as ActiveTeam;
-use entity::team::Entity as TeamEntity;
-use entity::team::Model as Team;
-use entity::team_group::ActiveModel as ActiveTeamGroup;
-use entity::team_group::Entity as TeamGroupEntity;
-use entity::team_group::Model as TeamGroup;
-use entity::time_slot::ActiveModel as ActiveTimeSlot;
-use entity::time_slot::Entity as TimeSlotEntity;
-use entity::time_slot::Model as TimeSlot;
-use migration::{Expr, Migrator, MigratorTrait};
+
+pub(crate) mod entity_local_exports {
+    use entity::*;
+    pub use field::{ActiveModel as ActiveField, Entity as FieldEntity, Model as Field};
+    pub use region::{ActiveModel as ActiveRegion, Entity as RegionEntity, Model as Region};
+    pub use reservation_type::{
+        ActiveModel as ActiveReservationType, Entity as ReservationTypeEntity,
+        Model as ReservationType,
+    };
+    pub use target::{ActiveModel as ActiveTarget, Entity as TargetEntity, Model as Target};
+    pub use team::{ActiveModel as ActiveTeam, Entity as TeamEntity, Model as Team};
+    pub use team_group::{
+        ActiveModel as ActiveTeamGroup, Entity as TeamGroupEntity, Model as TeamGroup,
+    };
+    pub use time_slot::{
+        ActiveModel as ActiveTimeSlot, Entity as TimeSlotEntity, Model as TimeSlot,
+    };
+}
+
+use entity_local_exports::*;
+
+use migration::{Expr, IntoCondition, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
-    JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, Set,
-    TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
+    JoinType, QueryFilter, QuerySelect, RelationTrait, Select, Set, TransactionError,
+    TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -40,7 +45,6 @@ use sea_orm::{IntoSimpleExpr, QueryOrder};
 pub use entity::*;
 use serde::Deserialize;
 use serde::Serialize;
-use thiserror::Error;
 
 pub type DBResult<T> = Result<T, DbErr>;
 
@@ -76,20 +80,6 @@ pub struct CreateRegionInput {
     title: RegionName,
 }
 
-#[derive(Debug, Error, Serialize, Deserialize)]
-pub enum RegionNameValidationError {
-    #[error("region name cannot be empty")]
-    EmptyName,
-    #[error("region name is {len} characters which is larger than the max, 64")]
-    NameTooLong { len: usize },
-}
-
-#[derive(Debug, Error, Serialize, Deserialize)]
-pub enum RegionValidationError {
-    #[error(transparent)]
-    Name(#[from] RegionNameValidationError),
-}
-
 impl Validator for RegionName {
     type Error = RegionNameValidationError;
     fn validate(&self) -> Result<(), Self::Error> {
@@ -119,14 +109,6 @@ impl Validator for CreateRegionInput {
 pub struct CreateFieldInput {
     name: String,
     region_id: i32,
-}
-
-#[derive(Debug, Error, Serialize, Deserialize)]
-pub enum FieldValidationError {
-    #[error("field name cannot be empty")]
-    EmptyName,
-    #[error("field name is {len} characters which is larger than the max, 64")]
-    NameTooLong { len: usize },
 }
 
 impl CreateFieldInput {
@@ -175,44 +157,12 @@ impl Validator for NameMax64 {
     }
 }
 
-#[derive(Debug, Error, Serialize, Deserialize)]
-pub enum NameMax64ValidationError {
-    #[error("field name cannot be empty")]
-    EmptyName,
-    #[error("field name is {len} characters which is larger than the max, 64")]
-    NameTooLong { len: usize },
-}
-
 impl CreateTeamInput {
     pub fn validate(&self) -> Result<(), NameMax64ValidationError> {
         self.name.validate()?;
 
         Ok(())
     }
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum CreateGroupError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("this tag already exists")]
-    DuplicateTag,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum CreateTeamError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("bad input")]
-    ValidationError(NameMax64ValidationError),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("the following tags do not exist: {0:?}")]
-    MissingTags(Vec<String>),
-    #[error("the transaction to create a team failed")]
-    TransactionError,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -237,34 +187,26 @@ pub struct CreateTimeSlotInput {
     end: DateTime<Utc>,
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-
-pub enum TimeSlotError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("this time slot is booked from {o_start} to {o_end}")]
-    Overlap {
-        #[serde(with = "ts_milliseconds")]
-        o_start: DateTime<Utc>,
-        #[serde(with = "ts_milliseconds")]
-        o_end: DateTime<Utc>,
-    },
-    #[error("the supplied reservation type id ({0}) does not exist")]
-    ReservationTypeDoesNotExist(i32),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("could not parse date: `{0}`")]
-    ParseError(String),
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeSlotExtension {
     time_slot: TimeSlot,
     reservation_type: ReservationType,
+    /// [`Option#None`] means use [`reservation_type`]
+    custom_matches: Option<i32>,
+}
+
+impl TimeSlotExtension {
+    pub(crate) fn matches_played(&self) -> i32 {
+        if let Some(matches) = self.custom_matches {
+            matches
+        } else {
+            self.reservation_type.default_sizing
+        }
+    }
 }
 
 #[derive(FromQueryResult)]
-struct TimeSlotSelectionTypeAggregate {
+pub(crate) struct TimeSlotSelectionTypeAggregate {
     /// [`TimeSlot`]
     time_slot_id: i32,
     /// [`TimeSlot`]
@@ -273,6 +215,8 @@ struct TimeSlotSelectionTypeAggregate {
     start: String,
     /// [`TimeSlot`]
     end: String,
+    /// [`TimeSlot`]
+    custom_matches: Option<i32>,
     /// [`ReservationType`]
     reservation_type_id: i32,
     /// [`ReservationType`]
@@ -285,7 +229,30 @@ struct TimeSlotSelectionTypeAggregate {
     default_sizing: i32,
 }
 
-fn select_time_slot_extension() -> Select<TimeSlotEntity> {
+/// To selects everything needed to build a [`TimeSlotSelectionTypeAggregate`].
+///
+/// To execute the `SELECT`, use:
+/// ```rs
+/// select_time_slot_extension()
+///     /*
+///      * ... Add conditions and more here.
+///      * For example:
+///      *
+///      * .filter(Condition::all().add(field::Column::Id.eq(field_id)))
+///      *
+///      */
+///     .into_model::<TimeSlotSelectionTypeAggregate>()
+///     /*
+///      * ... Your execution here.
+///      * For example:
+///      *
+///      * .all(&self.connection)
+///      *
+///      */
+///     .await
+///     .map(|v| v.into_iter().map(Into::into).collect())
+/// ```
+pub(crate) fn select_time_slot_extension() -> Select<TimeSlotEntity> {
     use reservation_type::Column as R;
     use time_slot::Column as T;
 
@@ -300,6 +267,10 @@ fn select_time_slot_extension() -> Select<TimeSlotEntity> {
         .column_as(R::Description, "description")
         .column_as(R::Color, "color")
         .column_as(R::DefaultSizing, "default_sizing")
+        .column_as(
+            reservation_type_field_size_join::Column::Size,
+            "custom_matches",
+        )
         .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
         .join(
             JoinType::LeftJoin,
@@ -308,6 +279,19 @@ fn select_time_slot_extension() -> Select<TimeSlotEntity> {
         .join(
             JoinType::LeftJoin,
             reservation_type_time_slot_join::Relation::ReservationType.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            field::Relation::ReservationTypeFieldSizeJoin
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((
+                        right,
+                        reservation_type_field_size_join::Column::ReservationType,
+                    ))
+                    .equals(reservation_type::Column::Id.as_column_ref())
+                    .into_condition()
+                }),
         )
 }
 
@@ -327,6 +311,7 @@ impl From<TimeSlotSelectionTypeAggregate> for TimeSlotExtension {
                 start: value.start,
                 end: value.end,
             },
+            custom_matches: value.custom_matches,
         }
     }
 }
@@ -353,18 +338,6 @@ pub struct ListReservationsBetweenInput {
 pub struct EditRegionInput {
     id: i32,
     name: Option<RegionName>,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum EditRegionError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error(transparent)]
-    Name(#[from] RegionNameValidationError),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("region with id {0} not found")]
-    NotFound(i32),
 }
 
 impl Validator for EditRegionInput {
@@ -395,22 +368,6 @@ impl Validator for EditTeamInput {
 
         Ok(())
     }
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum EditTeamError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("bad input")]
-    ValidationError(NameMax64ValidationError),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("the following tags do not exist: {0:?}")]
-    MissingTags(Vec<String>),
-    #[error("the transaction to create a team failed")]
-    TransactionError,
-    #[error("team with id {0} not found")]
-    NotFound(i32),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
@@ -496,183 +453,6 @@ pub enum TargetOp {
     Delete,
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum TargetOpError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("group with id {0} not found")]
-    GroupNotFound(i32),
-    #[error("team with id {0} not found")]
-    TargetNotFound(i32),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-    #[error("the transaction to create a team failed")]
-    TransactionError,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DuplicateEntry {
-    team_groups: Vec<TeamGroup>,
-    used_by: Vec<TargetExtension>,
-    teams_with_group_set: u64,
-}
-
-impl DuplicateEntry {
-    pub fn has_duplicates(&self) -> bool {
-        self.used_by.len() > 1
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PreScheduleReport {
-    target_duplicates: Vec<DuplicateEntry>,
-    target_has_duplicates: Vec<usize>,
-    target_required_matches: Vec<(TargetExtension, u64)>,
-    total_matches_required: u64,
-    total_matches_supplied: u64,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum PreScheduleReportError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
-}
-
-fn ncr(n: u64, r: u64) -> u64 {
-    fn factorial(num: u64) -> u64 {
-        let mut f = 1;
-
-        for i in 1..=num {
-            f *= i;
-        }
-
-        f
-    }
-
-    if r > n {
-        0
-    } else {
-        factorial(n) / (factorial(r) * factorial(n - r))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PreScheduleReportInput {
-    matches_to_play: NonZeroU8,
-    total_matches_supplied: Option<u64>,
-}
-
-impl PreScheduleReport {
-    pub fn new(target_duplicates: Vec<DuplicateEntry>, input: PreScheduleReportInput) -> Self {
-        let target_has_duplicates = target_duplicates
-            .iter()
-            .filter(|d| d.has_duplicates())
-            .flat_map(|d| &d.used_by)
-            .map(|target| target.target.id.try_into().unwrap())
-            .collect();
-
-        let mut target_required_matches: BTreeMap<TargetExtension, u64> = BTreeMap::new();
-
-        let mut total_matches_required = 0;
-
-        for entry in &target_duplicates {
-            let choices = ncr(entry.teams_with_group_set, 2);
-            total_matches_required += choices;
-            for target in &entry.used_by {
-                let sum = target_required_matches.entry(target.clone()).or_default();
-                *sum += choices;
-            }
-        }
-
-        for m in &mut target_required_matches {
-            *m.1 *= input.matches_to_play.get() as u64;
-        }
-
-        Self {
-            target_duplicates,
-            target_has_duplicates,
-            target_required_matches: target_required_matches.into_iter().collect(),
-            total_matches_required: total_matches_required * input.matches_to_play.get() as u64,
-            total_matches_supplied: input.total_matches_supplied.unwrap(),
-        }
-    }
-
-    pub async fn create<C>(
-        connection: &C,
-        mut input: PreScheduleReportInput,
-    ) -> Result<Self, PreScheduleReportError>
-    where
-        C: ConnectionTrait,
-    {
-        let all_targets = TargetEntity::find().all(connection).await.map_err(|e| {
-            PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
-        })?;
-
-        let all_targets_extended = TargetExtension::many_new(&all_targets, connection)
-            .await
-            .map_err(|e| {
-                PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
-            })?;
-
-        let mut collision_map: BTreeMap<BTreeSet<&TeamGroup>, Vec<&TargetExtension>> =
-            BTreeMap::new();
-
-        for target in &all_targets_extended {
-            let set_of_groups = BTreeSet::from_iter(&target.groups);
-            let entry = collision_map.entry(set_of_groups).or_default();
-            entry.push(target);
-        }
-
-        let mut target_duplicates = Vec::with_capacity(collision_map.len());
-
-        for (groups, targets) in collision_map {
-            let query = TeamEntity::find()
-                .join(JoinType::LeftJoin, team::Relation::TeamGroupJoin.def())
-                .join(
-                    JoinType::LeftJoin,
-                    team_group_join::Relation::TeamGroup.def(),
-                )
-                .filter(team_group::Column::Id.is_in(groups.iter().map(|g| g.id)))
-                .group_by(team::Column::Id)
-                .having(
-                    team_group::Column::Id
-                        .into_expr()
-                        .count_distinct()
-                        .eq(groups.len() as i32),
-                );
-
-            let teams_with_group_set = query.count(connection).await.map_err(|e| {
-                PreScheduleReportError::DatabaseError(format!("{}:{} {e}", file!(), line!()))
-            })?;
-
-            target_duplicates.push(DuplicateEntry {
-                team_groups: groups.into_iter().cloned().collect(),
-                used_by: targets.into_iter().cloned().collect(),
-                teams_with_group_set,
-            })
-        }
-
-        if input.total_matches_supplied.is_none() {
-            input.total_matches_supplied = Some(
-                TimeSlotEntity::find()
-                    .count(connection)
-                    .await
-                    .map_err(|e| {
-                        PreScheduleReportError::DatabaseError(format!(
-                            "{}:{} {e}",
-                            file!(),
-                            line!()
-                        ))
-                    })?,
-            );
-        };
-
-        Ok(Self::new(target_duplicates, input))
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Color(String);
 
@@ -703,16 +483,6 @@ pub struct CreateReservationTypeInput {
     name: NameMax64,
     description: Option<String>,
     color: Color,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum CreateReservationTypeError {
-    #[error("database was not initialized")]
-    NoDatabase,
-    #[error(transparent)]
-    Name(#[from] NameMax64ValidationError),
-    #[error("database operation failed: `{0}`")]
-    DatabaseError(String),
 }
 
 impl Validator for CreateReservationTypeInput {
@@ -1160,6 +930,19 @@ impl Client {
             ));
         };
 
+        let has_custom_size = entity::reservation_type_field_size_join::Entity::find()
+            .filter(
+                entity::reservation_type_field_size_join::Column::Field
+                    .eq(input.field_id)
+                    .and(
+                        entity::reservation_type_field_size_join::Column::ReservationType
+                            .eq(input.reservation_type_id),
+                    ),
+            )
+            .one(&self.connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
+
         /*
          * No conflicts; good to go.
          */
@@ -1187,6 +970,7 @@ impl Client {
                     Ok(TimeSlotExtension {
                         time_slot,
                         reservation_type,
+                        custom_matches: has_custom_size.map(|jt_record| jt_record.size),
                     })
                 })
             })
