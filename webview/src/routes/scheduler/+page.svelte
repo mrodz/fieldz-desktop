@@ -18,7 +18,9 @@
 		type PreScheduleReportInput,
 		type ReservationType,
 		type TimeSlotExtension,
-		type FieldConcurrency
+		type FieldConcurrency,
+		type UpdateTargetReservationTypeInput,
+		regionalUnionSumTotal
 	} from '$lib';
 	import {
 		getModalStore,
@@ -28,7 +30,6 @@
 		SlideToggle,
 		Table,
 		type PaginationSettings,
-		type TableSource,
 		ProgressRadial,
 		RangeSlider
 	} from '@skeletonlabs/skeleton';
@@ -319,7 +320,30 @@
 			updateTargets();
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
-				title: `Error adding group to target`,
+				title: `Error removing group from target`,
+				type: 'error'
+			});
+		}
+	}
+
+	async function modifyReservationType(
+		target: TargetExtension,
+		newReservationType: ReservationType | 'unset' | '*'
+	) {
+		try {
+			// null when the user does not click any input (aka. on first render)
+			if (newReservationType !== 'unset') {
+				const input = {
+					target_id: target.target.id,
+					new_reservation_type_id: newReservationType === '*' ? undefined : newReservationType.id
+				} satisfies UpdateTargetReservationTypeInput;
+
+				await invoke('update_target_reservation_type', { input });
+			}
+		} catch (e) {
+			console.error(e);
+			dialog.message(JSON.stringify(e), {
+				title: `Error updating this target's reservation type`,
 				type: 'error'
 			});
 		}
@@ -349,7 +373,9 @@
 		}
 
 		const notEnoughToPlay =
-			report.target_required_matches.find(([t2]) => t2.target.id === target.target.id)![1] === 0;
+			regionalUnionSumTotal(
+				report.target_required_matches.find(([t2]) => t2.target.id === target.target.id)![1]
+			) === 0;
 
 		if (notEnoughToPlay) {
 			return false;
@@ -488,7 +514,7 @@
 			{/if}
 		</h2>
 
-		{#if groups === undefined || targets === undefined}
+		{#if groups === undefined || targets === undefined || reservationTypes === undefined}
 			<ProgressRadial />
 		{:else}
 			{#if targets.length === 0}
@@ -517,11 +543,13 @@
 							id="target-{target.target.id}"
 							{groups}
 							{target}
+							{reservationTypes}
 							popupId={i}
 							ok={normalOK && postOK}
 							on:delete={async (e) => await deleteTarget(e.detail, i)}
 							on:groupAdd={async (e) => await targetAddGroup(target, e.detail)}
 							on:groupDelete={async (e) => await targetDeleteGroup(target, e.detail)}
+							on:modifyReservationType={async (e) => await modifyReservationType(target, e.detail)}
 						/>
 					{/each}
 				</div>
@@ -694,7 +722,7 @@
 								<ScheduleErrorReport report={normalSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={normalSeasonReport} />
+								<ReportTable report={normalSeasonReport} regionGetter={loadRegion} />
 								<hr class="hr" />
 							</svelte:fragment>
 						</AccordionItem>
@@ -708,7 +736,7 @@
 								<ScheduleErrorReport report={postSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={postSeasonReport} />
+								<ReportTable report={postSeasonReport} regionGetter={loadRegion} />
 							</svelte:fragment>
 						</AccordionItem>
 					{/if}

@@ -1,6 +1,8 @@
 use sea_orm_migration::prelude::*;
 
-use crate::m20240223_053746_create_team::*;
+use crate::{
+    m20240223_053746_create_team::*, m20240331_003613_create_reservation_type::ReservationType,
+};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -18,6 +20,15 @@ impl MigrationTrait for Migration {
                             .integer()
                             .not_null()
                             .primary_key(),
+                    )
+                    .col(ColumnDef::new(Target::MaybeReservationType).integer())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_maybe_reservation_type")
+                            .from(Target::Table, Target::MaybeReservationType)
+                            .to(ReservationType::Table, ReservationType::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )
@@ -73,6 +84,7 @@ impl MigrationTrait for Migration {
 pub enum Target {
     Table,
     Id,
+    MaybeReservationType,
 }
 
 #[derive(DeriveIden)]
