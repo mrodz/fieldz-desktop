@@ -153,36 +153,61 @@ export interface TargetExtension {
 	groups: TeamGroup[];
 }
 
+export type RegionalUnionU64 =
+	| {
+			Interregional: number;
+	  }
+	| {
+			Regional: [number, number][];
+	  };
+
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
 	used_by: TargetExtension[];
-	teams_with_group_set:
-	| {
-		Interregional: number;
-	}
-	| {
-		Regional: [number, number][];
-	};
+	teams_with_group_set: RegionalUnionU64;
 }
 
-export function totalNumberOfTeamsWithGroupset(duplicate: DuplicateEntry): number {
-	if ('Interregional' in duplicate.teams_with_group_set) {
-		return duplicate.teams_with_group_set.Interregional;
+export function regionalUnionSumTotal(union: RegionalUnionU64): number {
+	if ('Interregional' in union) {
+		return union.Interregional;
 	}
 
 	let result = 0;
-
-	for (const [_regionId, count] of duplicate.teams_with_group_set.Regional) {
+	
+	for (const [_regionId, count] of union.Regional) {
 		result += count;
 	}
 
 	return result;
 }
 
+export async function regionalUnionFormatPretty(
+	union: RegionalUnionU64,
+	regionGetter: (regionId: number) => Promise<Region>
+): Promise<string> {
+	if ('Interregional' in union) {
+		return String(union.Interregional);
+	}
+
+	if (union.Regional.length === 0) {
+		return '0 (No region dependents)';
+	}
+
+	// we have to use inline-style because otherwise the Tailwind minifier will delete the classes.
+	let result = '<div style="display: flex; flex-direction: column;">';
+
+	for (const [regionId, count] of union.Regional) {
+		const region = await regionGetter(regionId);
+		result += `<div>${region.title} &mdash; ${count} </div>`;
+	}
+
+	return result + '</div>';
+}
+
 export interface PreScheduleReport {
 	target_duplicates: DuplicateEntry[];
 	target_has_duplicates: number[];
-	target_required_matches: [TargetExtension, number][];
+	target_required_matches: [TargetExtension, RegionalUnionU64][];
 	total_matches_required: number;
 	total_matches_supplied: number;
 }

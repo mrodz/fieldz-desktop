@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { totalNumberOfTeamsWithGroupset, type PreScheduleReport } from '$lib';
+	import { regionalUnionSumTotal, type PreScheduleReport } from '$lib';
 
 	export let report: PreScheduleReport;
 
 	function reportHasErrors(report: PreScheduleReport): boolean {
 		return (
 			report.target_has_duplicates.length !== 0 ||
-			report.target_duplicates.find((d) => totalNumberOfTeamsWithGroupset(d) === 0) !== undefined ||
-			report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined
+			report.target_duplicates.find((d) => regionalUnionSumTotal(d.teams_with_group_set) === 0) !==
+				undefined ||
+			report.target_required_matches.find(([_, occ]) => regionalUnionSumTotal(occ) === 0) !==
+				undefined
 		);
 	}
 </script>
@@ -40,11 +42,11 @@
 				</ul>
 			</div>
 		{/if}
-		{#if report.target_duplicates.find((d) => totalNumberOfTeamsWithGroupset(d) === 0) !== undefined}
+		{#if report.target_duplicates.find((d) => regionalUnionSumTotal(d.teams_with_group_set) === 0) !== undefined}
 			<div>
 				<strong>Cannot use targets because no team has the following sets of labels</strong>
 				<ul class="list">
-					{#each report.target_duplicates.filter((d) => totalNumberOfTeamsWithGroupset(d) === 0) as empty}
+					{#each report.target_duplicates.filter((d) => regionalUnionSumTotal(d.teams_with_group_set) === 0) as empty}
 						<li>
 							<span>Target(s)</span>
 
@@ -68,11 +70,11 @@
 				</ul>
 			</div>
 		{/if}
-		{#if report.target_required_matches.find(([_, occ]) => occ === 0) !== undefined}
+		{#if report.target_required_matches.find(([_, occ]) => regionalUnionSumTotal(occ) === 0) !== undefined}
 			<div>
 				<strong>Cannot use targets because no games will be outputted</strong>
 				<ul class="list">
-					{#each report.target_required_matches.filter(([_, occ]) => occ === 0) as [badTarget]}
+					{#each report.target_required_matches.filter(([_, occ]) => regionalUnionSumTotal(occ) === 0) as [badTarget]}
 						<li>
 							<span>Target</span>
 

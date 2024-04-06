@@ -19,9 +19,8 @@
 		type ReservationType,
 		type TimeSlotExtension,
 		type FieldConcurrency,
-
-		type UpdateTargetReservationTypeInput
-
+		type UpdateTargetReservationTypeInput,
+		regionalUnionSumTotal
 	} from '$lib';
 	import {
 		getModalStore,
@@ -329,14 +328,14 @@
 
 	async function modifyReservationType(
 		target: TargetExtension,
-		newReservationType: ReservationType | undefined
+		newReservationType: ReservationType | 'unset' | '*'
 	) {
 		try {
 			// null when the user does not click any input (aka. on first render)
-			if (newReservationType !== null) {
+			if (newReservationType !== 'unset') {
 				const input = {
 					target_id: target.target.id,
-					new_reservation_type_id: newReservationType?.id
+					new_reservation_type_id: newReservationType === '*' ? undefined : newReservationType.id
 				} satisfies UpdateTargetReservationTypeInput;
 
 				await invoke('update_target_reservation_type', { input });
@@ -374,7 +373,9 @@
 		}
 
 		const notEnoughToPlay =
-			report.target_required_matches.find(([t2]) => t2.target.id === target.target.id)![1] === 0;
+			regionalUnionSumTotal(
+				report.target_required_matches.find(([t2]) => t2.target.id === target.target.id)![1]
+			) === 0;
 
 		if (notEnoughToPlay) {
 			return false;
@@ -563,7 +564,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -721,7 +722,7 @@
 								<ScheduleErrorReport report={normalSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={normalSeasonReport} />
+								<ReportTable report={normalSeasonReport} regionGetter={loadRegion} />
 								<hr class="hr" />
 							</svelte:fragment>
 						</AccordionItem>
@@ -735,7 +736,7 @@
 								<ScheduleErrorReport report={postSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={postSeasonReport} />
+								<ReportTable report={postSeasonReport} regionGetter={loadRegion} />
 							</svelte:fragment>
 						</AccordionItem>
 					{/if}

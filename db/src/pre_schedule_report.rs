@@ -5,6 +5,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     num::NonZeroU8,
+    ops::AddAssign,
 };
 
 use entity::{team, team_group, team_group_join};
@@ -22,16 +23,78 @@ use crate::{
 use crate::entity_local_exports::{TargetEntity, TeamEntity, TeamGroup};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TeamsWithGroupSet {
+pub enum RegionalUnionU64 {
     Interregional(u64),
     Regional(Vec<(i32, u64)>),
+}
+
+impl RegionalUnionU64 {
+    pub fn default(interregional: bool) -> Self {
+        if interregional {
+            Self::Interregional(0)
+        } else {
+            Self::Regional(vec![])
+        }
+    }
+
+    pub fn fold_from(iterator: impl Iterator<Item = (i32, u64)>) -> Self {
+        let mut result: Vec<(i32, u64)> = vec![];
+
+        'outer: for pair in iterator {
+            for (pre_rid, pre_c) in &mut result {
+                if *pre_rid == pair.0 {
+                    *pre_c += pair.1;
+                    continue 'outer;
+                }
+            }
+            result.push(pair);
+        }
+
+        Self::Regional(result)
+    }
+
+    pub fn sum_total(&self) -> u64 {
+        match self {
+            Self::Interregional(result) => *result,
+            Self::Regional(many_results) => many_results.iter().fold(0, |r, (_, c)| r + c),
+        }
+    }
+
+    pub fn spread_mul(&mut self, rhs: u64) {
+        match self {
+            Self::Interregional(c) => *c *= rhs,
+            Self::Regional(many_c) => many_c.iter_mut().for_each(|c| c.1 *= rhs),
+        }
+    }
+}
+
+impl AddAssign for RegionalUnionU64 {
+    fn add_assign(&mut self, rhs: Self) {
+        match (self, rhs) {
+            (Self::Regional(lhs), Self::Regional(rhs)) => {
+                'outer: for rhs_item in rhs {
+                    for lhs_item in lhs.iter_mut() {
+                        if lhs_item.0 == rhs_item.0 {
+                            lhs_item.1 += rhs_item.1;
+                            continue 'outer;
+                        }
+                    }
+                    lhs.push(rhs_item)
+                }
+            }
+            (Self::Interregional(lhs), Self::Interregional(rhs)) => {
+                *lhs = rhs;
+            }
+            (lhs, rhs) => panic!("type mismatch: adding {lhs:?} to {rhs:?}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuplicateEntry {
     team_groups: Vec<TeamGroup>,
     used_by: Vec<TargetExtension>,
-    teams_with_group_set: TeamsWithGroupSet,
+    teams_with_group_set: RegionalUnionU64,
 }
 
 impl DuplicateEntry {
@@ -44,7 +107,7 @@ impl DuplicateEntry {
 pub struct PreScheduleReport {
     target_duplicates: Vec<DuplicateEntry>,
     target_has_duplicates: Vec<usize>,
-    target_required_matches: Vec<(TargetExtension, u64)>,
+    target_required_matches: Vec<(TargetExtension, RegionalUnionU64)>,
     total_matches_required: u64,
     total_matches_supplied: u64,
 }
@@ -84,32 +147,42 @@ impl PreScheduleReport {
             .map(|target| target.target.id.try_into().unwrap())
             .collect();
 
-        let mut target_required_matches: BTreeMap<TargetExtension, u64> = BTreeMap::new();
+        let mut target_required_matches: BTreeMap<TargetExtension, RegionalUnionU64> =
+            BTreeMap::new();
 
         let mut total_matches_required = 0;
 
         for entry in &target_duplicates {
             let choices = match &entry.teams_with_group_set {
-                TeamsWithGroupSet::Interregional(teams_with_group_set) => {
-                    ncr(*teams_with_group_set, 2)
+                RegionalUnionU64::Interregional(teams_with_group_set) => {
+                    RegionalUnionU64::Interregional(ncr(*teams_with_group_set, 2))
                 }
-                TeamsWithGroupSet::Regional(teams_with_group_per_region) => {
-                    teams_with_group_per_region
-                        .iter()
-                        .fold(0, |ctr, (_, n)| ctr + ncr(*n, 2))
+                RegionalUnionU64::Regional(teams_with_group_per_region) => {
+                    RegionalUnionU64::fold_from(
+                        teams_with_group_per_region
+                            .iter()
+                            .map(|(region_id, count)| (*region_id, ncr(*count, 2))),
+                    )
                 }
             };
 
-            total_matches_required += choices;
+            total_matches_required += choices.sum_total();
             for target in &entry.used_by {
-                let sum = target_required_matches.entry(target.clone()).or_default();
-                *sum += choices;
+                let sum = target_required_matches
+                    .entry(target.clone())
+                    .or_insert(RegionalUnionU64::default(input.interregional));
+
+                *sum += choices.clone();
             }
         }
 
         for m in &mut target_required_matches {
-            *m.1 *= input.matches_to_play.get() as u64;
+            m.1.spread_mul(input.matches_to_play.get() as u64);
         }
+
+        // let target_required_matches = if input.interregional {
+
+        // }
 
         Self {
             target_duplicates,
@@ -177,7 +250,7 @@ impl PreScheduleReport {
                 target_duplicates.push(DuplicateEntry {
                     team_groups,
                     used_by,
-                    teams_with_group_set: TeamsWithGroupSet::Interregional(teams_with_group_set),
+                    teams_with_group_set: RegionalUnionU64::Interregional(teams_with_group_set),
                 });
             } else {
                 let mut ordering = HashMap::new();
@@ -193,7 +266,7 @@ impl PreScheduleReport {
                 target_duplicates.push(DuplicateEntry {
                     team_groups,
                     used_by,
-                    teams_with_group_set: TeamsWithGroupSet::Regional(
+                    teams_with_group_set: RegionalUnionU64::Regional(
                         ordering.into_iter().collect::<Vec<_>>(),
                     ),
                 });

@@ -28,7 +28,7 @@ impl MigrationTrait for Migration {
                             .from(Target::Table, Target::MaybeReservationType)
                             .to(ReservationType::Table, ReservationType::Id)
                             .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )

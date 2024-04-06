@@ -1559,16 +1559,12 @@ impl Client {
         &self,
         input: UpdateTargetReservationTypeInput,
     ) -> DBResult<()> {
-        println!("test");
         ActiveTarget {
             id: Set(input.target_id),
             maybe_reservation_type: Set(input.new_reservation_type_id),
         }
         .update(&self.connection)
         .await
-        .map(|nr| {
-            dbg!(&nr);
-            ()
-        })
+        .map(|_| ())
     }
 }

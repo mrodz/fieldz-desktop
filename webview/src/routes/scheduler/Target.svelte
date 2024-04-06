@@ -17,11 +17,13 @@
 	export let popupId: any;
 	export let ok: boolean;
 
+	type ModifyReservationType = ReservationType | 'unset' | '*';
+
 	const dispatch = createEventDispatcher<{
 		groupAdd: TeamGroup;
 		groupDelete: TeamGroup;
 		delete: TargetExtension;
-		modifyReservationType: ReservationType | undefined;
+		modifyReservationType: ModifyReservationType;
 	}>();
 
 	let inputChipList: TeamGroup[] = [...target.groups];
@@ -61,23 +63,29 @@
 		});
 	}
 
-	let selectedReservationType: number | undefined = reservationTypes.findIndex((r) => r.id === target.target.maybe_reservation_type);
+	let selectedReservationType: number | undefined = reservationTypes.findIndex(
+		(r) => r.id === target.target.maybe_reservation_type
+	);
 
 	if (selectedReservationType === -1) {
-		selectedReservationType = 1;
+		// because 1 !== '1' when used as a <option> key :(
+		selectedReservationType = '1' as any;
 	} else {
 		selectedReservationType += 2;
 	}
 
-	console.log(selectedReservationType);
-
 	$: {
-		dispatch(
-			'modifyReservationType',
-			selectedReservationType === 1 || selectedReservationType === undefined
-				? undefined
-				: reservationTypes[selectedReservationType - 2]
-		);
+		let input: ModifyReservationType;
+
+		if (Number(selectedReservationType) === 1) {
+			input = '*';
+		} else if (selectedReservationType === null || selectedReservationType === undefined) {
+			input = 'unset';
+		} else {
+			input = reservationTypes[selectedReservationType - 2];
+		}
+
+		dispatch('modifyReservationType', input);
 	}
 </script>
 
@@ -132,10 +140,6 @@
 				{#each reservationTypes as reservationType, i}
 					<option value={i + 2}>{reservationType.name}</option>
 				{/each}
-				<!-- <option value="2">Option 2</option>
-				<option value="3">Option 3</option>
-				<option value="4">Option 4</option>
-				<option value="5">Option 5</option> -->
 			</select>
 		</label>
 
