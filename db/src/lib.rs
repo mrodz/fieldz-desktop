@@ -231,6 +231,13 @@ pub(crate) struct TimeSlotSelectionTypeAggregate {
 
 /// To selects everything needed to build a [`TimeSlotSelectionTypeAggregate`].
 ///
+/// # Tables made available:
+/// - `time_slot`
+/// - `field`
+/// - `reservation_type`
+/// - `reservation_type_time_slot_join`
+/// - `reservation_type_field_size_join`
+///
 /// To execute the `SELECT`, use:
 /// ```rs
 /// select_time_slot_extension()

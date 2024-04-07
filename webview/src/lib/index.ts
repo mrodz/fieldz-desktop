@@ -173,7 +173,7 @@ export function regionalUnionSumTotal(union: RegionalUnionU64): number {
 	}
 
 	let result = 0;
-	
+
 	for (const [_regionId, count] of union.Regional) {
 		result += count;
 	}
@@ -182,34 +182,76 @@ export function regionalUnionSumTotal(union: RegionalUnionU64): number {
 }
 
 export async function regionalUnionFormatPretty(
-	union: RegionalUnionU64,
-	regionGetter: (regionId: number) => Promise<Region>
+	regionGetter: (regionId: number) => Promise<Region>,
+	requiredUnion: RegionalUnionU64,
+	suppliedUnion: RegionalUnionU64
 ): Promise<string> {
-	if ('Interregional' in union) {
-		return String(union.Interregional);
+	if ('Interregional' in requiredUnion && 'Interregional' in suppliedUnion) {
+		return String(requiredUnion.Interregional);
 	}
 
-	if (union.Regional.length === 0) {
+	if (!('Regional' in requiredUnion && 'Regional' in suppliedUnion)) {
+		throw new Error(`${requiredUnion} and ${suppliedUnion} were not the same type.`);
+	}
+
+	if (requiredUnion.Regional.length === 0) {
 		return '0 (No region dependents)';
 	}
 
 	// we have to use inline-style because otherwise the Tailwind minifier will delete the classes.
 	let result = '<div style="display: flex; flex-direction: column;">';
 
-	for (const [regionId, count] of union.Regional) {
+	let suppliedMap = new Map(suppliedUnion.Regional);
+
+	for (const [regionId, count] of requiredUnion.Regional) {
 		const region = await regionGetter(regionId);
-		result += `<div>${region.title} &mdash; ${count} </div>`;
+		const supplied = suppliedMap.get(regionId) ?? 0;
+		result += `<div>${region.title} &mdash; <span style="color: ${supplied < count ? 'red' : 'unset'}">${supplied}/${count}</span></div>`;
 	}
 
 	return result + '</div>';
 }
 
+export interface SupplyRequireEntry {
+	target: TargetExtension;
+	required: RegionalUnionU64;
+	supplied: RegionalUnionU64;
+}
+
+export function isSupplyRequireEntryAccountedFor(supplyRequireEntry: SupplyRequireEntry): boolean {
+	if (
+		'Interregional' in supplyRequireEntry.supplied &&
+		'Interregional' in supplyRequireEntry.required
+	) {
+		return supplyRequireEntry.supplied >= supplyRequireEntry.required;
+	}
+
+	if (!('Regional' in supplyRequireEntry.supplied && 'Regional' in supplyRequireEntry.required)) {
+		throw new Error(
+			`${supplyRequireEntry.supplied} and ${supplyRequireEntry.required} were not the same type.`
+		);
+	}
+
+	let suppliedMap = new Map(supplyRequireEntry.supplied.Regional);
+
+	for (const [regionId, count] of supplyRequireEntry.required.Regional) {
+		const supplied = suppliedMap.get(regionId) ?? 0;
+		if (supplied < count) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 export interface PreScheduleReport {
 	target_duplicates: DuplicateEntry[];
 	target_has_duplicates: number[];
-	target_required_matches: [TargetExtension, RegionalUnionU64][];
+	target_match_count: SupplyRequireEntry[];
+	// target_required_matches: [TargetExtension, RegionalUnionU64][];
 	total_matches_required: number;
 	total_matches_supplied: number;
+	interregional: boolean;
 }
 
 export interface PreScheduleReportInput {
