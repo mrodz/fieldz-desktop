@@ -42,7 +42,7 @@
 		});
 	}
 
-	function onGroupDeletion(group: TeamGroup, index: number) {
+	function onGroupDeletion(group: TeamGroup, index: number): void {
 		inputChipList.splice(index, 1);
 		inputChipList = inputChipList;
 
@@ -57,7 +57,7 @@
 		placement: 'bottom'
 	};
 
-	function onDelete() {
+	function onDelete(): void {
 		dispatch('delete', {
 			...target
 		});

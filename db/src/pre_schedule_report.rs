@@ -8,7 +8,7 @@ use std::{
     ops::AddAssign,
 };
 
-use entity::{team, team_group, team_group_join};
+use entity::{field, region, team, team_group, team_group_join};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
     RelationTrait,
@@ -20,7 +20,7 @@ use crate::{
     TimeSlotSelectionTypeAggregate,
 };
 
-use crate::entity_local_exports::{TargetEntity, TeamEntity, TeamGroup};
+use crate::entity_local_exports::{FieldEntity, TargetEntity, TeamEntity, TeamGroup};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegionalUnionU64 {
@@ -104,12 +104,20 @@ impl DuplicateEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupplyRequireEntry {
+    target: TargetExtension,
+    required: RegionalUnionU64,
+    supplied: RegionalUnionU64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PreScheduleReport {
     target_duplicates: Vec<DuplicateEntry>,
     target_has_duplicates: Vec<usize>,
-    target_required_matches: Vec<(TargetExtension, RegionalUnionU64)>,
+    target_match_count: Vec<SupplyRequireEntry>,
     total_matches_required: u64,
     total_matches_supplied: u64,
+    interregional: bool,
 }
 
 fn ncr(n: u64, r: u64) -> u64 {
@@ -139,7 +147,13 @@ pub struct PreScheduleReportInput {
 }
 
 impl PreScheduleReport {
-    pub fn new(target_duplicates: Vec<DuplicateEntry>, input: PreScheduleReportInput) -> Self {
+    pub fn new(
+        target_duplicates: Vec<DuplicateEntry>,
+        all_targets: &[TargetExtension],
+        all_time_slots: &[TimeSlotExtension],
+        region_id_from_field_id: impl Fn(i32) -> i32,
+        input: PreScheduleReportInput,
+    ) -> Self {
         let target_has_duplicates = target_duplicates
             .iter()
             .filter(|d| d.has_duplicates())
@@ -147,10 +161,41 @@ impl PreScheduleReport {
             .map(|target| target.target.id.try_into().unwrap())
             .collect();
 
-        let mut target_required_matches: BTreeMap<TargetExtension, RegionalUnionU64> =
+        let mut target_required_matches: BTreeMap<&TargetExtension, RegionalUnionU64> =
+            BTreeMap::new();
+
+        let mut target_supplied_matches: BTreeMap<&TargetExtension, RegionalUnionU64> =
             BTreeMap::new();
 
         let mut total_matches_required = 0;
+
+        let total_matches_supplied = input.total_matches_supplied.unwrap();
+
+        for time_slot_ext in all_time_slots {
+            for target_ext in all_targets {
+                let maybe_type = target_ext.target.maybe_reservation_type;
+
+                if maybe_type.is_none()
+                    || maybe_type.is_some_and(|target_reservation_id| {
+                        target_reservation_id == time_slot_ext.reservation_type.id
+                    })
+                {
+                    let matches_played = u64::try_from(time_slot_ext.matches_played()).unwrap();
+                    let entry = target_supplied_matches
+                        .entry(target_ext)
+                        .or_insert(RegionalUnionU64::default(input.interregional));
+
+                    *entry += if input.interregional {
+                        RegionalUnionU64::Interregional(matches_played)
+                    } else {
+                        let region_id = region_id_from_field_id(time_slot_ext.time_slot.field_id);
+                        RegionalUnionU64::Regional(vec![(region_id, matches_played)])
+                    };
+
+                    break;
+                }
+            }
+        }
 
         for entry in &target_duplicates {
             let choices = match &entry.teams_with_group_set {
@@ -168,11 +213,11 @@ impl PreScheduleReport {
 
             total_matches_required += choices.sum_total();
             for target in &entry.used_by {
-                let sum = target_required_matches
-                    .entry(target.clone())
+                let require_sum = target_required_matches
+                    .entry(target)
                     .or_insert(RegionalUnionU64::default(input.interregional));
 
-                *sum += choices.clone();
+                *require_sum += choices.clone();
             }
         }
 
@@ -180,16 +225,58 @@ impl PreScheduleReport {
             m.1.spread_mul(input.matches_to_play.get() as u64);
         }
 
-        // let target_required_matches = if input.interregional {
+        let mut target_match_count = Vec::with_capacity(target_required_matches.len());
 
-        // }
+        let supplied_keys = BTreeSet::from_iter(target_supplied_matches.keys().cloned());
+        let required_keys = BTreeSet::from_iter(target_required_matches.keys().cloned());
+
+        let missing_supplied = required_keys.difference(&supplied_keys);
+        let missing_required = supplied_keys.difference(&required_keys);
+
+        for missing_target in missing_supplied {
+            let union = match target_required_matches.get(*missing_target).unwrap() {
+                RegionalUnionU64::Interregional(_) => RegionalUnionU64::Interregional(0),
+                RegionalUnionU64::Regional(rid_count) => {
+                    RegionalUnionU64::Regional(rid_count.iter().map(|(rid, _)| (*rid, 0)).collect())
+                }
+            };
+
+            target_supplied_matches.insert(missing_target, union);
+        }
+
+        for missing_target in missing_required {
+            let union = match target_supplied_matches.get(*missing_target).unwrap() {
+                RegionalUnionU64::Interregional(_) => RegionalUnionU64::Interregional(0),
+                RegionalUnionU64::Regional(rid_count) => {
+                    RegionalUnionU64::Regional(rid_count.iter().map(|(rid, _)| (*rid, 0)).collect())
+                }
+            };
+
+            target_required_matches.insert(missing_target, union);
+        }
+
+        for (required, supplied) in target_required_matches
+            .into_iter()
+            .zip(target_supplied_matches.into_iter())
+        {
+            if required.0.target.id != supplied.0.target.id {
+                panic!("{required:?} does not have the same target as {supplied:?}");
+            }
+
+            target_match_count.push(SupplyRequireEntry {
+                target: required.0.clone(),
+                required: required.1,
+                supplied: supplied.1,
+            })
+        }
 
         Self {
             target_duplicates,
             target_has_duplicates,
-            target_required_matches: target_required_matches.into_iter().collect(),
+            target_match_count,
             total_matches_required: total_matches_required * input.matches_to_play.get() as u64,
-            total_matches_supplied: input.total_matches_supplied.unwrap(),
+            total_matches_supplied,
+            interregional: input.interregional,
         }
     }
 
@@ -273,18 +360,18 @@ impl PreScheduleReport {
             }
         }
 
-        if input.total_matches_supplied.is_none() {
-            let all_time_slots: Vec<TimeSlotExtension> = select_time_slot_extension()
-                .into_model::<TimeSlotSelectionTypeAggregate>()
-                .all(connection)
-                .await
-                .map(|v| v.into_iter().map(Into::into).collect())
-                .map_err(|e| {
-                    PreScheduleReportError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
-                })?;
+        let all_time_slots: Vec<TimeSlotExtension> = select_time_slot_extension()
+            .into_model::<TimeSlotSelectionTypeAggregate>()
+            .all(connection)
+            .await
+            .map(|v| v.into_iter().map(Into::into).collect())
+            .map_err(|e| {
+                PreScheduleReportError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
 
+        if input.total_matches_supplied.is_none() {
             let result: u64 = all_time_slots
-                .into_iter()
+                .iter()
                 .map(|time_slot_ext| time_slot_ext.matches_played())
                 .sum::<i32>()
                 .try_into()
@@ -293,6 +380,38 @@ impl PreScheduleReport {
             input.total_matches_supplied = Some(result);
         };
 
-        Ok(Self::new(target_duplicates, input))
+        let field_to_region = BTreeMap::from_iter(
+            FieldEntity::find()
+                .select_only()
+                .column_as(field::Column::Id, "field_id")
+                .column_as(region::Column::Id, "region_id")
+                .join(JoinType::Join, field::Relation::Region.def())
+                .into_tuple::<(i32, i32)>()
+                .all(connection)
+                .await
+                .map_err(|e| {
+                    PreScheduleReportError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?
+                .into_iter(),
+        );
+
+        // let target_supplied_matches =
+        //     BTreeMap::from_iter(all_time_slots.into_iter().map(|time_slot| {
+        //         (
+        //             field_to_region
+        //                 .get(&time_slot.time_slot.field_id)
+        //                 .cloned()
+        //                 .unwrap(),
+        //             time_slot,
+        //         )
+        //     }));
+
+        Ok(Self::new(
+            target_duplicates,
+            &all_targets_extended,
+            &all_time_slots,
+            |field_id| field_to_region[&field_id],
+            input,
+        ))
     }
 }

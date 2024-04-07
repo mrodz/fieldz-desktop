@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { regionalUnionSumTotal, type PreScheduleReport } from '$lib';
+	import {
+		regionalUnionSumTotal,
+		type PreScheduleReport,
+		isSupplyRequireEntryAccountedFor
+	} from '$lib';
 
 	export let report: PreScheduleReport;
 
@@ -8,8 +12,9 @@
 			report.target_has_duplicates.length !== 0 ||
 			report.target_duplicates.find((d) => regionalUnionSumTotal(d.teams_with_group_set) === 0) !==
 				undefined ||
-			report.target_required_matches.find(([_, occ]) => regionalUnionSumTotal(occ) === 0) !==
-				undefined
+			report.target_match_count.find((req) => regionalUnionSumTotal(req.required) === 0) !==
+				undefined ||
+			!report.target_match_count.every(isSupplyRequireEntryAccountedFor)
 		);
 	}
 </script>
@@ -25,8 +30,10 @@
 							<span>Duplicates on {dup.team_groups.length === 0 ? 'empty' : ''} targets</span>
 
 							{#each dup.used_by as badTarget}
-								<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-									>{badTarget.target.id}</a
+								<a
+									class="variant-filled-error chip"
+									href="#target-{badTarget.target.id}"
+									on:click|stopPropagation>{badTarget.target.id}</a
 								>
 							{/each}
 
@@ -51,8 +58,10 @@
 							<span>Target(s)</span>
 
 							{#each empty.used_by as badTarget}
-								<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-									>{badTarget.target.id}</a
+								<a
+									class="variant-filled-error chip"
+									href="#target-{badTarget.target.id}"
+									on:click|stopPropagation>{badTarget.target.id}</a
 								>
 							{/each}
 
@@ -70,29 +79,60 @@
 				</ul>
 			</div>
 		{/if}
-		{#if report.target_required_matches.find(([_, occ]) => regionalUnionSumTotal(occ) === 0) !== undefined}
+		{#if report.target_match_count.find((req) => regionalUnionSumTotal(req.required) === 0) !== undefined}
 			<div>
 				<strong>Cannot use targets because no games will be outputted</strong>
 				<ul class="list">
-					{#each report.target_required_matches.filter(([_, occ]) => regionalUnionSumTotal(occ) === 0) as [badTarget]}
+					{#each report.target_match_count.filter((req) => regionalUnionSumTotal(req.required) === 0) as supplyReqEntry}
 						<li>
 							<span>Target</span>
 
-							<a class="variant-filled-error chip" href="#target-{badTarget.target.id}"
-								>{badTarget.target.id}</a
+							<a
+								class="variant-filled-error chip"
+								href="#target-{supplyReqEntry.target.target.id}"
+								on:click|stopPropagation>{supplyReqEntry.target.target.id}</a
 							>
 
-							{#if badTarget.groups.length === 0}
+							{#if supplyReqEntry.target.groups.length === 0}
 								<span>is empty and will not create any games</span>
 							{:else}
 								<span>which use labels</span>
 
-								{#each badTarget.groups as group}
+								{#each supplyReqEntry.target.groups as group}
 									<span class="variant-filled chip">{group.name}</span>
 								{/each}
 
 								<span>will not create any games</span>
 							{/if}
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+		{#if !report.target_match_count.every(isSupplyRequireEntryAccountedFor)}
+			<div>
+				<strong>
+					Cannot proceed with scheduling because not every region supplies enough time slots
+				</strong>
+
+				<ul class="list">
+					{#each report.target_match_count.filter((req) => !isSupplyRequireEntryAccountedFor(req)) as supplyReqEntry}
+						<li>
+							<span>Target</span>
+
+							<a
+								class="variant-filled-error chip"
+								href="#target-{supplyReqEntry.target.target.id}"
+								on:click|stopPropagation>{supplyReqEntry.target.target.id}</a
+							>
+
+							<span>which use labels</span>
+
+							{#each supplyReqEntry.target.groups as group}
+								<span class="variant-filled chip">{group.name}</span>
+							{/each}
+
+							<span>requires games in regions that do not provide enough time slots</span>
 						</li>
 					{/each}
 				</ul>

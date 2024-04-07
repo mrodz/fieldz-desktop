@@ -20,7 +20,8 @@
 		type TimeSlotExtension,
 		type FieldConcurrency,
 		type UpdateTargetReservationTypeInput,
-		regionalUnionSumTotal
+		regionalUnionSumTotal,
+		isSupplyRequireEntryAccountedFor
 	} from '$lib';
 	import {
 		getModalStore,
@@ -339,6 +340,7 @@
 				} satisfies UpdateTargetReservationTypeInput;
 
 				await invoke('update_target_reservation_type', { input });
+				updateTargets();
 			}
 		} catch (e) {
 			console.error(e);
@@ -363,32 +365,42 @@
 			return false;
 		}
 
+		const targetDuplicate = report.target_duplicates.find(
+			(d) => d.used_by.find((t2) => t2.target.id === target.target.id)!
+		)!;
+
 		const isImpossiblePermutation =
-			(report.target_duplicates.find(
-				(d) => d.used_by.find((t2) => t2.target.id === target.target.id)!
-			)?.teams_with_group_set ?? 0) === 0;
+			regionalUnionSumTotal(targetDuplicate.teams_with_group_set) === 0;
 
 		if (isImpossiblePermutation) {
 			return false;
 		}
 
+		const targetMatchCount = report.target_match_count.find(
+			(supReqEntry) => supReqEntry.target.target.id === target.target.id
+		);
+
 		const notEnoughToPlay =
-			regionalUnionSumTotal(
-				report.target_required_matches.find(([t2]) => t2.target.id === target.target.id)![1]
-			) === 0;
+			(targetMatchCount === undefined ? 0 : regionalUnionSumTotal(targetMatchCount.required)) === 0;
 
 		if (notEnoughToPlay) {
 			return false;
 		}
 
-		return true;
+		const hasEnoughSupplied =
+			targetMatchCount === undefined ? false : isSupplyRequireEntryAccountedFor(targetMatchCount);
+
+		return hasEnoughSupplied;
 	}
 
 	let normalSeasonGamesToPlay = 2;
 	let normalSeasonInter = false;
 	let postSeasonGamesToPlay: number = 1;
 	let postSeasonInter = true;
-	let hasPostSeason = true;
+
+	function reservationTypeGetter(reservationTypeId: number): ReservationType | undefined {
+		return reservationTypes?.find((ty) => ty.id === reservationTypeId);
+	}
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -455,13 +467,11 @@
 			<AccordionItem>
 				<svelte:fragment slot="summary">Time Slots</svelte:fragment>
 				<svelte:fragment slot="content">
-					<!-- <div class="m-4 p-4 text-center"> -->
 					<blockquote class="blockquote">
 						These are the time slots that you've created across your regions. They will each be
 						candidates for scheduling.
 					</blockquote>
 					<hr class="hr" />
-					<!-- </div> -->
 
 					<SlideToggle name="slider-label" class="mt-4" bind:checked={compact}>
 						Switch to {#if compact}
@@ -722,7 +732,11 @@
 								<ScheduleErrorReport report={normalSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={normalSeasonReport} regionGetter={loadRegion} />
+								<ReportTable
+									report={normalSeasonReport}
+									{reservationTypeGetter}
+									regionGetter={loadRegion}
+								/>
 								<hr class="hr" />
 							</svelte:fragment>
 						</AccordionItem>
@@ -736,7 +750,12 @@
 								<ScheduleErrorReport report={postSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={postSeasonReport} regionGetter={loadRegion} />
+								<ReportTable
+									report={postSeasonReport}
+									previousReport={normalSeasonReport}
+									{reservationTypeGetter}
+									regionGetter={loadRegion}
+								/>
 							</svelte:fragment>
 						</AccordionItem>
 					{/if}
