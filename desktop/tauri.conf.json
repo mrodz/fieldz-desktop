@@ -31,7 +31,7 @@
         "icons/icon.ico"
       ],
       "identifier": "app.fieldz.www",
-      "longDescription": "",
+      "longDescription": "Field and Scheduling Administration",
       "macOS": {
         "entitlements": null,
         "exceptionDomain": "",
@@ -52,7 +52,15 @@
       "csp": null
     },
     "updater": {
-      "active": false
+      "active": true,
+      "endpoints": [
+        "https://gist.githubusercontent.com/mrodz/9f936f4e39f832c11d9fd325853dd11f/raw"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZCOUY2RDY3M0ZDMzlDNzgKUldSNG5NTS9aMjJmYTcrdjAyQ3Yxc0NkNktyN3gyaGI5T2Nqb1FzTlk2MVZua1FUN3d0azIwK1oK",
+      "windows": {
+        "installMode": "passive"
+      }
     },
     "windows": [
       {
