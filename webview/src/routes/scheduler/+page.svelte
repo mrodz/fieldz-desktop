@@ -390,10 +390,6 @@
 		const hasEnoughSupplied =
 			targetMatchCount === undefined ? false : isSupplyRequireEntryAccountedFor(targetMatchCount);
 
-		if (targetMatchCount !== undefined) {
-			console.log(isSupplyRequireEntryAccountedFor(targetMatchCount));
-		}
-
 		return hasEnoughSupplied;
 	}
 
@@ -401,6 +397,10 @@
 	let normalSeasonInter = false;
 	let postSeasonGamesToPlay: number = 1;
 	let postSeasonInter = true;
+
+	function reservationTypeGetter(reservationTypeId: number): ReservationType | undefined {
+		return reservationTypes?.find((ty) => ty.id === reservationTypeId);
+	}
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -574,7 +574,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -732,7 +732,11 @@
 								<ScheduleErrorReport report={normalSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
-								<ReportTable report={normalSeasonReport} regionGetter={loadRegion} />
+								<ReportTable
+									report={normalSeasonReport}
+									{reservationTypeGetter}
+									regionGetter={loadRegion}
+								/>
 								<hr class="hr" />
 							</svelte:fragment>
 						</AccordionItem>
@@ -749,6 +753,7 @@
 								<ReportTable
 									report={postSeasonReport}
 									previousReport={normalSeasonReport}
+									{reservationTypeGetter}
 									regionGetter={loadRegion}
 								/>
 							</svelte:fragment>

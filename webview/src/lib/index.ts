@@ -145,7 +145,7 @@ export interface EditTeamInput {
 
 export interface Target {
 	id: number;
-	maybe_reservation_type?: number;
+	maybe_reservation_type: number | undefined;
 }
 
 export interface TargetExtension {

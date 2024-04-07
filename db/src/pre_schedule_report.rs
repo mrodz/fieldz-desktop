@@ -227,6 +227,34 @@ impl PreScheduleReport {
 
         let mut target_match_count = Vec::with_capacity(target_required_matches.len());
 
+        let supplied_keys = BTreeSet::from_iter(target_supplied_matches.keys().cloned());
+        let required_keys = BTreeSet::from_iter(target_required_matches.keys().cloned());
+
+        let missing_supplied = required_keys.difference(&supplied_keys);
+        let missing_required = supplied_keys.difference(&required_keys);
+
+        for missing_target in missing_supplied {
+            let union = match target_required_matches.get(*missing_target).unwrap() {
+                RegionalUnionU64::Interregional(_) => RegionalUnionU64::Interregional(0),
+                RegionalUnionU64::Regional(rid_count) => {
+                    RegionalUnionU64::Regional(rid_count.iter().map(|(rid, _)| (*rid, 0)).collect())
+                }
+            };
+
+            target_supplied_matches.insert(missing_target, union);
+        }
+
+        for missing_target in missing_required {
+            let union = match target_supplied_matches.get(*missing_target).unwrap() {
+                RegionalUnionU64::Interregional(_) => RegionalUnionU64::Interregional(0),
+                RegionalUnionU64::Regional(rid_count) => {
+                    RegionalUnionU64::Regional(rid_count.iter().map(|(rid, _)| (*rid, 0)).collect())
+                }
+            };
+
+            target_required_matches.insert(missing_target, union);
+        }
+
         for (required, supplied) in target_required_matches
             .into_iter()
             .zip(target_supplied_matches.into_iter())
@@ -241,9 +269,6 @@ impl PreScheduleReport {
                 supplied: supplied.1,
             })
         }
-        // let target_required_matches = if input.interregional {
-
-        // }
 
         Self {
             target_duplicates,

@@ -2,18 +2,18 @@
 	import {
 		regionalUnionSumTotal,
 		type PreScheduleReport,
-		type TargetExtension,
 		regionalUnionFormatPretty,
 		type Region,
 		type TeamGroup,
-		type RegionalUnionU64,
 		type SupplyRequireEntry,
-		isSupplyRequireEntryAccountedFor
+		isSupplyRequireEntryAccountedFor,
+		type ReservationType
 	} from '$lib';
 	import { ProgressRadial, Table } from '@skeletonlabs/skeleton';
 
 	export let report: PreScheduleReport;
 	export let regionGetter: (regionId: number) => Promise<Region>;
+	export let reservationTypeGetter: (reservationTypeId: number) => ReservationType | undefined;
 	export let previousReport: PreScheduleReport | undefined = undefined;
 
 	/**
@@ -34,7 +34,8 @@
 	$: radialOk =
 		report.total_matches_required <= report.total_matches_supplied &&
 		report.total_matches_supplied !== 0 &&
-		report.target_match_count.every(isSupplyRequireEntryAccountedFor);
+		report.target_match_count.every(isSupplyRequireEntryAccountedFor) &&
+		report.target_match_count.length !== 0;
 
 	function formatGroups(groups: TeamGroup[]): string {
 		return groups.length > 0
@@ -44,6 +45,7 @@
 
 	const head = [
 		'ID',
+		'Field Type',
 		'Groups',
 		'# of Teams',
 		`Matches ${report.interregional ? 'Required' : 'Supplied/Required (Per Region)'}`
@@ -51,13 +53,21 @@
 
 	async function mapper(
 		supReqEntry: SupplyRequireEntry
-	): Promise<[string, string, string, string]> {
+	): Promise<[string, string, string, string, string]> {
 		const thisTargetDup = report?.target_duplicates.find((d) =>
 			d.used_by.map((u) => u.target.id).includes(supReqEntry.target.target.id)
 		)!;
 
+		const maybeReservationType = supReqEntry.target.target.maybe_reservation_type;
+
+		const reservationType =
+			maybeReservationType === undefined
+				? 'All'
+				: reservationTypeGetter(maybeReservationType)?.name ?? 'All';
+
 		return [
 			`${supReqEntry.target.target.id}${supReqEntry.target.groups.length === 0 ? ' ⚠️' : ''}`,
+			reservationType,
 			formatGroups(supReqEntry.target.groups),
 			String(regionalUnionSumTotal(thisTargetDup.teams_with_group_set)) +
 				(regionalUnionSumTotal(supReqEntry.required) === 0 ? ' (<i>not enough teams</i>)' : ''),
