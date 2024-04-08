@@ -6,10 +6,12 @@ on:
       - release
 
 # This workflow will trigger on each `release` published, both pre-release and stable release.
+env:
+  TAURI_PRIVATE_KEY: ${{secrets.TAURI_PRIVATE_KEY}}
 
 jobs:
   publish-tauri:
-    environment: Prod Build
+    environment: production
     permissions:
       contents: write
     strategy:
