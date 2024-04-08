@@ -8,6 +8,8 @@ on:
 # This workflow will trigger on each `release` published, both pre-release and stable release.
 env:
   TAURI_PRIVATE_KEY: ${{secrets.TAURI_PRIVATE_KEY}}
+  TAURI_KEY_PASSWORD: ${{secrets.TAURI_KEY_PASSWORD}}
+  
 
 jobs:
   publish-tauri:
