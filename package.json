@@ -1,0 +1,7 @@
+{
+  "name": "fieldz-desktop",
+  "version": "0.1.0-alpha",
+  "scripts": {
+    "preinstall": "cd webview && npm install"
+  }
+}
