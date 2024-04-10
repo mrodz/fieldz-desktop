@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CreateRegionInput, EditRegionInput, Region } from '$lib';
+	import type { EditRegionInput, Region } from '$lib';
 	import { ProgressRadial, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { onMount } from 'svelte';

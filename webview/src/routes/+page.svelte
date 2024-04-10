@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { type Region } from '$lib';
 	import { slide } from 'svelte/transition';
-	import RegionList from './region/RegionList.svelte';
+	import RegionList from './regions/RegionList.svelte';
 	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 
 	const toastStore = getToastStore();
