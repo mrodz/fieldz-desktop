@@ -84,7 +84,7 @@
 			<button
 				class="card btn m-5 block w-96 p-5"
 				tabindex="0"
-				on:click|preventDefault={() => goto(`/region/${region.id}`)}
+				on:click|preventDefault={() => goto(`/region?id=${region.id}`)}
 			>
 				<header class="card-header flex flex-row items-center">
 					<strong class="w-1/2 grow truncate">{region.title}</strong>

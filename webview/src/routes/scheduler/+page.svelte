@@ -168,7 +168,7 @@
 				buttonTextCancel: 'Back',
 				async response(r: boolean) {
 					if (r) {
-						document.location.href = `/reservations/${backingEvent.time_slot.field_id}?d=${e.event.start.valueOf()}`;
+						document.location.href = `/reservations?fieldId=${backingEvent.time_slot.field_id}&d=${e.event.start.valueOf()}`;
 					}
 				}
 			});
