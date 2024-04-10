@@ -23,7 +23,9 @@
 	import Fa from 'svelte-fa';
 	import { faPaintRoller } from '@fortawesome/free-solid-svg-icons';
 
-	export let data;
+	const queryParams = new URLSearchParams(window.location.search);
+
+	const fieldId = queryParams.get('fieldId');
 
 	let modalStore = getModalStore();
 	let toastStore = getToastStore();
@@ -44,9 +46,17 @@
 
 	onMount(async () => {
 		try {
+			if (fieldId === null || isNaN(Number(fieldId))) {
+				dialog.message('Could not parse number from field id', {
+					title: 'Error getting reservations',
+					type: 'error'
+				});
+				return;
+			}
+
 			[field, reservationTypes] = await Promise.all([
 				invoke<Field>('get_field', {
-					fieldId: data.fieldId
+					fieldId: Number(fieldId)
 				}),
 				invoke<ReservationType[]>('get_reservation_types')
 			]);
@@ -56,7 +66,7 @@
 			 */
 			if (reservationTypes.length !== 0) {
 				rawEvents = await invoke<TimeSlotExtension[]>('get_time_slots', {
-					fieldId: data.fieldId
+					fieldId: Number(fieldId)
 				});
 			} else {
 				rawEvents = [];
@@ -64,7 +74,7 @@
 
 			const input = {
 				reservation_type_ids: reservationTypes.map((t) => t.id),
-				field_id: data.fieldId
+				field_id: Number(fieldId)
 			} satisfies FieldSupportedConcurrencyInput;
 
 			activeScheduleType = reservationTypes.at(0);
@@ -109,8 +119,8 @@
 		inWeeks: boolean;
 	};
 
-	const queryParams = new URLSearchParams(window.location.search);
 	const dateStart = queryParams.get('d');
+
 	const options = {
 		allDaySlot: false,
 		view: 'timeGridWeek',
@@ -141,7 +151,7 @@
 
 			try {
 				const input: MoveTimeSlotInput = {
-					field_id: data.fieldId,
+					field_id: Number(fieldId),
 					id: Number(e.event.id),
 					new_start: e.event.start.valueOf(),
 					new_end: e.event.end.valueOf()
@@ -185,7 +195,7 @@
 
 			try {
 				const input: MoveTimeSlotInput = {
-					field_id: data.fieldId,
+					field_id: Number(fieldId),
 					id: Number(e.event.id),
 					new_start: e.event.start.valueOf(),
 					new_end: e.event.end.valueOf()
@@ -248,7 +258,7 @@
 								start: e.start.valueOf(),
 								end: e.end.valueOf(),
 								reservation_type_id: activeScheduleType!.id,
-								field_id: data.fieldId
+								field_id: Number(fieldId)
 							};
 
 							const newWindow: TimeSlotExtension = await invoke<TimeSlotExtension>(
@@ -279,7 +289,7 @@
 	async function signalCustomConcurrencyUpdate(fc: FieldConcurrency) {
 		try {
 			const input = {
-				field_id: data.fieldId,
+				field_id: Number(fieldId),
 				reservation_type_id: fc.reservation_type_id,
 				new_concurrency: fc.concurrency
 			} satisfies UpdateReservationTypeConcurrencyForFieldInput;
