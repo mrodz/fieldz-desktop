@@ -3,7 +3,7 @@
     "beforeBuildCommand": "npm run --prefix webview build",
     "beforeDevCommand": "npm run --prefix webview dev",
     "devPath": "http://localhost:5173",
-    "distDir": "C:\\Users\\mateo\\Documents\\mega-scheduler\\webview\\build"
+    "distDir": "..\\webview\\build"
   },
   "package": {
     "productName": "Fieldz"
