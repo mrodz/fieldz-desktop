@@ -34,7 +34,9 @@ fn main() -> Result<()> {
                 .context("could not access app data directory")?;
 
             let dir_part = if db_path.is_file() {
-                db_path.parent().expect("path to database is not a file, and it has no parent directory")
+                db_path
+                    .parent()
+                    .expect("path to database is not a file, and it has no parent directory")
             } else {
                 db_path.as_path()
             };
