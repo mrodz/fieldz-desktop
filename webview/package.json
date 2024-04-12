@@ -47,5 +47,8 @@
 		"@fortawesome/free-solid-svg-icons": "^6.5.1",
 		"@tauri-apps/api": "^1.5.3",
 		"svelte-fa": "^4.0.2"
+	},
+	"optionalDependencies": {
+		"@rollup/rollup-linux-x64-gnu": "4.9.5"
 	}
 }
