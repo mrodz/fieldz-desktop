@@ -75,8 +75,11 @@
 		];
 	}
 
-	let totalMatchesSupplied =
-		report.total_matches_supplied - (previousReport?.total_matches_required ?? 0);
+	// would otherwise be negative if not enough time slots are supplied in the previous stage.
+	let totalMatchesSupplied = Math.max(
+		report.total_matches_supplied - (previousReport?.total_matches_required ?? 0),
+		0
+	);
 </script>
 
 <div class="grid grid-cols-[auto_1fr] gap-16">
