@@ -359,6 +359,9 @@
 	const key = Symbol('key for crossfade animation');
 
 	function isTargetOk(report: PreScheduleReport, target: TargetExtension): boolean {
+		console.log(report);
+		console.log(target);
+
 		const isDuplicate = report.target_has_duplicates.includes(target.target.id);
 
 		if (isDuplicate) {
@@ -543,9 +546,11 @@
 				>
 					{#each targets as target, i}
 						{@const normalOK =
-							normalSeasonReport !== undefined ? isTargetOk(normalSeasonReport, target) : false}
+							normalSeasonReport !== undefined && !willSendReport
+								? isTargetOk(normalSeasonReport, target)
+								: false}
 						{@const postOK =
-							normalSeasonReport !== undefined && postSeasonReport !== undefined
+							normalSeasonReport !== undefined && !willSendReport && postSeasonReport !== undefined
 								? isTargetOk(postSeasonReport, target)
 								: false}
 
@@ -597,7 +602,7 @@
 						<svelte:fragment slot="content">
 							<RangeSlider
 								name="range-slider"
-								on:change={() => updateTargets()}
+								on:change={updateTargets}
 								bind:value={normalSeasonGamesToPlay}
 								min={1}
 								max={7}
