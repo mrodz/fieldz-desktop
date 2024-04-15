@@ -298,3 +298,5 @@ export interface UpdateTargetReservationTypeInput {
 	target_id: number;
 	new_reservation_type_id: number | undefined;
 }
+
+export const HAS_DB_RESET_BUTTON: boolean = false;

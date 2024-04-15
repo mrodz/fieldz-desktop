@@ -18,6 +18,7 @@
 	import TeamCreate from './fields/TeamCreate.svelte';
 	import RegionEdit from './region/RegionEdit.svelte';
 	import TeamEdit from './fields/TeamEdit.svelte';
+	import { HAS_DB_RESET_BUTTON } from '$lib';
 
 	initializeStores();
 
@@ -64,19 +65,22 @@
 		<AppBar>
 			<div class="flex flex-row items-center justify-center">
 				<LightSwitch />
-				<button
-					class="variant-outline btn ml-4"
-					on:click|preventDefault={async () => {
-						await resetDatabase();
-						window.location.replace('/');
-						dialog.message("The app's data was wiped, and the database's schema was refreshed.", {
-							title: 'Database reset complete',
-							type: 'info'
-						});
-					}}
-				>
-					Reset Database &mdash; Destructive
-				</button>
+
+				{#if HAS_DB_RESET_BUTTON}
+					<button
+						class="variant-outline btn ml-4"
+						on:click|preventDefault={async () => {
+							await resetDatabase();
+							window.location.replace('/');
+							dialog.message("The app's data was wiped, and the database's schema was refreshed.", {
+								title: 'Database reset complete',
+								type: 'info'
+							});
+						}}
+					>
+						Reset Database &mdash; Destructive
+					</button>
+				{/if}
 			</div>
 		</AppBar>
 	</svelte:fragment>
