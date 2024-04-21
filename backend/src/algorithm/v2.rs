@@ -4,12 +4,13 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::hint::unreachable_unchecked;
 use std::num::NonZeroU8;
 use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
+use chrono::TimeZone;
+use chrono::Utc;
 use itertools::Itertools;
 use itertools::MinMaxResult;
 use mcts::transposition_table::*;
@@ -20,18 +21,23 @@ use tinyvec::TinyVec;
 
 use crate::window;
 use crate::AvailabilityWindow;
+use crate::CompressionProfile;
 use crate::LossyAvailability;
 
 type TeamId = u8;
 
 #[derive(Clone, Copy, Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct Team {
+pub(crate) struct Team {
     id: TeamId,
 }
 
 impl Team {
-    fn new(id: TeamId) -> Self {
+    const fn new(id: TeamId) -> Self {
         Self { id }
+    }
+
+    pub(crate) fn id(&self) -> TeamId {
+        self.id
     }
 }
 
@@ -87,10 +93,20 @@ impl Display for Team {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Game {
+pub(crate) struct Game {
     team_one: Team,
     team_two: Team,
     group_id: NonZeroU8,
+}
+
+impl Game {
+    pub const fn team_one(&self) -> &Team {
+        &self.team_one
+    }
+
+    pub const fn team_two(&self) -> &Team {
+        &self.team_two
+    }
 }
 
 impl Display for Game {
@@ -100,37 +116,34 @@ impl Display for Game {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct Reservation {
+pub(crate) struct Reservation {
     slot: Slot,
     game: Option<Game>,
 }
 
-impl Display for Reservation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.slot)?;
+impl Reservation {
+    pub const fn slot(&self) -> &Slot {
+        &self.slot
+    }
 
-        if let Some(game) = self.game.as_ref() {
-            write!(f, " @ {game}")
-        } else {
-            write!(f, " <wasted>")
-        }
+    pub const fn game(&self) -> Option<&Game> {
+        self.game.as_ref()
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct Slot {
+pub(crate) struct Slot {
     field_id: u8,
     availability: LossyAvailability,
 }
 
-impl Display for Slot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[f{}] {}",
-            self.field_id,
-            self.availability.as_availability_window_lossy(),
-        )
+impl Slot {
+    pub const fn field_id(&self) -> u8 {
+        self.field_id
+    }
+
+    pub const fn availability(&self) -> &LossyAvailability {
+        &self.availability
     }
 }
 
@@ -138,7 +151,7 @@ impl Display for Slot {
 pub struct TeamSlot(Team, TinyVec<[Slot; 8]>);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MCTSState {
+pub(crate) struct MCTSState {
     games: BTreeMap<Slot, Option<Game>>,
     groups: Vec<PlayableGroup>,
     teams_len: u8,
@@ -169,14 +182,19 @@ impl MCTSState {
         self.groups.push(playable_group);
     }
 
-    pub fn add_time_slots(&mut self, field_id: u8, time_slots: impl AsRef<[AvailabilityWindow]>) {
+    pub fn add_time_slots(
+        &mut self,
+        field_id: u8,
+        time_slots: impl AsRef<[AvailabilityWindow]>,
+        compression_profile: &CompressionProfile,
+    ) {
         for time_slot in time_slots.as_ref() {
             assert!(
                 self.games
                     .insert(
                         Slot {
                             field_id,
-                            availability: time_slot.as_lossy_window().unwrap()
+                            availability: time_slot.as_lossy_window(compression_profile).unwrap()
                         },
                         None
                     )
@@ -212,9 +230,10 @@ impl GameState for MCTSState {
                     let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
                         &permutation[..]
                     else {
-                        unsafe {
-                            unreachable_unchecked();
-                        }
+                        unreachable!()
+                        // unsafe {
+                        //     unreachable_unchecked();
+                        // }
                     };
 
                     // let overlap = |x: &Slot| {
@@ -407,30 +426,13 @@ impl Output {
     pub fn all_booked(&self) -> bool {
         self.fillage == 1.
     }
-}
 
-impl Display for Output {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut r = self.reservations.iter();
-
-        if let Some(first) = r.next() {
-            write!(f, "- {first}")?;
-        }
-
-        for reservation in r {
-            write!(f, "\n- {reservation}")?;
-        }
-
-        write!(
-            f,
-            "\nBooked {:.2}%; Elapsed {}s",
-            self.fillage * 100.,
-            self.time_taken.as_secs_f32()
-        )
+    pub fn reservations(&self) -> &[Reservation] {
+        &self.reservations
     }
 }
 
-pub(crate) fn schedule(state: MCTSState) -> Result<Output> {
+pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
     let mut best: Option<Output> = None;
 
     const RETRIES: u8 = 10;
@@ -519,6 +521,11 @@ pub(crate) fn schedule_once(state: MCTSState) -> Result<Output> {
 pub fn test() -> Result<()> {
     let mut state = MCTSState::new();
 
+    let compression_profile = CompressionProfile::assume_date(
+        &Utc.with_ymd_and_hms(2006, 9, 1, 0, 0, 0).earliest().unwrap(),
+        // &DateTime::parse_from_rfc3339("2006-9-1T0:00:00+00:00").unwrap().to_utc(),
+    );
+
     state.add_time_slots(
         1,
         [
@@ -532,6 +539,7 @@ pub fn test() -> Result<()> {
             window!(14/9/2006 from 14:00 to 15:30)?,
             window!(14/9/2006 from 16:00 to 17:30)?,
         ],
+        &compression_profile,
     );
 
     state.add_time_slots(
@@ -547,6 +555,7 @@ pub fn test() -> Result<()> {
             window!(14/9/2006 from 14:00 to 15:30)?,
             window!(14/9/2006 from 16:00 to 17:30)?,
         ],
+        &compression_profile,
     );
 
     state.add_time_slots(
@@ -562,6 +571,7 @@ pub fn test() -> Result<()> {
             window!(14/10/2006 from 14:00 to 15:30)?,
             window!(14/10/2006 from 16:00 to 17:30)?,
         ],
+        &compression_profile,
     );
 
     let mut group_one = PlayableGroup::new(0);
@@ -572,9 +582,9 @@ pub fn test() -> Result<()> {
 
     state.add_group(group_one);
 
-    let result = schedule(state)?;
+    let result = schedule(&state)?;
 
-    println!("{result}");
+    println!("{result:?}");
 
     Ok(())
 }
