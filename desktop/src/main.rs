@@ -111,6 +111,7 @@ fn main() -> Result<()> {
             update_reservation_type_concurrency_for_field,
             get_non_default_reservation_type_concurrency_associations,
             update_target_reservation_type,
+            generate_schedule_payload,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

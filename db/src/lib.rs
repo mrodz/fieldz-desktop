@@ -1,4 +1,7 @@
 mod pre_schedule_report;
+
+use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
+use itertools::Itertools;
 pub use pre_schedule_report::*;
 
 pub mod errors;
@@ -165,15 +168,60 @@ impl CreateTeamInput {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TeamExtension {
     team: Team,
     tags: Vec<TeamGroup>,
 }
 
+impl TeamLike for TeamExtension {
+    fn unique_id(&self) -> i32 {
+        self.team.id
+    }
+}
+
 impl TeamExtension {
-    pub const fn new(team: Team, tags: Vec<TeamGroup>) -> Self {
+    pub fn new(team: Team, mut tags: Vec<TeamGroup>) -> Self {
+        tags.sort_by_key(|group| group.id);
         Self { tags, team }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldExtension {
+    field_id: i32,
+    time_slots: Vec<TimeSlotExtension>,
+}
+
+impl FieldLike for FieldExtension {
+    fn time_slots(&self) -> impl AsRef<[(backend::AvailabilityWindow, u8)]> {
+        self.time_slots
+            .iter()
+            .map(TimeSlotExtension::to_scheduler_input)
+            .collect::<Vec<_>>()
+    }
+
+    fn unique_id(&self) -> i32 {
+        self.field_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TeamCollection {
+    tags: Vec<TeamGroup>,
+    teams: Vec<TeamExtension>,
+}
+
+impl TeamCollection {
+    pub fn new(tags: Vec<TeamGroup>, teams: Vec<TeamExtension>) -> Self {
+        Self { tags, teams }
+    }
+}
+
+impl PlayableTeamCollection for TeamCollection {
+    type Team = TeamExtension;
+    fn teams(&self) -> impl AsRef<[Self::Team]> {
+        &self.teams
     }
 }
 
@@ -202,6 +250,27 @@ impl TimeSlotExtension {
         } else {
             self.reservation_type.default_sizing
         }
+    }
+
+    pub(crate) fn to_scheduler_input(&self) -> (backend::AvailabilityWindow, u8) {
+        let start_str = &self.time_slot.start;
+        let end_str = &self.time_slot.end;
+
+        let start = DateTime::parse_from_rfc3339(start_str)
+            .expect("time slot START is malformatted")
+            .to_utc();
+        let end = DateTime::parse_from_rfc3339(end_str)
+            .expect("time slot END is malformatted")
+            .to_utc();
+
+        (
+            backend::AvailabilityWindow::new(start, end)
+                .context("Could not transform time slot from record to scheduler parameter")
+                .unwrap(),
+            self.matches_played()
+                .try_into()
+                .expect("matches played could not fit into an 8-bit int"),
+        )
     }
 }
 
@@ -1573,5 +1642,98 @@ impl Client {
         .update(&self.connection)
         .await
         .map(|_| ())
+    }
+
+    pub async fn get_scheduled_inputs(
+        &self,
+    ) -> Result<
+        Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension>>,
+        GetScheduledInputsError,
+    > {
+        let mut result = vec![];
+
+        let reservation_types = ReservationTypeEntity::find()
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        let targets = TargetExtension::many_new(
+            TargetEntity::find()
+                .all(&self.connection)
+                .await
+                .map_err(|e| {
+                    GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?,
+            &self.connection,
+        )
+        .await
+        .map_err(|e| {
+            GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+        })?;
+
+        for reservation_type in reservation_types {
+            let field_id_with_time_slots = select_time_slot_extension()
+                .filter(reservation_type::Column::Id.eq(reservation_type.id))
+                .order_by(field::Column::Id, sea_orm::Order::Asc)
+                .into_model::<TimeSlotSelectionTypeAggregate>()
+                .all(&self.connection)
+                .await
+                .map_err(|e| {
+                    GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?
+                .into_iter()
+                .map(Into::<TimeSlotExtension>::into)
+                .group_by(|time_slot_extension| time_slot_extension.time_slot.field_id);
+
+            let fields = field_id_with_time_slots
+                .into_iter()
+                .map(|(field_id, time_slots)| FieldExtension {
+                    field_id,
+                    time_slots: time_slots.collect_vec(),
+                })
+                .collect_vec();
+
+            let mut teams = vec![];
+
+            let targets_for_this_reservation_type = targets.iter().filter(|target| {
+                target
+                    .target
+                    .maybe_reservation_type
+                    .is_some_and(|x| x == reservation_type.id)
+            });
+
+            for target in targets_for_this_reservation_type {
+                let teams_for_target = TeamEntity::find()
+                    .find_with_related(TeamGroupEntity)
+                    .filter(team_group::Column::Id.is_in(target.groups.iter().map(|g| g.id)))
+                    .group_by(team::Column::Id)
+                    .having(
+                        team_group::Column::Id
+                            .into_expr()
+                            .count_distinct()
+                            .eq(i32::try_from(target.groups.len()).unwrap()),
+                    )
+                    .all(&self.connection)
+                    .await
+                    .map_err(|e| {
+                        GetScheduledInputsError::DatabaseError(format!(
+                            "{e} {}:{}",
+                            line!(),
+                            column!()
+                        ))
+                    })?
+                    .into_iter()
+                    .map(|(team, tags)| TeamExtension::new(team, tags))
+                    .collect_vec();
+
+                teams.push(TeamCollection::new(target.groups.clone(), teams_for_target));
+            }
+
+            result.push(ScheduledInput::new(teams, fields))
+        }
+
+        Ok(result)
     }
 }

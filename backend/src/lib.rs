@@ -9,9 +9,10 @@ use std::{
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AvailabilityWindow {
     start: DateTime<Utc>,
     end: DateTime<Utc>,
@@ -392,24 +393,30 @@ impl LossyAvailability {
 
 const SECONDS_TO_HOURS: i64 = 3_600;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Team {
     name: String,
     id: u8,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Field {
     id: u8,
     name: Option<Box<str>>,
     time_slots: Vec<(AvailabilityWindow, ReservationType)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ReservationType(u8);
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct TeamGroup<T: TeamLike>(Vec<T>);
+pub trait PlayableTeamCollection
+where
+    Self: Clone + Debug + PartialEq + Eq + PartialOrd + Ord,
+{
+    type Team: TeamLike;
+
+    fn teams(&self) -> impl AsRef<[Self::Team]>;
+}
 
 pub trait TeamLike {
     fn unique_id(&self) -> i32;
@@ -421,22 +428,24 @@ pub trait FieldLike {
     fn time_slots(&self) -> impl AsRef<[(AvailabilityWindow, u8)]>;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ScheduledInput<T, F>
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScheduledInput<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
-    F: FieldLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
-    team_groups: Vec<TeamGroup<T>>,
+    team_groups: Vec<P>,
     fields: Vec<F>,
 }
 
-impl<T, F> ScheduledInput<T, F>
+impl<T, P, F> ScheduledInput<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
-    F: FieldLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
-    pub fn new(teams: impl AsRef<[TeamGroup<T>]>, fields: impl AsRef<[F]>) -> Self {
+    pub fn new(teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
         Self {
             team_groups: teams.as_ref().to_vec(),
             fields: fields.as_ref().to_vec(),
@@ -465,7 +474,7 @@ where
                 earliest_date: element.timestamp(),
             }),
             itertools::MinMaxResult::MinMax(min, max) => {
-                const SECONDS_IN_15_BIT_HOUR_MAX: i64 = (2_i64.pow(15) - 1) * 60 * 60;
+                const SECONDS_IN_15_BIT_HOUR_MAX: i64 = ((1 << 15) - 1) * SECONDS_TO_HOURS;
 
                 let earliest_date = min.timestamp();
 
@@ -481,7 +490,7 @@ where
     fn into_transformer(
         self,
         compression_profile: &CompressionProfile,
-    ) -> Result<StateTransformer<T, F>> {
+    ) -> Result<StateTransformer<T, P, F>> {
         let mut result = algorithm::v2::MCTSState::new();
 
         // We need to use a hashmap because team with a high id would overflow.
@@ -513,7 +522,7 @@ where
         for team_group in &self.team_groups {
             let mut playable_group = algorithm::v2::PlayableGroup::new(this_team_index);
 
-            for team in &team_group.0 {
+            for team in team_group.teams().as_ref() {
                 let g_id = this_team_index.try_into()?;
                 playable_group_index_to_team_index.insert(g_id, team.unique_id());
                 playable_group.add_team(g_id);
@@ -534,37 +543,40 @@ where
 }
 
 #[derive(Debug)]
-struct StateTransformer<T, F>
+struct StateTransformer<T, P, F>
 where
-    T: TeamLike + Debug,
-    F: FieldLike + Debug,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
     inner: algorithm::v2::MCTSState,
     playable_group_index_to_team_index: HashMap<u8, i32>,
-    team_groups: Vec<TeamGroup<T>>,
+    team_groups: Vec<P>,
     scheduler_field_id_to_field_id: HashMap<u8, i32>,
     fields: Vec<F>,
 }
 
-impl<T, F> StateTransformer<T, F>
+impl<T, P, F> StateTransformer<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
-    F: FieldLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
     fn scheduler_state(&self) -> &algorithm::v2::MCTSState {
         &self.inner
     }
 
-    fn team_from_schedule_id(&self, schedule_id: u8) -> Option<&T> {
+    fn team_from_schedule_id(&self, schedule_id: u8) -> Option<T> {
         let searching_for = *self.playable_group_index_to_team_index.get(&schedule_id)?;
 
         for team_group in &self.team_groups {
             if let Some(result) = team_group
-                .0
+                .teams()
+                .as_ref()
                 .iter()
                 .find(|team| team.unique_id() == searching_for)
             {
-                return Some(result);
+                return Some(result.clone());
             }
         }
 
@@ -597,11 +609,9 @@ where
                 Some(game) => Booking::Booked {
                     home_team: self
                         .team_from_schedule_id(game.team_one().id())
-                        .cloned()
                         .expect("team was not mapped properly"),
                     away_team: self
                         .team_from_schedule_id(game.team_two().id())
-                        .cloned()
                         .expect("team was not mapped properly"),
                 },
                 None => Booking::Empty,
@@ -627,7 +637,7 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Booking<T>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
 {
     Booked { home_team: T, away_team: T },
     Empty,
@@ -636,8 +646,8 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Reservation<T, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
-    F: FieldLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
     field: F,
     availability: AvailabilityWindow,
@@ -647,16 +657,17 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Output<T, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
-    F: FieldLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
     time_slots: Vec<Reservation<T, F>>,
 }
 
-pub fn schedule<T, F>(input: ScheduledInput<T, F>) -> Result<Output<T, F>>
+pub fn schedule<T, P, F>(input: ScheduledInput<T, P, F>) -> Result<Output<T, F>>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq + Hash,
-    F: FieldLike + Clone + Debug + PartialEq + Eq + Hash,
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
 {
     let compression_profile = input.get_compression_profile()?;
     let transformer = input.into_transformer(&compression_profile)?;

@@ -220,3 +220,12 @@ pub enum DeleteGroupError {
     #[error("this record (id = {0}) was not found")]
     NotFound(i32),
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum GetScheduledInputsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+}
+

@@ -17,6 +17,7 @@
 		type PreScheduleReport,
 		type PreScheduleReportInput,
 		type ReservationType,
+		type ScheduledInput,
 		type TimeSlotExtension,
 		type FieldConcurrency,
 		type UpdateTargetReservationTypeInput,
@@ -32,7 +33,8 @@
 		Table,
 		type PaginationSettings,
 		ProgressRadial,
-		RangeSlider
+		RangeSlider,
+		CodeBlock
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
@@ -404,6 +406,19 @@
 	function reservationTypeGetter(reservationTypeId: number): ReservationType | undefined {
 		return reservationTypes?.find((ty) => ty.id === reservationTypeId);
 	}
+
+	let inputs_for_scheduling: ScheduledInput[] | undefined;
+
+	async function beginScheduleTransaction() {
+		try {
+			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				type: 'error',
+				title: 'Could not schedule'
+			});
+		}
+	}
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -579,7 +594,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -766,6 +781,25 @@
 					{/if}
 				</Accordion>
 			{/if}
+
+			<div class="card p-8">
+				<button class="btn block btn-xl variant-filled mx-auto" on:click={beginScheduleTransaction}>
+					Schedule
+				</button>
+
+				{#if inputs_for_scheduling !== undefined}
+					{#each inputs_for_scheduling as input_payload}
+						{@const code = JSON.stringify(input_payload, null, 4)}
+						<div class="mt-4">
+							<CodeBlock language="json" {code} />
+						</div>
+					{:else}
+						<div class="text-center">
+							<strong>No Payloads!</strong>
+						</div>
+					{/each}
+				{/if}
+			</div>
 		</section>
 	{:else}
 		<section class="card m-4 p-4">
