@@ -522,7 +522,9 @@ pub fn test() -> Result<()> {
     let mut state = MCTSState::new();
 
     let compression_profile = CompressionProfile::assume_date(
-        &Utc.with_ymd_and_hms(2006, 9, 1, 0, 0, 0).earliest().unwrap(),
+        &Utc.with_ymd_and_hms(2006, 9, 1, 0, 0, 0)
+            .earliest()
+            .unwrap(),
         // &DateTime::parse_from_rfc3339("2006-9-1T0:00:00+00:00").unwrap().to_utc(),
     );
 

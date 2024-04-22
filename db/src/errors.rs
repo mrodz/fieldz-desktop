@@ -228,4 +228,3 @@ pub enum GetScheduledInputsError {
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
 }
-
