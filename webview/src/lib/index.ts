@@ -300,3 +300,18 @@ export interface UpdateTargetReservationTypeInput {
 }
 
 export const HAS_DB_RESET_BUTTON: boolean = false;
+
+export interface FieldExtension {
+	field_id: number;
+	time_slots: TimeSlotExtension[];
+}
+
+export interface PlayableTeamCollection {
+	tags: TeamGroup[];
+	teams: TeamExtension[];
+}
+
+export interface ScheduledInput {
+	team_groups: PlayableTeamCollection[];
+	fields: FieldExtension[];
+}

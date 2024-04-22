@@ -1,15 +1,17 @@
+use backend::ScheduledInput;
 use db::errors::{
     CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
     CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError,
-    EditRegionError, EditTeamError, LoadFieldsError, LoadRegionError, LoadTeamsError,
-    PreScheduleReportError, TimeSlotError,
+    EditRegionError, EditTeamError, GetScheduledInputsError, LoadFieldsError, LoadRegionError,
+    LoadTeamsError, PreScheduleReportError, TimeSlotError,
 };
 use db::{
     CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput,
-    CreateTimeSlotInput, EditRegionInput, EditTeamInput, FieldConcurrency,
+    CreateTimeSlotInput, EditRegionInput, EditTeamInput, FieldConcurrency, FieldExtension,
     FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput,
-    PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamExtension, TimeSlotExtension,
-    UpdateReservationTypeConcurrencyForFieldInput, UpdateTargetReservationTypeInput, Validator,
+    PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection, TeamExtension,
+    TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
+    UpdateTargetReservationTypeInput, Validator,
 };
 use tauri::{AppHandle, Manager};
 
@@ -626,4 +628,21 @@ pub(crate) async fn update_target_reservation_type(
         .update_target_reservation_type(input)
         .await
         .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn generate_schedule_payload(
+    app: AppHandle,
+) -> Result<
+    Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension>>,
+    GetScheduledInputsError,
+> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(GetScheduledInputsError::NoDatabase)?;
+
+    client.get_scheduled_inputs().await
 }

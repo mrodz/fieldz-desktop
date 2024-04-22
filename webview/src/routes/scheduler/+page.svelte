@@ -17,6 +17,7 @@
 		type PreScheduleReport,
 		type PreScheduleReportInput,
 		type ReservationType,
+		type ScheduledInput,
 		type TimeSlotExtension,
 		type FieldConcurrency,
 		type UpdateTargetReservationTypeInput,
@@ -32,7 +33,8 @@
 		Table,
 		type PaginationSettings,
 		ProgressRadial,
-		RangeSlider
+		RangeSlider,
+		CodeBlock
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
@@ -404,6 +406,19 @@
 	function reservationTypeGetter(reservationTypeId: number): ReservationType | undefined {
 		return reservationTypes?.find((ty) => ty.id === reservationTypeId);
 	}
+
+	let inputs_for_scheduling: ScheduledInput[] | undefined;
+
+	async function beginScheduleTransaction() {
+		try {
+			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
+		} catch (e) {
+			dialog.message(JSON.stringify(e), {
+				type: 'error',
+				title: 'Could not schedule'
+			});
+		}
+	}
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -766,6 +781,25 @@
 					{/if}
 				</Accordion>
 			{/if}
+
+			<div class="card p-8">
+				<button class="variant-filled btn btn-xl mx-auto block" on:click={beginScheduleTransaction}>
+					Schedule
+				</button>
+
+				{#if inputs_for_scheduling !== undefined}
+					{#each inputs_for_scheduling as input_payload}
+						{@const code = JSON.stringify(input_payload, null, 4)}
+						<div class="mt-4">
+							<CodeBlock language="json" {code} />
+						</div>
+					{:else}
+						<div class="text-center">
+							<strong>No Payloads!</strong>
+						</div>
+					{/each}
+				{/if}
+			</div>
 		</section>
 	{:else}
 		<section class="card m-4 p-4">
