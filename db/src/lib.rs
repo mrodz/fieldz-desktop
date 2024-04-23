@@ -1,6 +1,7 @@
 mod pre_schedule_report;
 
-use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
+use backend::{PlayableTeamCollection, ScheduledInput};
+use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
 use itertools::Itertools;
 pub use pre_schedule_report::*;
 
@@ -194,10 +195,13 @@ pub struct FieldExtension {
 }
 
 impl FieldLike for FieldExtension {
-    fn time_slots(&self) -> impl AsRef<[(backend::AvailabilityWindow, u8)]> {
+    fn time_slots(&self) -> impl AsRef<[(ProtobufAvailabilityWindow, u8)]> {
         self.time_slots
             .iter()
-            .map(TimeSlotExtension::to_scheduler_input)
+            .map(|not_ready| {
+                let (window, concurrency) = not_ready.to_scheduler_input();
+                (window.to_protobuf_window(), concurrency)
+            })
             .collect::<Vec<_>>()
     }
 

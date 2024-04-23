@@ -8,6 +8,11 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
+use communication::protos::algo_input::{
+    Field as FieldMessage, PlayableTeamCollection as PlayableTeamCollectionMessage,
+    ScheduledInput as ScheduledInputMessage, Team as TeamMessage, TimeSlot as TimeSlotMessage,
+};
+use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -70,6 +75,13 @@ impl AvailabilityWindow {
         Ok(Self { start, end })
     }
 
+    pub fn new_unix(start: i64, end: i64) -> Result<Self> {
+        Self::new(
+            DateTime::from_timestamp(start, 0).context("start")?,
+            DateTime::from_timestamp(end, 0).context("end")?,
+        )
+    }
+
     pub fn contains(&self, time: DateTime<Utc>) -> bool {
         self.start < time && time < self.end
     }
@@ -103,6 +115,10 @@ impl AvailabilityWindow {
         compression_profile: &CompressionProfile,
     ) -> Result<LossyAvailability, LossyAvailabilityError> {
         LossyAvailability::new(&self.start, &self.end, compression_profile)
+    }
+
+    pub const fn to_protobuf_window(&self) -> ProtobufAvailabilityWindow {
+        (self.start.timestamp(), self.end.timestamp())
     }
 }
 
@@ -418,16 +434,6 @@ where
     fn teams(&self) -> impl AsRef<[Self::Team]>;
 }
 
-pub trait TeamLike {
-    fn unique_id(&self) -> i32;
-}
-
-pub trait FieldLike {
-    fn unique_id(&self) -> i32;
-    /// (AvailabilityWindow, SupportedConcurrency)
-    fn time_slots(&self) -> impl AsRef<[(AvailabilityWindow, u8)]>;
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduledInput<T, P, F>
 where
@@ -461,7 +467,7 @@ where
                     .time_slots()
                     .as_ref()
                     .iter()
-                    .map(|time_slot| time_slot.0.start)
+                    .map(|(time_slot, _)| time_slot.0)
                     .collect_vec()
             })
             .minmax();
@@ -471,15 +477,13 @@ where
                 bail!("no time slots, thus no compression profile could be made")
             }
             itertools::MinMaxResult::OneElement(element) => Ok(CompressionProfile {
-                earliest_date: element.timestamp(),
+                earliest_date: element,
             }),
             itertools::MinMaxResult::MinMax(min, max) => {
                 const SECONDS_IN_15_BIT_HOUR_MAX: i64 = ((1 << 15) - 1) * SECONDS_TO_HOURS;
 
-                let earliest_date = min.timestamp();
-
-                if let 2..=SECONDS_IN_15_BIT_HOUR_MAX = max.timestamp() - earliest_date {
-                    Ok(CompressionProfile { earliest_date })
+                if let 2..=SECONDS_IN_15_BIT_HOUR_MAX = max - min {
+                    Ok(CompressionProfile { earliest_date: min })
                 } else {
                     bail!("Cannot use date compression, as the breadth of input time slots exceeds {SECONDS_IN_15_BIT_HOUR_MAX} seconds (~3.7 years): {min} & {max}");
                 }
@@ -503,13 +507,19 @@ where
 
             for (time_slot, supported_concurrency) in time_slots {
                 for _ in 0..*supported_concurrency {
-                    availability.push(time_slot.clone());
+                    availability.push(*time_slot);
                 }
             }
 
             let byte = this_field_id.try_into().expect("too many fields (>= 256)");
 
-            result.add_time_slots(byte, availability, compression_profile);
+            let mut as_windows = Vec::with_capacity(availability.len());
+
+            for (start, end) in availability {
+                as_windows.push(AvailabilityWindow::new_unix(start, end)?);
+            }
+
+            result.add_time_slots(byte, as_windows, compression_profile);
             scheduler_field_id_to_field_id.insert(byte, field.unique_id());
         }
 
@@ -539,6 +549,60 @@ where
             scheduler_field_id_to_field_id,
             fields: self.fields,
         })
+    }
+}
+
+impl<T, P, F> From<ScheduledInput<T, P, F>> for ScheduledInputMessage
+where
+    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq + Eq,
+{
+    fn from(value: ScheduledInput<T, P, F>) -> Self {
+        Self {
+            fields: value
+                .fields
+                .into_iter()
+                .map(|field| FieldMessage {
+                    unique_id: field
+                        .unique_id()
+                        .try_into()
+                        .expect("field id could not fit in a u32"),
+                    time_slots: field
+                        .time_slots()
+                        .as_ref()
+                        .iter()
+                        .map(|(time_slot, concurrency)| TimeSlotMessage {
+                            concurrency: *concurrency as u32,
+                            start: time_slot.0,
+                            end: time_slot.1,
+                            ..Default::default()
+                        })
+                        .collect_vec(),
+                    ..Default::default()
+                })
+                .collect_vec(),
+            team_groups: value
+                .team_groups
+                .into_iter()
+                .map(|team_group| PlayableTeamCollectionMessage {
+                    teams: team_group
+                        .teams()
+                        .as_ref()
+                        .iter()
+                        .map(|team| TeamMessage {
+                            unique_id: team
+                                .unique_id()
+                                .try_into()
+                                .expect("team id could not fit in a u32"),
+                            ..Default::default()
+                        })
+                        .collect_vec(),
+                    ..Default::default()
+                })
+                .collect_vec(),
+            ..Default::default()
+        }
     }
 }
 
