@@ -7,20 +7,28 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
-use communication::protos::algo_input::{
-    Field as FieldMessage, PlayableTeamCollection as PlayableTeamCollectionMessage,
-    ScheduledInput as ScheduledInputMessage, Team as TeamMessage, TimeSlot as TimeSlotMessage,
-};
-use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
+use chrono::{serde::ts_seconds, DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AvailabilityWindow {
+    #[serde(with = "ts_seconds")]
     start: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
     end: DateTime<Utc>,
+}
+
+pub trait TeamLike {
+    fn unique_id(&self) -> i32;
+}
+
+pub type ProtobufAvailabilityWindow = (i64, i64);
+
+pub trait FieldLike {
+    fn unique_id(&self) -> i32;
+    fn time_slots(&self) -> impl AsRef<[(ProtobufAvailabilityWindow, u8)]>;
 }
 
 impl Display for AvailabilityWindow {
@@ -427,7 +435,7 @@ pub struct ReservationType(u8);
 
 pub trait PlayableTeamCollection
 where
-    Self: Clone + Debug + PartialEq + Eq + PartialOrd + Ord,
+    Self: Clone + Debug + PartialEq,
 {
     type Team: TeamLike;
 
@@ -437,9 +445,9 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduledInput<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     team_groups: Vec<P>,
     fields: Vec<F>,
@@ -447,9 +455,9 @@ where
 
 impl<T, P, F> ScheduledInput<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     pub fn new(teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
         Self {
@@ -550,68 +558,22 @@ where
             fields: self.fields,
         })
     }
-}
 
-impl<T, P, F> From<ScheduledInput<T, P, F>> for ScheduledInputMessage
-where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
-{
-    fn from(value: ScheduledInput<T, P, F>) -> Self {
-        Self {
-            fields: value
-                .fields
-                .into_iter()
-                .map(|field| FieldMessage {
-                    unique_id: field
-                        .unique_id()
-                        .try_into()
-                        .expect("field id could not fit in a u32"),
-                    time_slots: field
-                        .time_slots()
-                        .as_ref()
-                        .iter()
-                        .map(|(time_slot, concurrency)| TimeSlotMessage {
-                            concurrency: *concurrency as u32,
-                            start: time_slot.0,
-                            end: time_slot.1,
-                            ..Default::default()
-                        })
-                        .collect_vec(),
-                    ..Default::default()
-                })
-                .collect_vec(),
-            team_groups: value
-                .team_groups
-                .into_iter()
-                .map(|team_group| PlayableTeamCollectionMessage {
-                    teams: team_group
-                        .teams()
-                        .as_ref()
-                        .iter()
-                        .map(|team| TeamMessage {
-                            unique_id: team
-                                .unique_id()
-                                .try_into()
-                                .expect("team id could not fit in a u32"),
-                            ..Default::default()
-                        })
-                        .collect_vec(),
-                    ..Default::default()
-                })
-                .collect_vec(),
-            ..Default::default()
-        }
+    pub fn fields(&self) -> &[F] {
+        &self.fields
+    }
+
+    pub fn team_groups(&self) -> &[P] {
+        &self.team_groups
     }
 }
 
 #[derive(Debug)]
 struct StateTransformer<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq,
     P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    F: FieldLike + Clone + Debug + PartialEq,
 {
     inner: algorithm::v2::MCTSState,
     playable_group_index_to_team_index: HashMap<u8, i32>,
@@ -622,9 +584,9 @@ where
 
 impl<T, P, F> StateTransformer<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq,
     P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    F: FieldLike + Clone + Debug + PartialEq,
 {
     fn scheduler_state(&self) -> &algorithm::v2::MCTSState {
         &self.inner
@@ -701,7 +663,7 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Booking<T>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq,
 {
     Booked { home_team: T, away_team: T },
     Empty,
@@ -710,28 +672,60 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Reservation<T, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
 {
     field: F,
     availability: AvailabilityWindow,
     booking: Booking<T>,
 }
 
+impl<T, F> Reservation<T, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    pub const fn field(&self) -> &F {
+        &self.field
+    }
+
+    pub const fn start(&self) -> i64 {
+        self.availability.start.timestamp()
+    }
+
+    pub const fn end(&self) -> i64 {
+        self.availability.end.timestamp()
+    }
+
+    pub const fn booking(&self) -> &Booking<T> {
+        &self.booking
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Output<T, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
 {
     time_slots: Vec<Reservation<T, F>>,
 }
 
+impl<T, F> Output<T, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    pub fn time_slots(&self) -> &[Reservation<T, F>] {
+        &self.time_slots
+    }
+}
+
 pub fn schedule<T, P, F>(input: ScheduledInput<T, P, F>) -> Result<Output<T, F>>
 where
-    T: TeamLike + Clone + Debug + PartialEq + Eq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq + Eq,
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     let compression_profile = input.get_compression_profile()?;
     let transformer = input.into_transformer(&compression_profile)?;

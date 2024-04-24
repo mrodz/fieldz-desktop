@@ -18,12 +18,15 @@ tauri-build = { version = "1.5.1", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "1.5.4", features = [ "updater", "dialog-all"] }
+grpc_server = { path = "../gcloud/grpc_server" }
 backend = { path = "../backend" }
 db = { path = "../db" }
 anyhow = { version = "1.0.80" }
 futures = "0.3.30"
 thiserror = "1.0.57"
 dotenv = "0.15.0"
+async-stream = "0.3.5"
+
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
 # If you use cargo directly instead of tauri's cli you can use this feature flag to switch between tauri's `dev` and `build` modes.

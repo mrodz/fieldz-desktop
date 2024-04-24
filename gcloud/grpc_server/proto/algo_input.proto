@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package algo_input;
+
+message Team { uint32 unique_id = 1; }
+
+message PlayableTeamCollection { repeated Team teams = 1; }
+
+message TimeSlot {
+  int64 start = 1;
+  int64 end = 2;
+  uint32 concurrency = 3;
+}
+
+message Field {
+  uint32 unique_id = 1;
+  repeated TimeSlot time_slots = 2;
+}
+
+message ScheduledInput {
+  uint32 unique_id = 1;
+  repeated PlayableTeamCollection team_groups = 2;
+  repeated Field fields = 3;
+}
+
+message ScheduledOutput {
+  repeated Reservation time_slots = 1;
+}
+
+message Reservation {
+  message Booked {
+    Team home_team = 1;
+    Team away_team = 2;
+  }
+
+  Field field = 1;
+  int64 start = 2;
+  int64 end = 3;
+  optional Booked booking = 4;
+}
+
+service Scheduler {
+  rpc Schedule (stream ScheduledInput) returns (stream ScheduledOutput);
+}

@@ -412,6 +412,8 @@
 	async function beginScheduleTransaction() {
 		try {
 			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
+
+			await invoke<ScheduledInput[]>('schedule');
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				type: 'error',
