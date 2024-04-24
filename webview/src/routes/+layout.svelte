@@ -11,6 +11,8 @@
 		storePopup
 	} from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
+	import { getVersion } from '@tauri-apps/api/app';
+
 	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
 
 	import RegionCreate from './region/RegionCreate.svelte';
@@ -60,6 +62,11 @@
 				<li><a href="/scheduler">Scheduler</a></li>
 			</ul>
 		</nav>
+		{#await getVersion() then version}
+			<div class="m-4 bottom-0 absolute">
+				v{version}
+			</div>
+		{/await}
 	</svelte:fragment>
 	<svelte:fragment slot="header">
 		<AppBar>

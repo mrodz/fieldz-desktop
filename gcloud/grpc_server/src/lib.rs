@@ -5,7 +5,7 @@ pub mod proto {
 }
 
 pub mod server {
-    pub use super::*;
+    use super::*;
 
     pub mod scheduler {
         pub use super::rpc::{algo_input::scheduler_server::SchedulerServer, ScheduleManager};

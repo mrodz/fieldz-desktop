@@ -1961,11 +1961,14 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "backend",
+ "log",
  "prost",
  "tokio",
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::pin::Pin;
+use std::time::Instant;
 
 use algo_input::scheduler_server::Scheduler;
 use algo_input::{ScheduledInput, ScheduledOutput};
@@ -139,22 +140,33 @@ where
 impl Scheduler for ScheduleManager {
     type ScheduleStream =
         Pin<Box<dyn Stream<Item = Result<ScheduledOutput, Status>> + Send + 'static>>;
+
     async fn schedule(
         &self,
         request: Request<tonic::Streaming<ScheduledInput>>, // Accept request of type HelloRequest
     ) -> Result<Response<Self::ScheduleStream>, Status> {
         let mut stream = request.into_inner();
 
+        let _span = tracing::info_span!("RPC Start");
+
         let output = async_stream::try_stream! {
             while let Some(schedule_payload) = stream.next().await {
                 let schedule_payload: algo_input::ScheduledInput = schedule_payload?;
 
-                dbg!(&schedule_payload);
+                let backend_payload: backend::ScheduledInput<_, _, _> = schedule_payload.into();
 
-                let result = backend::schedule(schedule_payload.into());
+                tracing::info!("Recieved payload (fields: {}, teams: {})", backend_payload.fields().as_ref().len(), backend_payload.teams_len());
+
+                let start = Instant::now();
+
+                let result = backend::schedule(backend_payload);
+
+                let end = Instant::now();
+
+                tracing::info!("Scheduled in {:?}", end.duration_since(start));
 
                 if let Err(ref e) = result {
-                    eprintln!("ERROR: {e}");
+                    tracing::error!("{e}");
                 }
 
                 yield
