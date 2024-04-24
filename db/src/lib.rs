@@ -1,6 +1,8 @@
 mod pre_schedule_report;
 
-use backend::{FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow, ScheduledInput, TeamLike};
+use backend::{
+    FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow, ScheduledInput, TeamLike,
+};
 // use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
 use itertools::Itertools;
 pub use pre_schedule_report::*;

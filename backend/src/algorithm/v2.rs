@@ -188,7 +188,7 @@ impl MCTSState {
         time_slots: impl AsRef<[AvailabilityWindow]>,
         compression_profile: &CompressionProfile,
     ) {
-        for time_slot in time_slots.as_ref() {
+        for time_slot in dbg!(time_slots.as_ref()) {
             assert!(
                 self.games
                     .insert(
@@ -271,8 +271,8 @@ impl GameState for MCTSState {
                     result.push(Reservation {
                         slot: *slot,
                         game: Some(Game {
-                            team_one: team_one.clone(),
-                            team_two: team_two.clone(),
+                            team_one: *team_one,
+                            team_two: *team_two,
                             group_id: group.id(),
                         }),
                     })
@@ -434,6 +434,29 @@ impl Output {
 
 pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
     let mut best: Option<Output> = None;
+
+    if dbg!(state.teams_len()) == 0 {
+        return Ok(Output {
+            fillage: 0.,
+            time_taken: Duration::from_millis(0),
+            reservations: state
+                .games
+                .iter()
+                .map(|(slot, game)| Reservation {
+                    game: *game,
+                    slot: *slot,
+                })
+                .collect_vec(),
+        });
+    }
+
+    if state.games.is_empty() {
+        return Ok(Output {
+            fillage: 0.,
+            time_taken: Duration::from_millis(0),
+            reservations: vec![],
+        });
+    }
 
     const RETRIES: u8 = 10;
 

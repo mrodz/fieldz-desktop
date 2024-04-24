@@ -148,7 +148,17 @@ impl Scheduler for ScheduleManager {
         let output = async_stream::try_stream! {
             while let Some(schedule_payload) = stream.next().await {
                 let schedule_payload: algo_input::ScheduledInput = schedule_payload?;
-                yield backend::schedule(schedule_payload.into())
+
+                dbg!(&schedule_payload);
+
+                let result = backend::schedule(schedule_payload.into());
+
+                if let Err(ref e) = result {
+                    eprintln!("ERROR: {e}");
+                }
+
+                yield
+                    result
                     .map_err(|e| Status::new(tonic::Code::Cancelled, e.to_string()))?
                     .into();
             }

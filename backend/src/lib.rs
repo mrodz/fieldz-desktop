@@ -680,7 +680,7 @@ where
     booking: Booking<T>,
 }
 
-impl <T, F>Reservation<T, F>
+impl<T, F> Reservation<T, F>
 where
     T: TeamLike + Clone + Debug + PartialEq,
     F: FieldLike + Clone + Debug + PartialEq,
@@ -711,7 +711,7 @@ where
     time_slots: Vec<Reservation<T, F>>,
 }
 
-impl <T, F>Output<T, F>
+impl<T, F> Output<T, F>
 where
     T: TeamLike + Clone + Debug + PartialEq,
     F: FieldLike + Clone + Debug + PartialEq,

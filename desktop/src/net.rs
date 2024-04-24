@@ -16,7 +16,7 @@ pub enum ScheduleRequestError {
 }
 
 fn scheduler_endpoint() -> &'static str {
-    "[::1]:10000"
+    "http://[::1]:10000"
 }
 
 pub(crate) async fn send_grpc_schedule_request<T, P, F>(
@@ -100,5 +100,5 @@ where
         println!("{schedule:?}");
     }
 
-	Ok(())
+    Ok(())
 }
