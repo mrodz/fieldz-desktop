@@ -6,9 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-communication = { path = "../communication"}
 anyhow = "1.0.79"
-chrono = "0.4.34"
+chrono = { version = "0.4.34", features = ["serde"] }
 chrono-tz = "0.8.6"
 genevo = "0.7.1"
 itertools = "0.12.1"
@@ -18,5 +17,5 @@ mcts = "0.3.0"
 petgraph = "0.6.4"
 rand = "0.8.5"
 thiserror = "1.0.57"
-tinyvec = "1.6.0"
-serde = "1.0.197"
+tinyvec = { version = "1.6.0", features = ["alloc"] }
+serde = { version = "1.0.197", features = ["derive"] }

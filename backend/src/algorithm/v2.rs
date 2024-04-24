@@ -1,4 +1,4 @@
-extern crate tinyvec;
+// extern crate tinyvec;
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -271,8 +271,8 @@ impl GameState for MCTSState {
                     result.push(Reservation {
                         slot: *slot,
                         game: Some(Game {
-                            team_one: *team_one,
-                            team_two: *team_two,
+                            team_one: team_one.clone(),
+                            team_two: team_two.clone(),
                             group_id: group.id(),
                         }),
                     })
