@@ -445,9 +445,9 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduledInput<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq,
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     team_groups: Vec<P>,
     fields: Vec<F>,
@@ -455,9 +455,9 @@ where
 
 impl<T, P, F> ScheduledInput<T, P, F>
 where
-    T: TeamLike + Clone + Debug + PartialEq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq,
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     pub fn new(teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
         Self {
@@ -557,6 +557,14 @@ where
             scheduler_field_id_to_field_id,
             fields: self.fields,
         })
+    }
+
+    pub fn fields(&self) -> &[F] {
+        &self.fields
+    }
+
+    pub fn team_groups(&self) -> &[P] {
+        &self.team_groups
     }
 }
 
@@ -715,9 +723,9 @@ where
 
 pub fn schedule<T, P, F>(input: ScheduledInput<T, P, F>) -> Result<Output<T, F>>
 where
-    T: TeamLike + Clone + Debug + PartialEq,
-    P: PlayableTeamCollection<Team = T>,
-    F: FieldLike + Clone + Debug + PartialEq,
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     let compression_profile = input.get_compression_profile()?;
     let transformer = input.into_transformer(&compression_profile)?;

@@ -15,6 +15,7 @@ use db::{
 };
 use tauri::{AppHandle, Manager};
 
+use crate::net::{send_grpc_schedule_request, ScheduleRequestError};
 use crate::SafeAppState;
 
 #[tauri::command]
@@ -645,4 +646,21 @@ pub(crate) async fn generate_schedule_payload(
         .ok_or(GetScheduledInputsError::NoDatabase)?;
 
     client.get_scheduled_inputs().await
+}
+
+#[tauri::command]
+pub(crate) async fn schedule(app: AppHandle) -> Result<(), ScheduleRequestError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(ScheduleRequestError::NoDatabase)?;
+
+    let input = client
+        .get_scheduled_inputs()
+        .await
+        .map_err(|e| ScheduleRequestError::DatabaseError(e.to_string()))?;
+
+    send_grpc_schedule_request(input).await
 }

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 backend = { path = "../backend" }
-grpc_scheduler = { path = "../gcloud/grpc_scheduler" }
+grpc_server = { path = "../gcloud/grpc_server" }
 anyhow = "1.0.80"
 sea-orm = { version = "0.12", features = [
 	"sqlx-sqlite",

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod net;
 
 use anyhow::{Context, Result};
 use bridge::*;
@@ -112,6 +113,7 @@ fn main() -> Result<()> {
             get_non_default_reservation_type_concurrency_associations,
             update_target_reservation_type,
             generate_schedule_payload,
+            schedule,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")
