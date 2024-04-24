@@ -152,7 +152,7 @@ pub struct TeamSlot(Team, TinyVec<[Slot; 8]>);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MCTSState {
-    games: BTreeMap<Slot, Option<Game>>,
+    games: BTreeMap<Slot, Vec<Option<Game>>>,
     groups: Vec<PlayableGroup>,
     teams_len: u8,
 }
@@ -179,6 +179,7 @@ impl MCTSState {
                     .expect("max team size = 255"),
             )
             .expect("max team size = 255");
+
         self.groups.push(playable_group);
     }
 
@@ -188,19 +189,16 @@ impl MCTSState {
         time_slots: impl AsRef<[AvailabilityWindow]>,
         compression_profile: &CompressionProfile,
     ) {
-        for time_slot in dbg!(time_slots.as_ref()) {
-            assert!(
-                self.games
-                    .insert(
-                        Slot {
-                            field_id,
-                            availability: time_slot.as_lossy_window(compression_profile).unwrap()
-                        },
-                        None
-                    )
-                    .is_none(),
-                "{time_slot} at field {field_id} was already set"
-            );
+        for time_slot in time_slots.as_ref() {
+            let entry = self
+                .games
+                .entry(Slot {
+                    field_id,
+                    availability: time_slot.as_lossy_window(compression_profile).unwrap(),
+                })
+                .or_default();
+
+            entry.push(None);
         }
     }
 
@@ -220,62 +218,64 @@ impl GameState for MCTSState {
     fn available_moves(&self) -> Vec<Reservation> {
         let mut result = tiny_vec!([Reservation; 8]);
 
-        for (slot, game) in &self.games {
-            if game.is_some() {
-                continue;
-            }
+        for (slot, games) in &self.games {
+            for game in games {
+                if game.is_some() {
+                    continue;
+                }
 
-            for group in &self.groups {
-                'outer: for permutation in group.teams.iter().permutations(2) {
-                    let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
-                        &permutation[..]
-                    else {
-                        unreachable!()
-                        // unsafe {
-                        //     unreachable_unchecked();
-                        // }
-                    };
+                for group in &self.groups {
+                    'outer: for permutation in group.teams.iter().permutations(2) {
+                        let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
+                            &permutation[..]
+                        else {
+                            unreachable!()
+                            // unsafe {
+                            //     unreachable_unchecked();
+                            // }
+                        };
 
-                    // let overlap = |x: &Slot| {
-                    //     LossyAvailability::overlap_fast(&x.availability, &slot.availability)
-                    // };
+                        // let overlap = |x: &Slot| {
+                        //     LossyAvailability::overlap_fast(&x.availability, &slot.availability)
+                        // };
 
-                    let mut t1_iter = t1_avail.iter();
-                    let mut t2_iter = t2_avail.iter();
+                        let mut t1_iter = t1_avail.iter();
+                        let mut t2_iter = t2_avail.iter();
 
-                    loop {
-                        match (t1_iter.next(), t2_iter.next()) {
-                            (Some(t1), Some(t2)) => {
-                                if LossyAvailability::overlap_fast(
-                                    &t1.availability,
-                                    &slot.availability,
-                                ) || LossyAvailability::overlap_fast(
-                                    &t2.availability,
-                                    &slot.availability,
-                                ) {
-                                    continue 'outer;
+                        loop {
+                            match (t1_iter.next(), t2_iter.next()) {
+                                (Some(t1), Some(t2)) => {
+                                    if LossyAvailability::overlap_fast(
+                                        &t1.availability,
+                                        &slot.availability,
+                                    ) || LossyAvailability::overlap_fast(
+                                        &t2.availability,
+                                        &slot.availability,
+                                    ) {
+                                        continue 'outer;
+                                    }
                                 }
-                            }
-                            (Some(t), None) | (None, Some(t)) => {
-                                if LossyAvailability::overlap_fast(
-                                    &t.availability,
-                                    &slot.availability,
-                                ) {
-                                    continue 'outer;
+                                (Some(t), None) | (None, Some(t)) => {
+                                    if LossyAvailability::overlap_fast(
+                                        &t.availability,
+                                        &slot.availability,
+                                    ) {
+                                        continue 'outer;
+                                    }
                                 }
+                                (None, None) => break,
                             }
-                            (None, None) => break,
                         }
-                    }
 
-                    result.push(Reservation {
-                        slot: *slot,
-                        game: Some(Game {
-                            team_one: *team_one,
-                            team_two: *team_two,
-                            group_id: group.id(),
-                        }),
-                    })
+                        result.push(Reservation {
+                            slot: *slot,
+                            game: Some(Game {
+                                team_one: *team_one,
+                                team_two: *team_two,
+                                group_id: group.id(),
+                            }),
+                        })
+                    }
                 }
             }
         }
@@ -301,14 +301,20 @@ impl GameState for MCTSState {
 
             let t2_vec = &mut self
                 .groups
-                .get_unchecked_mut((game.group_id.get() - 1) as usize)
-                .get_team_unchecked(game.team_two.id)
+                .get_mut((game.group_id.get() - 1) as usize)
+                .unwrap()
+                .get_team(game.team_two.id)
                 .1;
 
             t2_vec.push(mov.slot);
         }
 
-        self.games.insert(mov.slot, mov.game);
+        let entry = self.games.entry(mov.slot).or_default();
+        for game in entry {
+            if let empty @ None = game {
+                *empty = mov.game;
+            }
+        }
     }
 }
 
@@ -336,17 +342,19 @@ impl Evaluator<SchedulerMCTS> for ScheduleEvaluator {
 
         let mut busy: BTreeMap<Team, Vec<Slot>> = BTreeMap::new();
 
-        for (slot, game) in &state.games {
-            if let Some(game) = game.as_ref() {
-                let mut entry = busy.entry(game.team_one).or_default();
-                entry.push(*slot);
+        for (slot, games) in &state.games {
+            for game in games {
+                if let Some(game) = game.as_ref() {
+                    let mut entry = busy.entry(game.team_one).or_default();
+                    entry.push(*slot);
 
-                entry = busy.entry(game.team_two).or_default();
-                entry.push(*slot);
+                    entry = busy.entry(game.team_two).or_default();
+                    entry.push(*slot);
 
-                result += 1;
-            } else {
-                result -= 10;
+                    result += 1;
+                } else {
+                    result -= 10;
+                }
             }
         }
 
@@ -435,16 +443,18 @@ impl Output {
 pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
     let mut best: Option<Output> = None;
 
-    if dbg!(state.teams_len()) == 0 {
+    if state.teams_len() == 0 {
         return Ok(Output {
             fillage: 0.,
             time_taken: Duration::from_millis(0),
             reservations: state
                 .games
                 .iter()
-                .map(|(slot, game)| Reservation {
-                    game: *game,
-                    slot: *slot,
+                .flat_map(|(slot, games)| {
+                    games.iter().map(|game| Reservation {
+                        game: *game,
+                        slot: *slot,
+                    })
                 })
                 .collect_vec(),
         });

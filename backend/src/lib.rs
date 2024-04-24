@@ -466,7 +466,7 @@ where
         }
     }
 
-    pub fn get_compression_profile(&self) -> Result<CompressionProfile> {
+    pub fn get_compression_profile(&self) -> Result<Option<CompressionProfile>> {
         let earliest_date = self
             .fields
             .iter()
@@ -481,17 +481,15 @@ where
             .minmax();
 
         match earliest_date {
-            itertools::MinMaxResult::NoElements => {
-                bail!("no time slots, thus no compression profile could be made")
-            }
-            itertools::MinMaxResult::OneElement(element) => Ok(CompressionProfile {
+            itertools::MinMaxResult::NoElements => Ok(None),
+            itertools::MinMaxResult::OneElement(element) => Ok(Some(CompressionProfile {
                 earliest_date: element,
-            }),
+            })),
             itertools::MinMaxResult::MinMax(min, max) => {
                 const SECONDS_IN_15_BIT_HOUR_MAX: i64 = ((1 << 15) - 1) * SECONDS_TO_HOURS;
 
                 if let 2..=SECONDS_IN_15_BIT_HOUR_MAX = max - min {
-                    Ok(CompressionProfile { earliest_date: min })
+                    Ok(Some(CompressionProfile { earliest_date: min }))
                 } else {
                     bail!("Cannot use date compression, as the breadth of input time slots exceeds {SECONDS_IN_15_BIT_HOUR_MAX} seconds (~3.7 years): {min} & {max}");
                 }
@@ -565,6 +563,14 @@ where
 
     pub fn team_groups(&self) -> &[P] {
         &self.team_groups
+    }
+
+    pub fn teams_len(&self) -> usize {
+        let mut result = 0;
+        for team_group in &self.team_groups {
+            result += team_group.teams().as_ref().len();
+        }
+        result
     }
 }
 
@@ -727,7 +733,27 @@ where
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
 {
-    let compression_profile = input.get_compression_profile()?;
+    let Some(compression_profile) = input.get_compression_profile()? else {
+        return Ok(Output {
+            time_slots: input
+                .fields()
+                .iter()
+                .flat_map(|field| {
+                    field
+                        .time_slots()
+                        .as_ref()
+                        .iter()
+                        .map(|(time_slot, _)| Reservation {
+                            field: field.clone(),
+                            availability: AvailabilityWindow::new_unix(time_slot.0, time_slot.1)
+                                .expect("field availability"),
+                            booking: Booking::Empty,
+                        })
+                        .collect_vec()
+                })
+                .collect_vec(),
+        });
+    };
     let transformer = input.into_transformer(&compression_profile)?;
     let output = algorithm::v2::schedule(transformer.scheduler_state())?;
     Ok(transformer.transform_v2(output, &compression_profile))
