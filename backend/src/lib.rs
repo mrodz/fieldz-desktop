@@ -451,6 +451,7 @@ where
 {
     team_groups: Vec<P>,
     fields: Vec<F>,
+    unique_id: i32,
 }
 
 impl<T, P, F> ScheduledInput<T, P, F>
@@ -459,8 +460,9 @@ where
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
 {
-    pub fn new(teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
+    pub fn new(unique_id: i32, teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
         Self {
+            unique_id,
             team_groups: teams.as_ref().to_vec(),
             fields: fields.as_ref().to_vec(),
         }
@@ -554,6 +556,7 @@ where
             team_groups: self.team_groups,
             scheduler_field_id_to_field_id,
             fields: self.fields,
+            unique_id: self.unique_id,
         })
     }
 
@@ -581,6 +584,7 @@ where
     P: PlayableTeamCollection<Team = T>,
     F: FieldLike + Clone + Debug + PartialEq,
 {
+    unique_id: i32,
     inner: algorithm::v2::MCTSState,
     playable_group_index_to_team_index: HashMap<u8, i32>,
     team_groups: Vec<P>,
@@ -662,7 +666,10 @@ where
             time_slots.push(self.transform_v2_reservation(reservation, compression_profile));
         }
 
-        Output { time_slots }
+        Output {
+            time_slots,
+            unique_id: self.unique_id,
+        }
     }
 }
 
@@ -715,6 +722,7 @@ where
     F: FieldLike + Clone + Debug + PartialEq,
 {
     time_slots: Vec<Reservation<T, F>>,
+    unique_id: i32,
 }
 
 impl<T, F> Output<T, F>
@@ -724,6 +732,10 @@ where
 {
     pub fn time_slots(&self) -> &[Reservation<T, F>] {
         &self.time_slots
+    }
+
+    pub const fn unique_id(&self) -> i32 {
+        self.unique_id
     }
 }
 
@@ -752,6 +764,7 @@ where
                         .collect_vec()
                 })
                 .collect_vec(),
+            unique_id: input.unique_id,
         });
     };
     let transformer = input.into_transformer(&compression_profile)?;

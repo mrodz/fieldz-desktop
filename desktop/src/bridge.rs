@@ -1,3 +1,4 @@
+use anyhow::Context;
 use backend::ScheduledInput;
 use db::errors::{
     CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
@@ -16,6 +17,7 @@ use db::{
 use tauri::{AppHandle, Manager};
 
 use crate::net::{send_grpc_schedule_request, ScheduleRequestError};
+use crate::schedule_serde::ScheduleCSVRecord;
 use crate::SafeAppState;
 
 #[tauri::command]
@@ -662,5 +664,33 @@ pub(crate) async fn schedule(app: AppHandle) -> Result<(), ScheduleRequestError>
         .await
         .map_err(|e| ScheduleRequestError::DatabaseError(e.to_string()))?;
 
-    send_grpc_schedule_request(input).await
+    let output_vec = send_grpc_schedule_request(&input).await?;
+
+    let output_path = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or(ScheduleRequestError::NoSaveAppData)?;
+
+    let output_file = std::fs::File::options()
+        .write(true)
+        .read(true)
+        .create(true)
+        .open(output_path)
+        .map_err(|e| ScheduleRequestError::FsError(e.to_string()))?;
+
+    let mut csv_stream = csv::Writer::from_writer(output_file);
+
+    csv_stream
+        .write_record(ScheduleCSVRecord::columns())
+        .map_err(|e| ScheduleRequestError::FsError(e.to_string()))?;
+
+    for reservation in output_vec {
+        let corresponding_input = input.get(reservation.unique_id as usize);
+
+        let record = ScheduleCSVRecord::new(&reservation, client);
+
+        csv_stream.write_record(record);
+    }
+
+    todo!()
 }

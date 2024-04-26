@@ -1679,7 +1679,7 @@ impl Client {
             GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
         })?;
 
-        for reservation_type in reservation_types {
+        for (i, reservation_type) in reservation_types.into_iter().enumerate() {
             let field_id_with_time_slots = select_time_slot_extension()
                 .filter(reservation_type::Column::Id.eq(reservation_type.id))
                 .order_by(field::Column::Id, sea_orm::Order::Asc)
@@ -1737,7 +1737,7 @@ impl Client {
                 teams.push(TeamCollection::new(target.groups.clone(), teams_for_target));
             }
 
-            result.push(ScheduledInput::new(teams, fields))
+            result.push(ScheduledInput::new(i.try_into().unwrap(), teams, fields))
         }
 
         Ok(result)

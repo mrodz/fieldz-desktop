@@ -24,7 +24,8 @@ message ScheduledInput {
 }
 
 message ScheduledOutput {
-  repeated Reservation time_slots = 1;
+  uint32 unique_id = 1;
+  repeated Reservation time_slots = 2;
 }
 
 message Reservation {

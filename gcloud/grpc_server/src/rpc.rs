@@ -64,7 +64,7 @@ impl From<algo_input::ScheduledInput>
     >
 {
     fn from(value: algo_input::ScheduledInput) -> Self {
-        backend::ScheduledInput::new(value.team_groups, value.fields)
+        backend::ScheduledInput::new(value.unique_id.try_into().expect("protobuf ScheduledInput unique_id"), value.team_groups, value.fields)
     }
 }
 
@@ -132,6 +132,7 @@ where
                     }
                 })
                 .collect::<Vec<_>>(),
+            unique_id: value.unique_id().try_into().expect("ScheduledOutput unique_id"),
         }
     }
 }
