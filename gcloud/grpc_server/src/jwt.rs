@@ -1,5 +1,7 @@
-use serde::Deserialize;
-use std::{collections::HashMap, fmt::Display};
+use base64::Engine;
+use pem::Pem;
+use x509_certificate::X509Certificate;
+use std::collections::HashMap;
 use thiserror::Error;
 
 use jwt_simple::prelude::*;
@@ -31,10 +33,14 @@ pub enum FirebaseJWTValidationError {
     JWTNoKID,
     #[error("Expected RS256 Algorithm, got {0}")]
     JWTIncorrectAlgorithm(String),
-	#[error("KID not present on API")]
-	JWTIncorrectKID,
-	#[error(transparent)]
-	JWTError(#[from] jwt_simple::Error),
+    #[error("KID not present on API")]
+    JWTIncorrectKID,
+    #[error(transparent)]
+    JWTError(#[from] jwt_simple::Error),
+    #[error(transparent)]
+    X509Error(#[from] x509_certificate::X509CertificateError),
+    #[error(transparent)]
+    Pem(#[from] pem::PemError),
 }
 
 /// https://firebase.google.com/docs/auth/admin/verify-id-tokens#verify_id_tokens_using_a_third-party_jwt_library
@@ -55,25 +61,32 @@ pub async fn validate_jwt(token: impl AsRef<str>) -> Result<(), FirebaseJWTValid
         ));
     }
 
-	let mut signing_keys = active_google_signing_keys().await?;
+    let mut signing_keys = active_google_signing_keys().await?;
 
-	let Some(cert) = signing_keys.get_mut(key_id) else {
-		return Err(FirebaseJWTValidationError::JWTIncorrectKID);
-	};
+    let Some(cert) = signing_keys.get_mut(key_id) else {
+        return Err(FirebaseJWTValidationError::JWTIncorrectKID);
+    };
 
-	if cert.ends_with('\n') {
-		cert.pop();
-	}
+    if cert.ends_with('\n') {
+        cert.pop();
+    }
 
-	/*
-	 * Passed stage 1 verification
-	 */
+    /*
+     * Passed stage 1 verification
+     */
 
-	let public_key = dbg!(RS256PublicKey::from_pem(dbg!(cert)))?;
+    // let pem = pem::parse(cert.as_bytes())?;
+    let public_key = X509Certificate::from_pem(cert.as_bytes())?.public_key_data();
 
-	let verification_result = public_key.verify_token::<NoCustomClaims>(token, None)?;
+    let pem = Pem::new("RSA PUBLIC KEY", public_key);
 
-	dbg!(verification_result);
+    let public_pkcs1_pem = pem::encode(&pem);
+
+	let public_jwt_key = RS256PublicKey::from_pem(&public_pkcs1_pem)?;
+
+    let verification_result = public_jwt_key.verify_token::<NoCustomClaims>(token, None)?;
+
+    dbg!(verification_result);
 
     todo!()
 }
