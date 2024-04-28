@@ -27,18 +27,8 @@
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
-	<!--
-	<Groups />
+	<h2 class="h2">Regions</h2>
 
-	<hr class="!border-t-4 my-4" />
-	-->
-
-	<section class="p-4">
-		<h2 class="h2">Regions</h2>
-
-		<RegionList bind:this={regionList} />
-		<button class="variant-filled btn mx-auto block" on:click={createRegion}>
-			Create Region
-		</button>
-	</section>
+	<RegionList bind:this={regionList} />
+	<button class="variant-filled btn mx-auto block" on:click={createRegion}> Create Region </button>
 </main>

@@ -26,6 +26,7 @@
 	} from '$lib';
 	import {
 		getModalStore,
+		getToastStore,
 		Accordion,
 		AccordionItem,
 		Paginator,
@@ -43,8 +44,10 @@
 	import ReportTable from './ReportTable.svelte';
 
 	import authStore from '$lib/authStore';
+	import { goto } from '$app/navigation';
 
 	let modalStore = getModalStore();
+	let toastStore = getToastStore();
 
 	let calendar: typeof Calendar;
 
@@ -417,9 +420,12 @@
 
 			await invoke<ScheduledInput[]>('schedule');
 		} catch (e) {
-			dialog.message(JSON.stringify(e), {
-				type: 'error',
-				title: 'Could not schedule'
+			console.error(e);
+
+			toastStore.trigger({
+				message: `⚠️ Could not schedule: ${JSON.stringify(e)}`,
+				autohide: false,
+				background: 'variant-filled-error'
 			});
 		}
 	}
@@ -787,7 +793,11 @@
 			{/if}
 
 			{#if $authStore.isLoggedIn}
-				<button class="variant-filled btn btn-xl mx-auto block" on:click={beginScheduleTransaction}>
+				<button
+					id="schedule-btn"
+					class="variant-filled btn btn-xl mx-auto block"
+					on:click={beginScheduleTransaction}
+				>
 					Schedule
 				</button>
 
@@ -812,7 +822,12 @@
 						to limit spam and block malicious requests, and hope you understand!
 					</p>
 
-					<button class="btn variant-filled mt-2">Login</button>
+					<button
+						class="btn variant-filled mt-2"
+						on:click={() => goto('/login?next=/scheduler#schedule-btn')}
+					>
+						Please Sign In
+					</button>
 				</div>
 			{/if}
 		</section>

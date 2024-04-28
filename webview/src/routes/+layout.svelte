@@ -17,6 +17,7 @@
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 
 	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
 
@@ -111,12 +112,18 @@
 	}
 
 	async function signIn() {
-		goto('/login');
+		const thisUrl = $page.url.pathname;
+		goto(`/login?next=${thisUrl}`);
 	}
 
 	async function signOut() {
 		try {
 			await getAuth().signOut();
+
+			toastStore.trigger({
+				message: "You signed out! You'll have to sign in again to use our servers.",
+				background: 'variant-filled-success'
+			});
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: 'Could not sign out',
