@@ -45,6 +45,7 @@
 
 	import authStore from '$lib/authStore';
 	import { goto } from '$app/navigation';
+	import { getAuth } from 'firebase/auth';
 
 	let modalStore = getModalStore();
 	let toastStore = getToastStore();
@@ -416,9 +417,20 @@
 
 	async function beginScheduleTransaction() {
 		try {
+			if (!$authStore.isLoggedIn) {
+				toastStore.trigger({
+					message: 'You must be signed in to send a schedule request',
+					background: 'variant-filled-error'
+				});
+
+				return;
+			}
+
 			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
 
-			await invoke<ScheduledInput[]>('schedule');
+			const jwtToken = await getAuth().currentUser!.getIdToken();
+
+			await invoke<ScheduledInput[]>('schedule', { authorizationToken: jwtToken });
 		} catch (e) {
 			console.error(e);
 

@@ -97,39 +97,43 @@
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
 	<h1 class="h2">Login</h1>
 
-	<div class="logo-cloud mt-4 grid-cols-1 gap-0.5 md:grid-cols-2 2xl:grid-cols-4">
+	<button class="variant-filled btn my-4" on:click={() => history.back()}>&laquo;&nbsp; Back</button>
+
+	<div class="logo-cloud grid-cols-1 gap-0.5 md:grid-cols-2 2xl:grid-cols-4">
 		<button class="logo-item" on:click={google}>
-			<GoogleIcon class="w-12 mr-4" />
+			<GoogleIcon class="mr-4 w-12" />
 			Sign In
 		</button>
 		<button class="logo-item" on:click={twitter}>
-			<TwitterIcon class="w-12 mr-4" />
+			<TwitterIcon class="mr-4 w-12" />
 			Sign In
 		</button>
 		<button class="logo-item" on:click={github}>
-			<GitHubIcon class="w-12 mr-4" />
+			<GitHubIcon class="mr-4 w-12" />
 			Sign In
 		</button>
 		<button class="logo-item" on:click={microsoft}>
-			<MicrosoftIcon class="w-12 mr-4" />
+			<MicrosoftIcon class="mr-4 w-12" />
 			Sign In
 		</button>
 	</div>
 
-	<hr class="hr my-10">
+	<hr class="hr my-10" />
 
 	<div>
 		<h2 class="h3 mb-2">Why do I need to sign in?</h2>
 
 		<p class="mb-2">
-			You can use Fieldz freely as much as you'd like &mdash; all data is stored on your local machine. We require 
-			authentication for any server-based actions, like creating a schedule from the inputs you gave the app.
+			You can use Fieldz freely as much as you'd like &mdash; all data is stored on your local
+			machine. We require authentication for any server-based actions, like creating a schedule from
+			the inputs you gave the app.
 		</p>
 
 		<p>
-			You need to be signed in to talk to our servers because creating a schedule is very intensive for our
-			CPUs in the cloud. In order to prevent bad actors from wasting our resources, using a Fieldz account lets us
-			monitor how many schedules are being created to prevent misuse. Thank you for your cooperation!
+			You need to be signed in to talk to our servers because creating a schedule is very intensive
+			for our CPUs in the cloud. In order to prevent bad actors from wasting our resources, using a
+			Fieldz account lets us monitor how many schedules are being created to prevent misuse. Thank
+			you for your cooperation!
 		</p>
 	</div>
 </main>

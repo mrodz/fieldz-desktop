@@ -25,6 +25,7 @@ fn scheduler_endpoint() -> &'static str {
 
 pub(crate) async fn send_grpc_schedule_request<T, P, F>(
     input: impl AsRef<[ScheduledInput<T, P, F>]>,
+    authorization_token: String,
 ) -> Result<Vec<grpc_server::proto::algo_input::ScheduledOutput>, ScheduleRequestError>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
@@ -93,8 +94,17 @@ where
         }
     };
 
+    let mut request = grpc_server::Request::new(outbound);
+
+    request.metadata_mut().append(
+        "authorization",
+        format!("Bearer {authorization_token}")
+            .parse()
+            .expect("bearer jwt token"),
+    );
+
     let response = client
-        .schedule(grpc_server::Request::new(outbound))
+        .schedule(request)
         .await
         .map_err(|e| ScheduleRequestError::RPCError(e.to_string()))?;
 

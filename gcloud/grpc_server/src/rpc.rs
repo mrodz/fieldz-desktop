@@ -8,6 +8,8 @@ use backend::{FieldLike, PlayableTeamCollection, TeamLike};
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status};
 
+use crate::jwt;
+
 pub mod algo_input {
     tonic::include_proto!("algo_input");
 }
@@ -64,7 +66,14 @@ impl From<algo_input::ScheduledInput>
     >
 {
     fn from(value: algo_input::ScheduledInput) -> Self {
-        backend::ScheduledInput::new(value.unique_id.try_into().expect("protobuf ScheduledInput unique_id"), value.team_groups, value.fields)
+        backend::ScheduledInput::new(
+            value
+                .unique_id
+                .try_into()
+                .expect("protobuf ScheduledInput unique_id"),
+            value.team_groups,
+            value.fields,
+        )
     }
 }
 
@@ -132,7 +141,10 @@ where
                     }
                 })
                 .collect::<Vec<_>>(),
-            unique_id: value.unique_id().try_into().expect("ScheduledOutput unique_id"),
+            unique_id: value
+                .unique_id()
+                .try_into()
+                .expect("ScheduledOutput unique_id"),
         }
     }
 }
@@ -146,6 +158,24 @@ impl Scheduler for ScheduleManager {
         &self,
         request: Request<tonic::Streaming<ScheduledInput>>, // Accept request of type HelloRequest
     ) -> Result<Response<Self::ScheduleStream>, Status> {
+        if request.metadata().is_empty() {
+            return Err(Status::failed_precondition("No headers found in request"));
+        }
+
+        let Some(bearer) = request
+            .metadata()
+            .get("Authorization")
+            .or(request.metadata().get("authorization"))
+        else {
+            return Err(Status::unauthenticated("Missing `Authorization` header"));
+        };
+
+        let Some(jwt_token) = bearer.to_str().expect("JWT non-str").split_whitespace().nth(1) else {
+            return Err(Status::failed_precondition("`Authorization` header malformatted"));
+        };
+
+        jwt::validate_jwt(jwt_token).await.map_err(|e| Status::from_error(Box::new(e)))?;
+
         let mut stream = request.into_inner();
 
         let _span = tracing::info_span!("RPC Start");

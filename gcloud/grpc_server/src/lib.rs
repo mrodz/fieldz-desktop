@@ -1,4 +1,5 @@
 mod rpc;
+mod jwt;
 
 pub mod proto {
     pub use super::rpc::algo_input;
@@ -18,3 +19,4 @@ pub mod client {
 
 pub use tonic::transport::Error as TransportError;
 pub use tonic::Request;
+pub use tonic::metadata;
