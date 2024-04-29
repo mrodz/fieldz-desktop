@@ -649,7 +649,10 @@ pub(crate) async fn generate_schedule_payload(
 }
 
 #[tauri::command]
-pub(crate) async fn schedule(app: AppHandle, authorization_token: String) -> Result<(), ScheduleRequestError> {
+pub(crate) async fn schedule(
+    app: AppHandle,
+    authorization_token: String,
+) -> Result<(), ScheduleRequestError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock

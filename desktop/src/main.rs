@@ -3,7 +3,6 @@
 
 mod bridge;
 mod net;
-mod schedule_serde;
 
 use anyhow::{Context, Result};
 use bridge::*;

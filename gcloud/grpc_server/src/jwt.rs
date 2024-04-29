@@ -1,27 +1,14 @@
-use base64::Engine;
+use jwt_simple::prelude::*;
 use pem::Pem;
-use x509_certificate::X509Certificate;
 use std::collections::HashMap;
 use thiserror::Error;
-
-use jwt_simple::prelude::*;
+use x509_certificate::X509Certificate;
 
 pub const SECURE_TOKEN_ENDPOINT: &str =
     "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 
-pub async fn active_google_signing_keys(
-) -> Result<HashMap<String, String>, FirebaseJWTValidationError> {
-    let response = reqwest::get(SECURE_TOKEN_ENDPOINT)
-        .await
-        .map_err(|e| FirebaseJWTValidationError::NetErrFetchGoogleAPI(dbg!(e).to_string()))?;
-
-    let key_to_cert: HashMap<String, String> = response
-        .json()
-        .await
-        .map_err(|e| FirebaseJWTValidationError::JsonParseError(dbg!(e).to_string()))?;
-
-    Ok(key_to_cert)
-}
+pub const FIELDZ_JWT_AUDIENCE: &str = "fieldmasterapp";
+pub const FIELDZ_JWT_ISSUER: &str = "https://securetoken.google.com/fieldmasterapp";
 
 #[derive(Error, Debug)]
 pub enum FirebaseJWTValidationError {
@@ -41,13 +28,55 @@ pub enum FirebaseJWTValidationError {
     X509Error(#[from] x509_certificate::X509CertificateError),
     #[error(transparent)]
     Pem(#[from] pem::PemError),
+    #[error("The date issued for the JWT is not in the past")]
+    JWTDateIssued,
+    #[error("This JWT is expired")]
+    JWTExpired,
+    #[error("This JWT has the wrong audience")]
+    JWTAudience,
+    #[error("This JWT has the wrong issuer")]
+    JWTIssuer,
+    #[error("This JWT verifies a user that was not authenticated in the past")]
+    JWTCustomAuthTime,
+    #[error("This JWT is missing its subject claim, or it is an empty string")]
+    JWTSubject,
 }
 
-/// https://firebase.google.com/docs/auth/admin/verify-id-tokens#verify_id_tokens_using_a_third-party_jwt_library
-pub async fn validate_jwt(token: impl AsRef<str>) -> Result<(), FirebaseJWTValidationError> {
-    let token = token.as_ref();
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CustomFirebaseClaims {
+    auth_time: Option<u64>,
+}
 
-    let metadata = Token::decode_metadata(&token)?;
+pub async fn active_google_signing_keys(
+) -> Result<HashMap<String, String>, FirebaseJWTValidationError> {
+    let response = reqwest::get(SECURE_TOKEN_ENDPOINT)
+        .await
+        .map_err(|e| FirebaseJWTValidationError::NetErrFetchGoogleAPI(dbg!(e).to_string()))?;
+
+    let mut key_to_cert: HashMap<String, String> = response
+        .json()
+        .await
+        .map_err(|e| FirebaseJWTValidationError::JsonParseError(dbg!(e).to_string()))?;
+
+    /*
+     * The JSON parser will pick up an extra newline character, which isn't
+     * valid in the context of a x509 certificate. The last tokens should be
+     * `----- END CERTIFICATE -----` without a newline.
+     */
+    for cert in key_to_cert.values_mut() {
+        if cert.ends_with('\n') {
+            cert.pop();
+        }
+    }
+
+    Ok(key_to_cert)
+}
+
+pub fn validate_jwt_metadata(
+    token: &str,
+    signing_keys: &HashMap<String, String>,
+) -> Result<String, FirebaseJWTValidationError> {
+    let metadata = Token::decode_metadata(token)?;
 
     let Some(key_id) = metadata.key_id() else {
         return Err(FirebaseJWTValidationError::JWTNoKID);
@@ -61,32 +90,83 @@ pub async fn validate_jwt(token: impl AsRef<str>) -> Result<(), FirebaseJWTValid
         ));
     }
 
-    let mut signing_keys = active_google_signing_keys().await?;
+    signing_keys
+        .get(key_id)
+        .cloned()
+        .ok_or(FirebaseJWTValidationError::JWTIncorrectKID)
+}
 
-    let Some(cert) = signing_keys.get_mut(key_id) else {
-        return Err(FirebaseJWTValidationError::JWTIncorrectKID);
-    };
+pub fn verify_jwt_token(
+    token: &str,
+    certificate: X509Certificate,
+) -> Result<JWTClaims<CustomFirebaseClaims>, FirebaseJWTValidationError> {
+    let public_key = certificate.public_key_data();
+    let pem = Pem::new("RSA PUBLIC KEY", public_key);
+    let public_pkcs1_pem = pem::encode(&pem);
+    let public_jwt_key = RS256PublicKey::from_pem(&public_pkcs1_pem)?;
+    public_jwt_key
+        .verify_token::<CustomFirebaseClaims>(token, None)
+        .map_err(FirebaseJWTValidationError::JWTError)
+}
 
-    if cert.ends_with('\n') {
-        cert.pop();
+pub fn verify_jwt_claims(
+    jwt_claims: &JWTClaims<CustomFirebaseClaims>,
+) -> Result<String, FirebaseJWTValidationError> {
+    if !jwt_claims
+        .issued_at
+        .is_some_and(|issued_at| issued_at < Clock::now_since_epoch())
+    {
+        return Err(FirebaseJWTValidationError::JWTDateIssued);
     }
 
-    /*
-     * Passed stage 1 verification
-     */
+    if !jwt_claims
+        .expires_at
+        .is_some_and(|expires_at| expires_at > Clock::now_since_epoch())
+    {
+        return Err(FirebaseJWTValidationError::JWTExpired);
+    }
 
-    // let pem = pem::parse(cert.as_bytes())?;
-    let public_key = X509Certificate::from_pem(cert.as_bytes())?.public_key_data();
+    if !jwt_claims
+        .audiences
+        .as_ref()
+        .is_some_and(|audiences| audiences.contains(&HashSet::from_strings(&[FIELDZ_JWT_AUDIENCE])))
+    {
+        return Err(FirebaseJWTValidationError::JWTAudience);
+    }
 
-    let pem = Pem::new("RSA PUBLIC KEY", public_key);
+    if !jwt_claims
+        .issuer
+        .as_ref()
+        .is_some_and(|issuer| issuer == FIELDZ_JWT_ISSUER)
+    {
+        return Err(FirebaseJWTValidationError::JWTIssuer);
+    }
 
-    let public_pkcs1_pem = pem::encode(&pem);
+    if !jwt_claims
+        .custom
+        .auth_time
+        .is_some_and(|auth_time| auth_time < Clock::now_since_epoch().as_ticks())
+    {
+        return Err(FirebaseJWTValidationError::JWTCustomAuthTime);
+    }
 
-	let public_jwt_key = RS256PublicKey::from_pem(&public_pkcs1_pem)?;
+    if let Some(ref subject) = jwt_claims.subject {
+        if !subject.is_empty() {
+            return Ok(subject.clone());
+        }
+    }
 
-    let verification_result = public_jwt_key.verify_token::<NoCustomClaims>(token, None)?;
+    Err(FirebaseJWTValidationError::JWTSubject)
+}
 
-    dbg!(verification_result);
+/// https://firebase.google.com/docs/auth/admin/verify-id-tokens#verify_id_tokens_using_a_third-party_jwt_library
+pub async fn validate_jwt(token: &str) -> Result<String, FirebaseJWTValidationError> {
+    let signing_keys = active_google_signing_keys().await?;
 
-    todo!()
+    let cert = validate_jwt_metadata(token, &signing_keys)?;
+    let x509_cert = X509Certificate::from_pem(cert.as_bytes())?;
+
+    let verification_result = verify_jwt_token(token, x509_cert)?;
+
+    verify_jwt_claims(&verification_result)
 }

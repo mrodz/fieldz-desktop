@@ -2249,6 +2249,7 @@ dependencies = [
  "async-stream",
  "backend",
  "base64 0.22.0",
+ "dotenv",
  "jwt-simple",
  "log",
  "pem",
