@@ -26,6 +26,7 @@
 	} from '$lib';
 	import {
 		getModalStore,
+		getToastStore,
 		Accordion,
 		AccordionItem,
 		Paginator,
@@ -42,7 +43,12 @@
 	import ScheduleErrorReport from './ScheduleErrorReport.svelte';
 	import ReportTable from './ReportTable.svelte';
 
+	import authStore from '$lib/authStore';
+	import { goto } from '$app/navigation';
+	import { getAuth } from 'firebase/auth';
+
 	let modalStore = getModalStore();
+	let toastStore = getToastStore();
 
 	let calendar: typeof Calendar;
 
@@ -411,13 +417,27 @@
 
 	async function beginScheduleTransaction() {
 		try {
+			if (!$authStore.isLoggedIn) {
+				toastStore.trigger({
+					message: 'You must be signed in to send a schedule request',
+					background: 'variant-filled-error'
+				});
+
+				return;
+			}
+
 			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
 
-			await invoke<ScheduledInput[]>('schedule');
+			const jwtToken = await getAuth().currentUser!.getIdToken();
+
+			await invoke<ScheduledInput[]>('schedule', { authorizationToken: jwtToken });
 		} catch (e) {
-			dialog.message(JSON.stringify(e), {
-				type: 'error',
-				title: 'Could not schedule'
+			console.error(e);
+
+			toastStore.trigger({
+				message: `⚠️ Could not schedule: ${JSON.stringify(e)}`,
+				autohide: false,
+				background: 'variant-filled-error'
 			});
 		}
 	}
@@ -596,7 +616,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -784,8 +804,12 @@
 				</Accordion>
 			{/if}
 
-			<div class="card p-8">
-				<button class="variant-filled btn btn-xl mx-auto block" on:click={beginScheduleTransaction}>
+			{#if $authStore.isLoggedIn}
+				<button
+					id="schedule-btn"
+					class="variant-filled btn btn-xl mx-auto block"
+					on:click={beginScheduleTransaction}
+				>
 					Schedule
 				</button>
 
@@ -801,7 +825,23 @@
 						</div>
 					{/each}
 				{/if}
-			</div>
+			{:else}
+				<hr class="hr my-5" />
+
+				<div class="bg-warning-500 card mx-auto w-4/5 p-4 text-center lg:w-1/2">
+					<p>
+						You must be logged in to send a schedule request to our servers at this time. We do this
+						to limit spam and block malicious requests, and hope you understand!
+					</p>
+
+					<button
+						class="btn variant-filled mt-2"
+						on:click={() => goto('/login?next=/scheduler#schedule-btn')}
+					>
+						Please Sign In
+					</button>
+				</div>
+			{/if}
 		</section>
 	{:else}
 		<section class="card m-4 p-4">

@@ -11,6 +11,10 @@ async fn get_address() -> Result<SocketAddr, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv::dotenv().ok();
+
+    std::env::var("QUOTA_SERVER_URL").map_err(Box::new)?;
+
     let addr = get_address().await?;
 
     let subscriber = FmtSubscriber::builder()

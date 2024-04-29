@@ -13,6 +13,10 @@ pub enum ScheduleRequestError {
     DatabaseError(String),
     #[error("network rpc operation failed: `{0}`")]
     RPCError(String),
+    #[error("could not save schedule to %APPDATA% folder")]
+    NoSaveAppData,
+    #[error("fs error: `{0}`")]
+    FsError(String),
 }
 
 fn scheduler_endpoint() -> &'static str {
@@ -20,15 +24,17 @@ fn scheduler_endpoint() -> &'static str {
 }
 
 pub(crate) async fn send_grpc_schedule_request<T, P, F>(
-    input: Vec<ScheduledInput<T, P, F>>,
-) -> Result<(), ScheduleRequestError>
+    input: impl AsRef<[ScheduledInput<T, P, F>]>,
+    authorization_token: String,
+) -> Result<Vec<grpc_server::proto::algo_input::ScheduledOutput>, ScheduleRequestError>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
 {
     let messages = input
-        .into_iter()
+        .as_ref()
+        .iter()
         .enumerate()
         .map(
             |(i, non_message)| grpc_server::proto::algo_input::ScheduledInput {
@@ -88,17 +94,29 @@ where
         }
     };
 
+    let mut request = grpc_server::Request::new(outbound);
+
+    request.metadata_mut().append(
+        "authorization",
+        format!("Bearer {authorization_token}")
+            .parse()
+            .expect("bearer jwt token"),
+    );
+
     let response = client
-        .schedule(grpc_server::Request::new(outbound))
+        .schedule(request)
         .await
         .map_err(|e| ScheduleRequestError::RPCError(e.to_string()))?;
 
     let mut inbound = response.into_inner();
 
+    let mut reservations = vec![];
+
     while let Some(schedule) = inbound.next().await {
         let schedule = schedule.map_err(|e| ScheduleRequestError::RPCError(format!("{e}")))?;
         println!("{schedule:?}");
+        reservations.push(schedule);
     }
 
-    Ok(())
+    Ok(reservations)
 }

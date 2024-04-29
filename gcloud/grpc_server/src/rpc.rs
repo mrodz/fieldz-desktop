@@ -8,11 +8,13 @@ use backend::{FieldLike, PlayableTeamCollection, TeamLike};
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status};
 
+use crate::{jwt, signal_usage};
+
 pub mod algo_input {
     tonic::include_proto!("algo_input");
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ScheduleManager;
 
 impl TeamLike for algo_input::Team {
@@ -64,7 +66,14 @@ impl From<algo_input::ScheduledInput>
     >
 {
     fn from(value: algo_input::ScheduledInput) -> Self {
-        backend::ScheduledInput::new(value.team_groups, value.fields)
+        backend::ScheduledInput::new(
+            value
+                .unique_id
+                .try_into()
+                .expect("protobuf ScheduledInput unique_id"),
+            value.team_groups,
+            value.fields,
+        )
     }
 }
 
@@ -132,6 +141,10 @@ where
                     }
                 })
                 .collect::<Vec<_>>(),
+            unique_id: value
+                .unique_id()
+                .try_into()
+                .expect("ScheduledOutput unique_id"),
         }
     }
 }
@@ -145,9 +158,43 @@ impl Scheduler for ScheduleManager {
         &self,
         request: Request<tonic::Streaming<ScheduledInput>>, // Accept request of type HelloRequest
     ) -> Result<Response<Self::ScheduleStream>, Status> {
-        let mut stream = request.into_inner();
+        if request.metadata().is_empty() {
+            tracing::warn!("Inbound request with no headers");
+            return Err(Status::failed_precondition("No headers found in request"));
+        }
 
-        let _span = tracing::info_span!("RPC Start");
+        let Some(bearer) = request
+            .metadata()
+            .get("Authorization")
+            .or(request.metadata().get("authorization"))
+        else {
+            tracing::error!("Inbound request missing `authorization` header");
+            return Err(Status::unauthenticated("Missing `Authorization` header"));
+        };
+
+        let mut bearer_split = bearer.to_str().expect("JWT non-str").split_whitespace();
+
+        if !matches!(bearer_split.next(), Some("Bearer" | "bearer")) {
+            tracing::error!("`authorization` header malformatted");
+            return Err(Status::failed_precondition(
+                "`authorization` header malformatted",
+            ));
+        }
+
+        let Some(jwt_token) = bearer_split.next() else {
+            tracing::error!("`authorization` header malformatted");
+            return Err(Status::failed_precondition(
+                "`Authorization` header malformatted",
+            ));
+        };
+
+        let user_id = jwt::validate_jwt(jwt_token)
+            .await
+            .map_err(|e| Status::from_error(Box::new(e)))?;
+
+        signal_usage(user_id).await.map_err(Status::from_error)?;
+
+        let mut stream = request.into_inner();
 
         let output = async_stream::try_stream! {
             while let Some(schedule_payload) = stream.next().await {
