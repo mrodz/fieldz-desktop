@@ -6,7 +6,13 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 async fn get_address() -> Result<SocketAddr, Box<dyn std::error::Error>> {
-    "[::1]:10000".parse::<SocketAddr>().map_err(|e| e.into())
+    if cfg!(feature = "gcp") {
+        "[::1]:8080"
+    } else {
+        "[::1]:10000"
+    }
+    .parse::<SocketAddr>()
+    .map_err(|e| e.into())
 }
 
 #[tokio::main]

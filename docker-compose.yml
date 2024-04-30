@@ -1,0 +1,5 @@
+services:
+  grpc_server:
+    build:
+      context: .\
+      dockerfile: .\gcloud\grpc_server\Dockerfile

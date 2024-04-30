@@ -37,7 +37,7 @@ message Reservation {
   Field field = 1;
   int64 start = 2;
   int64 end = 3;
-  optional Booked booking = 4;
+  Booked booking = 4;
 }
 
 service Scheduler {
