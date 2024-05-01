@@ -3,3 +3,5 @@ services:
     build:
       context: .\
       dockerfile: .\gcloud\grpc_server\Dockerfile
+    env_file:
+      - .\gcloud\grpc_server\.env
