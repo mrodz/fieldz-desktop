@@ -616,7 +616,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -828,14 +828,14 @@
 			{:else}
 				<hr class="hr my-5" />
 
-				<div class="bg-warning-500 card mx-auto w-4/5 p-4 text-center lg:w-1/2">
+				<div class="card mx-auto w-4/5 bg-warning-500 p-4 text-center lg:w-1/2">
 					<p>
 						You must be logged in to send a schedule request to our servers at this time. We do this
 						to limit spam and block malicious requests, and hope you understand!
 					</p>
 
 					<button
-						class="btn variant-filled mt-2"
+						class="variant-filled btn mt-2"
 						on:click={() => goto('/login?next=/scheduler#schedule-btn')}
 					>
 						Please Sign In

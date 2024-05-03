@@ -300,6 +300,7 @@ export interface UpdateTargetReservationTypeInput {
 }
 
 export const HAS_DB_RESET_BUTTON: boolean = false;
+export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
 
 export interface FieldExtension {
 	field_id: number;

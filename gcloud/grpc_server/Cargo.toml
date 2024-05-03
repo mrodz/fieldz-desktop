@@ -15,8 +15,14 @@ tonic = { version = "0.11.0", features = ["tls", "tls-roots"] }
 log = "0.4.21"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-jwt-simple = { version = "0.12.9" }
-reqwest = { version = "0.12.4", default-features=false, features = ["blocking", "json", "rustls-tls"] }
+jwt-simple = { version = "0.12.9", default-features = false, features = [
+    "pure-rust",
+] }
+reqwest = { version = "0.12.4", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
 serde = { version = "1.0.199", features = ["derive"] }
 thiserror = "1.0.59"
 pem = "3.0.4"
