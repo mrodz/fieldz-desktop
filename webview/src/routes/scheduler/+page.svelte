@@ -1,3 +1,7 @@
+<script lang="ts" context="module">
+	let schedulerWait = false;
+</script>
+
 <script lang="ts">
 	import { slide, crossfade } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -18,11 +22,15 @@
 		type PreScheduleReportInput,
 		type ReservationType,
 		type ScheduledInput,
+		type ScheduledOutput,
 		type TimeSlotExtension,
 		type FieldConcurrency,
 		type UpdateTargetReservationTypeInput,
 		regionalUnionSumTotal,
-		isSupplyRequireEntryAccountedFor
+		isSupplyRequireEntryAccountedFor,
+
+		SCHEDULE_CREATION_DELAY
+
 	} from '$lib';
 	import {
 		getModalStore,
@@ -35,7 +43,9 @@
 		type PaginationSettings,
 		ProgressRadial,
 		RangeSlider,
-		CodeBlock
+		CodeBlock,
+		TabGroup,
+		TabAnchor
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
@@ -415,6 +425,10 @@
 
 	let inputs_for_scheduling: ScheduledInput[] | undefined;
 
+	let scheduled_output: Promise<ScheduledOutput[]> | undefined;
+
+	let scheduling: boolean = false;
+
 	async function beginScheduleTransaction() {
 		try {
 			if (!$authStore.isLoggedIn) {
@@ -426,11 +440,41 @@
 				return;
 			}
 
+			if (schedulerWait) {
+				toastStore.trigger({
+					message:
+						'Please slow down! Your account must wait 30 seconds between requesting a schedule.',
+					background: 'variant-filled-warning'
+				});
+				return;
+			} else {
+				toastStore.trigger({
+					message: 'Bundling your payload and sending it to our servers...',
+					background: 'variant-filled-tertiary'
+				});
+			}
+
 			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
 
 			const jwtToken = await getAuth().currentUser!.getIdToken();
 
-			await invoke<ScheduledInput[]>('schedule', { authorizationToken: jwtToken });
+			scheduling = true;
+			scheduled_output = invoke<ScheduledInput[]>('schedule', { authorizationToken: jwtToken });
+
+			schedulerWait = true;
+
+			setTimeout(() => {
+				schedulerWait = false;
+			}, SCHEDULE_CREATION_DELAY);
+
+			await scheduled_output;
+
+			toastStore.trigger({
+				message: 'The server finished its work!',
+				background: 'variant-filled-success'
+			});
+
+			scheduling = false;
 		} catch (e) {
 			console.error(e);
 
@@ -616,7 +660,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -814,21 +858,60 @@
 				</button>
 
 				{#if inputs_for_scheduling !== undefined}
-					{#each inputs_for_scheduling as input_payload}
-						{@const code = JSON.stringify(input_payload, null, 4)}
-						<div class="mt-4">
-							<CodeBlock language="json" {code} />
-						</div>
-					{:else}
-						<div class="text-center">
-							<strong>No Payloads!</strong>
-						</div>
-					{/each}
+					<div class="mt-5">
+						<Accordion>
+							<AccordionItem disabled={scheduled_output === undefined || scheduling}>
+								<svelte:fragment slot="summary">
+									<h3 class="h3">
+										Output
+										{#if scheduling}
+											(loading...)
+										{/if}
+									</h3>
+								</svelte:fragment>
+								<svelte:fragment slot="content">
+									{#if scheduled_output !== undefined}
+										{#await scheduled_output}
+											<div class="my-5">
+												<div class="my-5 text-center">Talking to our server, hold tight...</div>
+
+												<ProgressRadial class="mx-auto block" />
+											</div>
+										{:then scheduled_output}
+											{@const code = JSON.stringify(scheduled_output, null, 4)}
+											<CodeBlock language="json" {code} />
+										{/await}
+									{:else}
+										<div class="text-center">
+											<strong>No Output!</strong>
+										</div>
+									{/if}
+								</svelte:fragment>
+							</AccordionItem>
+							<AccordionItem>
+								<svelte:fragment slot="summary">
+									<h3 class="h3">Input</h3>
+								</svelte:fragment>
+								<svelte:fragment slot="content">
+									{#each inputs_for_scheduling as input_payload}
+										{@const code = JSON.stringify(input_payload, null, 4)}
+										<div class="mt-4">
+											<CodeBlock language="json" {code} />
+										</div>
+									{:else}
+										<div class="text-center">
+											<strong>No Payloads!</strong>
+										</div>
+									{/each}
+								</svelte:fragment>
+							</AccordionItem>
+						</Accordion>
+					</div>
 				{/if}
 			{:else}
 				<hr class="hr my-5" />
 
-				<div class="card mx-auto w-4/5 bg-warning-500 p-4 text-center lg:w-1/2">
+				<div class="card bg-warning-500 mx-auto w-4/5 p-4 text-center lg:w-1/2">
 					<p>
 						You must be logged in to send a schedule request to our servers at this time. We do this
 						to limit spam and block malicious requests, and hope you understand!

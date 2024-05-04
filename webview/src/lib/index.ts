@@ -155,11 +155,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -301,6 +301,7 @@ export interface UpdateTargetReservationTypeInput {
 
 export const HAS_DB_RESET_BUTTON: boolean = false;
 export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
+export const SCHEDULE_CREATION_DELAY: number = 30_000;
 
 export interface FieldExtension {
 	field_id: number;
@@ -316,3 +317,5 @@ export interface ScheduledInput {
 	team_groups: PlayableTeamCollection[];
 	fields: FieldExtension[];
 }
+
+export interface ScheduledOutput { }

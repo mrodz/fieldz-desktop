@@ -6,13 +6,15 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 fn get_address() -> Result<SocketAddr, Box<dyn std::error::Error>> {
-    if cfg!(feature = "gcp") {
-        "[::1]:8080"
+    let port = if cfg!(feature = "gcp") {
+        "50051"
     } else {
-        "[::1]:10000"
-    }
-    .parse::<SocketAddr>()
-    .map_err(|e| e.into())
+        "10000"
+    };
+
+    format!("[::0]:{port}")
+        .parse::<SocketAddr>()
+        .map_err(|e| e.into())
 }
 
 #[tokio::main]
@@ -44,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scheduler = SchedulerServer::new(ScheduleManager);
 
     tracing::info!("Using server: {scheduler:?}");
-    tracing::info!("Health check: {health_reporter:?}");
+    tracing::info!("Health check active");
 
     Server::builder()
         .add_service(health_service)
