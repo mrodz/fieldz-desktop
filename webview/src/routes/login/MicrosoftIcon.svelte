@@ -2,11 +2,7 @@
 	export let alt: string = 'Microsoft';
 </script>
 
-<svg
-	xmlns="http://www.w3.org/2000/svg"
-	viewBox="0 0 4875 4875"
-	{...$$restProps}
->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4875 4875" {...$$restProps}>
 	<title>{alt}</title>
 	<path
 		fill="#0078d4"

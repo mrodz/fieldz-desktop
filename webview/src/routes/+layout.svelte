@@ -223,7 +223,7 @@
 							</p>
 						{/if}
 
-						<button class="btn variant-filled mt-2" on:click={signOut}>Sign Out</button>
+						<button class="variant-filled btn mt-2" on:click={signOut}>Sign Out</button>
 					</div>
 				{:else}
 					<button class="btn" on:click={signIn}>

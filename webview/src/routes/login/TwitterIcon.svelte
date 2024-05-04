@@ -1,5 +1,5 @@
 <script lang="ts">
-	export let alt: string = "Twitter";
+	export let alt: string = 'Twitter';
 </script>
 
 <svg

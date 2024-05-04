@@ -97,7 +97,8 @@
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
 	<h1 class="h2">Login</h1>
 
-	<button class="variant-filled btn my-4" on:click={() => history.back()}>&laquo;&nbsp; Back</button>
+	<button class="variant-filled btn my-4" on:click={() => history.back()}>&laquo;&nbsp; Back</button
+	>
 
 	<div class="logo-cloud grid-cols-1 gap-0.5 md:grid-cols-2 2xl:grid-cols-4">
 		<button class="logo-item" on:click={google}>

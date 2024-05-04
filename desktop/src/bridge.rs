@@ -652,7 +652,7 @@ pub(crate) async fn generate_schedule_payload(
 pub(crate) async fn schedule(
     app: AppHandle,
     authorization_token: String,
-) -> Result<(), ScheduleRequestError> {
+) -> Result<Vec<grpc_server::proto::algo_input::ScheduledOutput>, ScheduleRequestError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -665,37 +665,5 @@ pub(crate) async fn schedule(
         .await
         .map_err(|e| ScheduleRequestError::DatabaseError(e.to_string()))?;
 
-    let output_vec = send_grpc_schedule_request(&input, authorization_token).await?;
-
-    dbg!(output_vec);
-
-    // let output_path = app
-    //     .path_resolver()
-    //     .app_data_dir()
-    //     .ok_or(ScheduleRequestError::NoSaveAppData)?;
-
-    // let output_file = std::fs::File::options()
-    //     .write(true)
-    //     .read(true)
-    //     .create(true)
-    //     .open(output_path)
-    //     .map_err(|e| ScheduleRequestError::FsError(e.to_string()))?;
-
-    // let mut csv_stream = csv::Writer::from_writer(output_file);
-
-    // csv_stream
-    //     .write_record(ScheduleCSVRecord::columns())
-    //     .map_err(|e| ScheduleRequestError::FsError(e.to_string()))?;
-
-    // for reservation in output_vec {
-    //     let corresponding_input = input.get(reservation.unique_id as usize);
-
-    //     let record = ScheduleCSVRecord::new(&reservation, client);
-
-    //     csv_stream.write_record(record);
-    // }
-
-    Ok(())
-
-    // todo!()
+    send_grpc_schedule_request(&input, authorization_token).await
 }

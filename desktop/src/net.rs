@@ -19,10 +19,6 @@ pub enum ScheduleRequestError {
     FsError(String),
 }
 
-fn scheduler_endpoint() -> &'static str {
-    "http://[::1]:10000"
-}
-
 pub(crate) async fn send_grpc_schedule_request<T, P, F>(
     input: impl AsRef<[ScheduledInput<T, P, F>]>,
     authorization_token: String,
@@ -32,6 +28,9 @@ where
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
 {
+    let scheduler_endpoint = std::env::var("SCHEDULER_SERVER_URL")
+        .expect("this app was not built with the correct setup to talk to the scheduler server");
+
     let messages = input
         .as_ref()
         .iter()
@@ -78,7 +77,7 @@ where
         )
         .collect::<Vec<_>>();
 
-    let mut client = grpc_server::client::SchedulerClient::connect(scheduler_endpoint())
+    let mut client = grpc_server::client::SchedulerClient::connect(scheduler_endpoint)
         .await
         .map_err(|e| {
             ScheduleRequestError::RPCError(format!(
