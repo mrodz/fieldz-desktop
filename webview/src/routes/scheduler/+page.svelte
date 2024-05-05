@@ -485,6 +485,9 @@
 			});
 		}
 	}
+
+	let normalSeasonError: boolean;
+	let postSeasonError: boolean;
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -815,7 +818,7 @@
 						<AccordionItem open>
 							<svelte:fragment slot="summary">
 								<h3 class="h3">Normal Season</h3>
-								<ScheduleErrorReport report={normalSeasonReport} />
+								<ScheduleErrorReport bind:hasErrors={normalSeasonError} report={normalSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
 								<ReportTable
@@ -833,7 +836,7 @@
 						<AccordionItem open>
 							<svelte:fragment slot="summary">
 								<h3 class="h3">Post Season</h3>
-								<ScheduleErrorReport report={postSeasonReport} />
+								<ScheduleErrorReport bind:hasErrors={postSeasonError} report={postSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
 								<ReportTable
@@ -850,8 +853,9 @@
 
 			{#if $authStore.isLoggedIn}
 				<button
+					disabled={normalSeasonError || postSeasonError}
 					id="schedule-btn"
-					class="variant-filled btn btn-xl mx-auto block"
+					class="variant-filled btn btn-xl mx-auto mt-5 block"
 					on:click={beginScheduleTransaction}
 				>
 					Schedule

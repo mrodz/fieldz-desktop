@@ -6,6 +6,7 @@
 	} from '$lib';
 
 	export let report: PreScheduleReport;
+	export let hasErrors = false;
 
 	function reportHasErrors(report: PreScheduleReport): boolean {
 		return (
@@ -17,9 +18,11 @@
 			!report.target_match_count.every(isSupplyRequireEntryAccountedFor)
 		);
 	}
+
+	$: hasErrors = reportHasErrors(report);
 </script>
 
-{#if reportHasErrors(report)}
+{#if hasErrors}
 	<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
 		{#if report.target_has_duplicates.length !== 0}
 			<div>
