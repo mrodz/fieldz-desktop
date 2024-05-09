@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .if_not_exists()
                     .table(Schedule::Table)
-                    .col(ColumnDef::new(Schedule::Id).integer().primary_key())
+                    .col(ColumnDef::new(Schedule::Id).integer().not_null().primary_key())
                     .col(ColumnDef::new(Schedule::Name).string().not_null())
                     .col(ColumnDef::new(Schedule::Created).timestamp().not_null())
                     .take(),
@@ -25,6 +25,7 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(ScheduleGameGroup::Id)
                             .integer()
+                            .not_null()
                             .primary_key(),
                     )
                     .col(ColumnDef::new(ScheduleGameGroup::Name).string().not_null())
@@ -48,7 +49,7 @@ impl MigrationTrait for Migration {
             .create_table(
                 Table::create()
                     .table(ScheduleTeam::Table)
-                    .col(ColumnDef::new(ScheduleTeam::Id).integer().primary_key())
+                    .col(ColumnDef::new(ScheduleTeam::Id).integer().not_null().primary_key())
                     .col(ColumnDef::new(ScheduleTeam::Name).string().not_null())
                     .col(
                         ColumnDef::new(ScheduleTeam::ScheduleId)
@@ -102,7 +103,12 @@ impl MigrationTrait for Migration {
             .create_table(
                 Table::create()
                     .table(ScheduleGame::Table)
-                    .col(ColumnDef::new(ScheduleGame::Id).integer().primary_key())
+                    .col(
+                        ColumnDef::new(ScheduleGame::Id)
+                            .integer()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(
                         ColumnDef::new(ScheduleGame::ScheduleId)
                             .integer()
