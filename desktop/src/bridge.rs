@@ -665,5 +665,9 @@ pub(crate) async fn schedule(
         .await
         .map_err(|e| ScheduleRequestError::DatabaseError(e.to_string()))?;
 
-    send_grpc_schedule_request(&input, authorization_token).await
+    let scheduled_output = send_grpc_schedule_request(&input, authorization_token).await?;
+
+    client.save_schedule(scheduled_output).await?;
+
+    todo!()
 }
