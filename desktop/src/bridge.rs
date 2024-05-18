@@ -652,7 +652,7 @@ pub(crate) async fn generate_schedule_payload(
 pub(crate) async fn schedule(
     app: AppHandle,
     authorization_token: String,
-) -> Result<Vec<grpc_server::proto::algo_input::ScheduledOutput>, ScheduleRequestError> {
+) -> Result<db::schedule::Model, ScheduleRequestError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -665,5 +665,9 @@ pub(crate) async fn schedule(
         .await
         .map_err(|e| ScheduleRequestError::DatabaseError(e.to_string()))?;
 
-    send_grpc_schedule_request(&input, authorization_token).await
+    let scheduled_output = send_grpc_schedule_request(&input, authorization_token).await?;
+
+    // force error conversion with `?`
+    let model = client.save_schedule(scheduled_output).await?;
+    Ok(model)
 }

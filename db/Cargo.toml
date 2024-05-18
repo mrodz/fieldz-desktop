@@ -1,6 +1,6 @@
 [package]
 name = "db"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -20,3 +20,4 @@ serde = "1.0.197"
 thiserror = "1.0.57"
 chrono = { version = "0.4.34", features = ["serde"] }
 itertools = "0.12.1"
+rand = "0.8.5"

@@ -8,6 +8,7 @@ mod m20240316_053808_create_target;
 mod m20240331_003613_create_reservation_type;
 mod m20240402_222730_add_default_concurrency_count;
 mod m20240407_180756_index_database;
+mod m20240507_015703_create_schedule_results;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240331_003613_create_reservation_type::Migration),
             Box::new(m20240402_222730_add_default_concurrency_count::Migration),
             Box::new(m20240407_180756_index_database::Migration),
+            Box::new(m20240507_015703_create_schedule_results::Migration),
         ]
     }
 }

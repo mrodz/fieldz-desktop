@@ -228,3 +228,9 @@ pub enum GetScheduledInputsError {
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum SaveScheduleError {
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+}
