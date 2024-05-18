@@ -24,8 +24,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Schedule,
-    #[sea_orm(has_many = "super::schedule_game::Entity")]
-    ScheduleGame,
     #[sea_orm(has_many = "super::schedule_team::Entity")]
     ScheduleTeam,
 }
@@ -33,12 +31,6 @@ pub enum Relation {
 impl Related<super::schedule::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Schedule.def()
-    }
-}
-
-impl Related<super::schedule_game::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ScheduleGame.def()
     }
 }
 

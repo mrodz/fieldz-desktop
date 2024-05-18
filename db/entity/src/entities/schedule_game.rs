@@ -11,9 +11,8 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i32,
     pub schedule_id: i32,
-    pub start: Option<String>,
-    pub end: Option<String>,
-    pub schedule_game_group: Option<i32>,
+    pub start: String,
+    pub end: String,
     pub team_one: Option<i32>,
     pub team_two: Option<i32>,
 }
@@ -29,40 +28,26 @@ pub enum Relation {
     )]
     Schedule,
     #[sea_orm(
-        belongs_to = "super::schedule_game_group::Entity",
-        from = "Column::ScheduleGameGroup",
-        to = "super::schedule_game_group::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    ScheduleGameGroup,
-    #[sea_orm(
-        belongs_to = "super::schedule_team::Entity",
+        belongs_to = "super::team::Entity",
         from = "Column::TeamTwo",
-        to = "super::schedule_team::Column::Id",
+        to = "super::team::Column::Id",
         on_update = "Cascade",
-        on_delete = "Cascade"
+        on_delete = "SetNull"
     )]
-    ScheduleTeam2,
+    Team2,
     #[sea_orm(
-        belongs_to = "super::schedule_team::Entity",
+        belongs_to = "super::team::Entity",
         from = "Column::TeamOne",
-        to = "super::schedule_team::Column::Id",
+        to = "super::team::Column::Id",
         on_update = "Cascade",
-        on_delete = "Cascade"
+        on_delete = "SetNull"
     )]
-    ScheduleTeam1,
+    Team1,
 }
 
 impl Related<super::schedule::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Schedule.def()
-    }
-}
-
-impl Related<super::schedule_game_group::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ScheduleGameGroup.def()
     }
 }
 

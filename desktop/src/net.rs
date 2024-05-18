@@ -1,7 +1,7 @@
-use std::{collections::{BTreeSet, HashSet}, fmt::Debug};
+use std::fmt::Debug;
 
-use backend::{Booking, FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
-use db::{errors::SaveScheduleError, CompiledSchedule, CompiledScheduleDependents};
+use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
+use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -17,7 +17,7 @@ pub enum ScheduleRequestError {
     #[error("could not save schedule to %APPDATA% folder")]
     NoSaveAppData,
     #[error(transparent)]
-    SaveScheduleError(#[from] SaveScheduleError)
+    SaveScheduleError(#[from] SaveScheduleError),
 }
 
 pub(crate) async fn send_grpc_schedule_request<T, P, F>(

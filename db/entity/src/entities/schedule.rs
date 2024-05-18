@@ -12,6 +12,7 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub created: String,
+    pub last_edit: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

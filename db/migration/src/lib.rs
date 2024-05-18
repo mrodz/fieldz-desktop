@@ -10,7 +10,6 @@ mod m20240402_222730_add_default_concurrency_count;
 mod m20240407_180756_index_database;
 mod m20240507_015703_create_schedule_results;
 
-
 pub struct Migrator;
 
 #[async_trait::async_trait]

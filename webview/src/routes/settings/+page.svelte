@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition'; 
+	import { slide } from 'svelte/transition';
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">

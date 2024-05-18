@@ -21,16 +21,15 @@
 		type PreScheduleReport,
 		type PreScheduleReportInput,
 		type ReservationType,
+		type Schedule,
 		type ScheduledInput,
-		type ScheduledOutput,
 		type TimeSlotExtension,
 		type FieldConcurrency,
 		type UpdateTargetReservationTypeInput,
 		regionalUnionSumTotal,
 		isSupplyRequireEntryAccountedFor,
-
-		SCHEDULE_CREATION_DELAY
-
+		SCHEDULE_CREATION_DELAY,
+		SHOW_SCHEDULER_JSON_PAYLOADS
 	} from '$lib';
 	import {
 		getModalStore,
@@ -43,9 +42,7 @@
 		type PaginationSettings,
 		ProgressRadial,
 		RangeSlider,
-		CodeBlock,
-		TabGroup,
-		TabAnchor
+		CodeBlock
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
@@ -425,7 +422,7 @@
 
 	let inputs_for_scheduling: ScheduledInput[] | undefined;
 
-	let scheduled_output: Promise<ScheduledOutput[]> | undefined;
+	let scheduled_output: Promise<Schedule> | undefined;
 
 	let scheduling: boolean = false;
 
@@ -459,7 +456,7 @@
 			const jwtToken = await getAuth().currentUser!.getIdToken();
 
 			scheduling = true;
-			scheduled_output = invoke<ScheduledInput[]>('schedule', { authorizationToken: jwtToken });
+			scheduled_output = invoke<Schedule>('schedule', { authorizationToken: jwtToken });
 
 			schedulerWait = true;
 
@@ -663,7 +660,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card bg-warning-500 m-4 p-4 text-center">
+				<div class="card m-4 bg-warning-500 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -818,7 +815,10 @@
 						<AccordionItem open>
 							<svelte:fragment slot="summary">
 								<h3 class="h3">Normal Season</h3>
-								<ScheduleErrorReport bind:hasErrors={normalSeasonError} report={normalSeasonReport} />
+								<ScheduleErrorReport
+									bind:hasErrors={normalSeasonError}
+									report={normalSeasonReport}
+								/>
 							</svelte:fragment>
 							<svelte:fragment slot="content">
 								<ReportTable
@@ -861,7 +861,7 @@
 					Schedule
 				</button>
 
-				{#if inputs_for_scheduling !== undefined}
+				{#if SHOW_SCHEDULER_JSON_PAYLOADS && inputs_for_scheduling !== undefined}
 					<div class="mt-5">
 						<Accordion>
 							<AccordionItem disabled={scheduled_output === undefined || scheduling}>
@@ -915,7 +915,7 @@
 			{:else}
 				<hr class="hr my-5" />
 
-				<div class="card bg-warning-500 mx-auto w-4/5 p-4 text-center lg:w-1/2">
+				<div class="card mx-auto w-4/5 bg-warning-500 p-4 text-center lg:w-1/2">
 					<p>
 						You must be logged in to send a schedule request to our servers at this time. We do this
 						to limit spam and block malicious requests, and hope you understand!
