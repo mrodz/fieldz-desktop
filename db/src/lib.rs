@@ -2008,4 +2008,8 @@ impl Client {
 
         todo!()
     }
+
+    pub async fn get_schedules(&self) -> DBResult<Vec<Schedule>> {
+        ScheduleEntity::find().all(&self.connection).await
+    }
 }

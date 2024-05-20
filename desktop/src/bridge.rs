@@ -671,3 +671,18 @@ pub(crate) async fn schedule(
     let model = client.save_schedule(scheduled_output).await?;
     Ok(model)
 }
+
+#[tauri::command]
+pub(crate) async fn get_schedules(app: AppHandle) -> Result<Vec<db::schedule::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_schedules()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}

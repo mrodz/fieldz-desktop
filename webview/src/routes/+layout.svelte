@@ -150,6 +150,7 @@
 				<li><a href="/groups">Groups</a></li>
 				<li><a href="/field-types">Field Types</a></li>
 				<li><a href="/scheduler">Scheduler</a></li>
+				<li><a href="/schedules">Schedules</a></li>
 			</ul>
 		</nav>
 		{#await getVersion() then version}

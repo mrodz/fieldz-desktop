@@ -114,6 +114,7 @@ fn main() -> Result<()> {
             update_target_reservation_type,
             generate_schedule_payload,
             schedule,
+            get_schedules,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")
