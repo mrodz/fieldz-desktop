@@ -458,6 +458,24 @@ impl Validator for EditTeamInput {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditScheduleInput {
+    id: i32,
+    name: Option<NameMax64>,
+}
+
+impl Validator for EditScheduleInput {
+    type Error = EditScheduleError;
+
+    fn validate(&self) -> Result<(), Self::Error> {
+        if let Some(ref name) = self.name {
+            name.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TargetExtension {
     target: Target,
@@ -2011,5 +2029,41 @@ impl Client {
 
     pub async fn get_schedules(&self) -> DBResult<Vec<Schedule>> {
         ScheduleEntity::find().all(&self.connection).await
+    }
+
+    pub async fn delete_schedule(&self, id: i32) -> DBResult<()> {
+        ScheduleEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn edit_schedule(
+        &self,
+        input: EditScheduleInput,
+    ) -> Result<Schedule, EditScheduleError> {
+        input.validate()?;
+
+        if let Some(name) = input.name {
+            ActiveSchedule {
+                id: Set(input.id),
+                name: Set(name.0),
+                last_edit: Set(Utc::now().to_rfc3339()),
+                ..Default::default()
+            }
+            .update(&self.connection)
+            .await
+            .map_err(|e| {
+                EditScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+        }
+
+        ScheduleEntity::find_by_id(input.id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                EditScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(EditScheduleError::NotFound(input.id))
     }
 }

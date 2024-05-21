@@ -234,3 +234,15 @@ pub enum SaveScheduleError {
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum EditScheduleError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error(transparent)]
+    Name(#[from] NameMax64ValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("region with id {0} not found")]
+    NotFound(i32),
+}

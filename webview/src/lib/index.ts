@@ -325,3 +325,8 @@ export interface Schedule {
 	created: string;
 	last_edit: string;
 }
+
+export interface EditScheduleInput {
+	id: number;
+	name: string;
+}
