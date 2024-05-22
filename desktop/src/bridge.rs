@@ -15,7 +15,7 @@ use db::{
 };
 use tauri::{AppHandle, Manager};
 
-use crate::net::{send_grpc_schedule_request, ScheduleRequestError};
+use crate::net::{self, send_grpc_schedule_request, ScheduleRequestError, ServerHealth};
 use crate::SafeAppState;
 
 #[tauri::command]
@@ -730,4 +730,10 @@ pub(crate) async fn get_schedule(
         .ok_or(LoadScheduleError::NoDatabase)?;
 
     client.get_schedule(id).await
+}
+
+#[tauri::command]
+pub(crate) async fn health_probe() -> Result<ServerHealth, ()> {
+    net::health_probe().await;
+    todo!()
 }

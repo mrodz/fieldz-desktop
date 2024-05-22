@@ -27,6 +27,7 @@
 	import RegionEdit from './region/RegionEdit.svelte';
 	import TeamEdit from './fields/TeamEdit.svelte';
 	import ScheduleEdit from './schedules/ScheduleEdit.svelte';
+	import Processing from './scheduler/Processing.svelte';
 	import { HAS_DB_RESET_BUTTON } from '$lib';
 	import authStore from '$lib/authStore';
 	import { initializeApp } from 'firebase/app';
@@ -106,6 +107,9 @@
 		},
 		scheduleEdit: {
 			ref: ScheduleEdit
+		},
+		processingSchedule: {
+			ref: Processing
 		}
 	};
 

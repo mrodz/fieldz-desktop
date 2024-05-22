@@ -1,9 +1,10 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, str::FromStr};
 
 use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
 use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use tauri::http::Uri;
 use thiserror::Error;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -114,9 +115,34 @@ where
 
     while let Some(schedule) = inbound.next().await {
         let schedule = schedule.map_err(|e| ScheduleRequestError::RPCError(format!("{e}")))?;
-        println!("{schedule:?}");
         reservations.push(schedule);
     }
 
     Ok(CompiledSchedule::new(reservations))
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ServerHealth {
+    Serving,
+    NotServing,
+    Unknown,
+}
+
+pub async fn health_probe() {
+    let scheduler_endpoint = std::env::var("SCHEDULER_SERVER_URL")
+        .expect("this app was not built with the correct setup to talk to the scheduler server");
+
+    let mut health_client = grpc_server::client::HealthClient::with_origin(
+        grpc_server::server::scheduler::SchedulerServer::new(
+            grpc_server::server::scheduler::ScheduleManager,
+        ),
+        Uri::from_str(&scheduler_endpoint).expect("invalid URI"),
+    );
+
+    let x = health_client.check(grpc_server::HealthCheckRequest {
+        service: String::from(""),
+    }).await;
+
+    dbg!(x);
+    // health_client.;
 }
