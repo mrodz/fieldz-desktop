@@ -246,3 +246,13 @@ pub enum EditScheduleError {
     #[error("region with id {0} not found")]
     NotFound(i32),
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum LoadScheduleError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("region with id {0} not found")]
+    NotFound(i32),
+}

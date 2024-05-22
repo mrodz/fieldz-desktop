@@ -4,8 +4,8 @@
 	import { getModalStore, getToastStore, popup, type PopupSettings } from '@skeletonlabs/skeleton';
 	import { createEventDispatcher } from 'svelte';
 	import Fa from 'svelte-fa';
-	import Page from '../+page.svelte';
 	import { dialog, invoke } from '@tauri-apps/api';
+	import { goto } from '$app/navigation';
 
 	export let schedule: Schedule;
 
@@ -13,8 +13,8 @@
 	const toastStore = getToastStore();
 
 	const dispatch = createEventDispatcher<{
-		onDelete: Schedule;
-		onUpdate: {
+		delete: Schedule;
+		update: {
 			prev: Schedule;
 			new: Schedule;
 		};
@@ -25,9 +25,11 @@
 		minute: 'numeric'
 	};
 
+	const target = `popupClick-schedule-${schedule.id}-${schedule.name}`;
+
 	const popupClick: PopupSettings = {
 		event: 'click',
-		target: 'popupClick',
+		target,
 		placement: 'bottom'
 	};
 
@@ -43,7 +45,7 @@
 							id: schedule.id
 						});
 
-						dispatch('onDelete', schedule);
+						dispatch('delete', schedule);
 					} catch (e) {
 						dialog.message(JSON.stringify(e), {
 							title: 'Error',
@@ -67,7 +69,7 @@
 						background: 'variant-filled-success'
 					});
 
-					dispatch('onUpdate', {
+					dispatch('update', {
 						prev: schedule,
 						new: updatedSchedule
 					});
@@ -77,9 +79,13 @@
 			}
 		});
 	}
+
+	function onClick() {
+		goto(`/schedules/view?id=${schedule.id}`);
+	}
 </script>
 
-<div class="card m-4 grid grid-cols-[1fr_auto]">
+<button class="card card-hover m-4 grid grid-cols-[1fr_auto] p-4 text-left" on:click={onClick}>
 	<div>
 		<header class="card-header">
 			<strong>
@@ -98,13 +104,13 @@
 		</section>
 	</div>
 	<div class="mx-2 flex items-center">
-		<button class="btn-icon" use:popup={popupClick}>
+		<button class="btn-icon hover:variant-outline" on:click|stopPropagation use:popup={popupClick}>
 			<Fa icon={faCaretDown} />
 		</button>
 	</div>
-</div>
+</button>
 
-<div class="card variant-filled-primary p-4" data-popup="popupClick">
+<div class="card variant-filled-primary p-4" data-popup={target}>
 	<ul class="list">
 		<li class="select-none">
 			<button class="btn" on:click={onRename}>
@@ -119,5 +125,5 @@
 			</button>
 		</li>
 	</ul>
-	<div class="arrow variant-filled-primary" />
+	<div class="variant-filled-primary arrow" />
 </div>

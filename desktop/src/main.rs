@@ -117,6 +117,7 @@ fn main() -> Result<()> {
             get_schedules,
             delete_schedule,
             update_schedule,
+            get_schedule,
         ])
         .run(tauri::generate_context!())
         .context("error while running tauri application")

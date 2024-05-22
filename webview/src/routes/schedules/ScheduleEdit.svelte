@@ -17,7 +17,7 @@
 	async function confirm() {
 		const payload: EditScheduleInput = {
 			name: scheduleNameInput ?? '',
-			id: $modalStore[0].meta.schedule.id,
+			id: $modalStore[0].meta.schedule.id
 		};
 
 		try {

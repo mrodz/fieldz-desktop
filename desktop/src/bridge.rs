@@ -1,9 +1,17 @@
 use backend::ScheduledInput;
 use db::errors::{
-    CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError, CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError, EditRegionError, EditScheduleError, EditTeamError, GetScheduledInputsError, LoadFieldsError, LoadRegionError, LoadTeamsError, PreScheduleReportError, TimeSlotError
+    CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
+    CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError,
+    EditRegionError, EditScheduleError, EditTeamError, GetScheduledInputsError, LoadFieldsError,
+    LoadRegionError, LoadScheduleError, LoadTeamsError, PreScheduleReportError, TimeSlotError,
 };
 use db::{
-    CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput, CreateTimeSlotInput, EditRegionInput, EditScheduleInput, EditTeamInput, FieldConcurrency, FieldExtension, FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection, TeamExtension, TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput, UpdateTargetReservationTypeInput, Validator
+    CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput,
+    CreateTimeSlotInput, EditRegionInput, EditScheduleInput, EditTeamInput, FieldConcurrency,
+    FieldExtension, FieldSupportedConcurrencyInput, ListReservationsBetweenInput,
+    MoveTimeSlotInput, PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection,
+    TeamExtension, TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
+    UpdateTargetReservationTypeInput, Validator,
 };
 use tauri::{AppHandle, Manager};
 
@@ -695,7 +703,10 @@ pub(crate) async fn delete_schedule(app: AppHandle, id: i32) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub(crate) async fn update_schedule(app: AppHandle, input: EditScheduleInput) -> Result<db::schedule::Model, EditScheduleError> {
+pub(crate) async fn update_schedule(
+    app: AppHandle,
+    input: EditScheduleInput,
+) -> Result<db::schedule::Model, EditScheduleError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -703,7 +714,20 @@ pub(crate) async fn update_schedule(app: AppHandle, input: EditScheduleInput) ->
         .as_ref()
         .ok_or(EditScheduleError::NoDatabase)?;
 
-    client
-        .edit_schedule(input)
-        .await
+    client.edit_schedule(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_schedule(
+    app: AppHandle,
+    id: i32,
+) -> Result<db::schedule::Model, LoadScheduleError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(LoadScheduleError::NoDatabase)?;
+
+    client.get_schedule(id).await
 }
