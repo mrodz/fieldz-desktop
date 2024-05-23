@@ -330,3 +330,5 @@ export interface EditScheduleInput {
 	id: number;
 	name: string;
 }
+
+export type HealthCheck = 'Serving' | 'NotServing' | 'Unknown';

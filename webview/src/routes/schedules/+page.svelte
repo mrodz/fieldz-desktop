@@ -27,7 +27,7 @@
 			schedules = schedules.then((schedules) => {
 				for (let i = 0; i < schedules.length; i++) {
 					if (schedules[i].id === event.detail.new.id) {
-						schedules.splice(i, 1)[0];
+						schedules.splice(i, 1);
 						schedules.splice(0, 0, event.detail.new);
 						break;
 					}
@@ -48,7 +48,7 @@
 
 	<hr class="hr my-5" />
 
-	<div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 min-[2200px]:grid-cols-4">
+	<div class="relative grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 min-[2200px]:grid-cols-4">
 		{#if schedules === undefined}
 			<ProgressRadial />
 		{:else}
@@ -58,7 +58,9 @@
 				{#each schedules as schedule, i}
 					<ScheduleCard on:delete={() => cardDeletion(i)} on:update={cardUpdate} {schedule} />
 				{:else}
-					<div class="block mx-auto mt-4">You haven't generated a schedule yet.</div>
+					<div class="mt-4 absolute left-1/2 -translate-x-1/2">
+						You haven't generated a schedule yet.
+					</div>
 				{/each}
 			{/await}
 		{/if}

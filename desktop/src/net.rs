@@ -1,10 +1,9 @@
-use std::{fmt::Debug, str::FromStr};
+use std::fmt::Debug;
 
 use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
 use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use tauri::http::Uri;
 use thiserror::Error;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -123,26 +122,44 @@ where
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ServerHealth {
+    Unknown,
     Serving,
     NotServing,
-    Unknown,
 }
 
-pub async fn health_probe() {
+#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+pub enum HealthProbeError {
+    #[error("could not establish a channel with the backend: transport error: {0}")]
+    BadChannel(String),
+    #[error("could not probe: service not found or unavailable: {0}")]
+    ProbeFail(String),
+}
+
+pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
     let scheduler_endpoint = std::env::var("SCHEDULER_SERVER_URL")
         .expect("this app was not built with the correct setup to talk to the scheduler server");
 
-    let mut health_client = grpc_server::client::HealthClient::with_origin(
-        grpc_server::server::scheduler::SchedulerServer::new(
-            grpc_server::server::scheduler::ScheduleManager,
-        ),
-        Uri::from_str(&scheduler_endpoint).expect("invalid URI"),
-    );
+    let channel = grpc_server::Channel::from_shared(scheduler_endpoint)
+        .expect("invalid URI")
+        .connect()
+        .await
+        .map_err(|err| HealthProbeError::BadChannel(err.to_string()))?;
 
-    let x = health_client.check(grpc_server::HealthCheckRequest {
-        service: String::from(""),
-    }).await;
+    let mut health_client = grpc_server::client::HealthClient::new(channel);
 
-    dbg!(x);
-    // health_client.;
+    let response = health_client
+        .check(grpc_server::HealthCheckRequest {
+            service: "algo_input.Scheduler".into(),
+        })
+        .await
+        .map_err(|e| HealthProbeError::ProbeFail(e.to_string()))?;
+
+    let health_check_response = response.into_inner();
+
+    Ok(match health_check_response.status {
+        0 => ServerHealth::Unknown,
+        1 => ServerHealth::Serving,
+        2 => ServerHealth::NotServing,
+        x => unreachable!("should not have recieved protobuf enum ident of {x} for non-watch"),
+    })
 }

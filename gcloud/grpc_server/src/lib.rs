@@ -4,8 +4,8 @@ mod rpc;
 use serde::Deserialize;
 use serde::Serialize;
 pub use tonic::metadata;
-pub use tonic::transport::Error as TransportError;
-pub use tonic::Request;
+pub use tonic::transport::{Channel, Error as TransportError};
+pub use tonic::{Request, Status};
 pub use tonic_health::pb::{HealthCheckRequest, HealthCheckResponse};
 
 pub mod proto {
