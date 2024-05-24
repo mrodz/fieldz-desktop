@@ -155,11 +155,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -332,3 +332,16 @@ export interface EditScheduleInput {
 }
 
 export type HealthCheck = 'Serving' | 'NotServing' | 'Unknown';
+
+export interface DateRange {
+	start: Date;
+	end: Date;
+};
+
+export interface Delta {
+	years: number;
+	months: number;
+	days: number;
+	seconds: number;
+	inWeeks: boolean;
+};

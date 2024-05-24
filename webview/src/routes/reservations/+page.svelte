@@ -19,7 +19,13 @@
 		MAX_GAMES_PER_FIELD_TYPE,
 		MIN_GAMES_PER_FIELD_TYPE,
 		type FieldConcurrency,
-		TIME_SLOT_CREATION_MODAL_ENABLE
+		TIME_SLOT_CREATION_MODAL_ENABLE,
+
+		type Delta,
+
+		type DateRange
+
+
 	} from '$lib';
 	import Fa from 'svelte-fa';
 	import { faPaintRoller } from '@fortawesome/free-solid-svg-icons';
@@ -106,19 +112,6 @@
 	});
 
 	const plugins = [TimeGrid, Interaction] as const;
-
-	type DateRange = {
-		start: Date;
-		end: Date;
-	};
-
-	type Delta = {
-		years: number;
-		months: number;
-		days: number;
-		seconds: number;
-		inWeeks: boolean;
-	};
 
 	const dateStart = queryParams.get('d');
 
