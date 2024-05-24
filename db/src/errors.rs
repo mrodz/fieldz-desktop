@@ -199,6 +199,8 @@ pub enum LoadTeamsError {
     NoDatabase,
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
+    #[error("expected one entry for id {0}, found {1}")]
+    NotFound(i32, usize),
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]

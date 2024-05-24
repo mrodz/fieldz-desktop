@@ -1967,4 +1967,40 @@ impl Client {
             })?
             .ok_or(LoadScheduleError::NotFound(id))
     }
+
+    pub async fn get_schedule_games(
+        &self,
+        schedule_id: i32,
+    ) -> anyhow::Result<(Schedule, Vec<ScheduleGame>)> {
+        let mut results = ScheduleEntity::find_by_id(schedule_id)
+            .find_with_related(ScheduleGameEntity)
+            .all(&self.connection)
+            .await
+            .context("could execute database query")?;
+
+        if results.len() != 1 {
+            bail!("missing schedule with id {schedule_id}");
+        }
+
+        Ok(results.remove(0))
+    }
+
+    pub async fn get_team(&self, team_id: i32) -> Result<TeamExtension, LoadTeamsError> {
+        let mut teams_with_id = TeamEntity::find_by_id(team_id)
+            .find_with_related(TeamGroupEntity)
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadTeamsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .into_iter()
+            .map(|(team, tags)| TeamExtension::new(team, tags))
+            .collect_vec();
+
+        if teams_with_id.len() != 1 {
+            return Err(LoadTeamsError::NotFound(team_id, teams_with_id.len()));
+        }
+
+        Ok(teams_with_id.remove(0))
+    }
 }

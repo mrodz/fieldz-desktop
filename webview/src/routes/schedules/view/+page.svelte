@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Schedule } from '$lib';
+	import type { Schedule, TeamExtension, ScheduleGame } from '$lib';
+	import { eventFromGame } from '$lib';
 	import { dialog, invoke } from '@tauri-apps/api';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
@@ -12,6 +13,16 @@
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const idParam = queryParams.get('id');
+
+	const teams: Map<number, TeamExtension> = new Map();
+
+	async function getTeam(id: number): Promise<TeamExtension> {
+		const maybeTeam = teams.get(id);
+
+		if (maybeTeam !== undefined) return maybeTeam;
+
+		return invoke<TeamExtension>('get_team', { id });
+	}
 
 	if (idParam === null || idParam === '') {
 		dialog.message(`Recieved a bad query parameter for 'id' (got: ${JSON.stringify(idParam)})`);
@@ -27,7 +38,7 @@
 		history.back();
 	}
 
-	let schedule: Promise<Schedule> | undefined;
+	let schedule: Promise<[Schedule, ScheduleGame[]]> | undefined;
 
 	let calendar: typeof Calendar;
 	const plugins = [TimeGrid, List, Interaction] as const;
@@ -49,13 +60,23 @@
 		calendar?.setOption('view', compact ? 'listWeek' : 'timeGridWeek');
 	}
 
-	onMount(() => {
-		schedule = invoke<Schedule>('get_schedule', { id });
-		
+	onMount(async () => {
+		try {
+			schedule = invoke<[Schedule, ScheduleGame[]]>('get_schedule_games', { scheduleId: id });
 
-		schedule.then((schedule) => {
-			calendar.setOption('events', [/* todo! */])
-		});
+			if (calendar !== undefined) {
+				const events = (await schedule)[1].map((game) => eventFromGame(game, getTeam));
+				for await (const event of events) {
+					calendar.addEvent(event);
+				}
+			}
+		} catch (e) {
+			console.error(e);
+			dialog.message(JSON.stringify(e), {
+				title: 'Could not transform games into calendar events',
+				type: 'error'
+			});
+		}
 	});
 </script>
 
@@ -74,7 +95,7 @@
 			</button>
 			<ProgressRadial />
 		{:then schedule}
-			<h1 class="h2">{schedule.name}</h1>
+			<h1 class="h2">{schedule[0].name}</h1>
 			<div class="my-4 flex items-center gap-2">
 				<button class="variant-filled btn" on:click={() => history.back()}>
 					&laquo;&nbsp; Back

@@ -132,6 +132,28 @@ export function eventFromTimeSlot(input: TimeSlotExtension, title?: string): Cal
 	};
 }
 
+export async function eventFromGame(input: ScheduleGame, teamGetter: (id: number) => Promise<TeamExtension>): Promise<CalendarEvent> {
+	let title = 'Empty';
+
+	if (input?.team_one !== undefined && input?.team_two !== undefined) {
+		const teamOne = await teamGetter(input.team_one);
+		const teamTwo = await teamGetter(input.team_two);
+
+		title = `${teamOne.team.name} vs ${teamTwo.team.name}`
+	}
+
+	return {
+		allDay: false,
+		display: 'auto',
+		id: `schedule-${input.schedule_id}-game-${input.id}`,
+		start: new Date(input.start),
+		end: new Date(input.end),
+		resources: [],
+		...title === 'Empty' ? { backgroundColor: '#808080' } : {},
+		title
+	}
+}
+
 export interface EditRegionInput {
 	id: number;
 	name?: string;
@@ -336,7 +358,7 @@ export type HealthCheck = 'Serving' | 'NotServing' | 'Unknown';
 export interface DateRange {
 	start: Date;
 	end: Date;
-};
+}
 
 export interface Delta {
 	years: number;
@@ -344,4 +366,13 @@ export interface Delta {
 	days: number;
 	seconds: number;
 	inWeeks: boolean;
-};
+}
+
+export interface ScheduleGame {
+	id: number;
+	schedule_id: number;
+	start: string;
+	end: string;
+	team_one?: number;
+	team_two?: number;
+}
