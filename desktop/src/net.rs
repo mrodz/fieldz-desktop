@@ -29,8 +29,7 @@ where
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
 {
-    let scheduler_endpoint = std::env::var("SCHEDULER_SERVER_URL")
-        .expect("this app was not built with the correct setup to talk to the scheduler server");
+    let scheduler_endpoint = get_scheduler_url();
 
     let messages = input
         .as_ref()
@@ -136,8 +135,7 @@ pub enum HealthProbeError {
 }
 
 pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
-    let scheduler_endpoint = std::env::var("SCHEDULER_SERVER_URL")
-        .expect("this app was not built with the correct setup to talk to the scheduler server");
+    let scheduler_endpoint = get_scheduler_url();
 
     let channel = grpc_server::Channel::from_shared(scheduler_endpoint)
         .expect("invalid URI")
@@ -162,4 +160,9 @@ pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
         2 => ServerHealth::NotServing,
         x => unreachable!("should not have recieved protobuf enum ident of {x} for non-watch"),
     })
+}
+
+pub(crate) fn get_scheduler_url() -> String {
+    std::env::var("SCHEDULER_SERVER_URL")
+        .expect("this app was not built with the correct setup to talk to the scheduler server")
 }

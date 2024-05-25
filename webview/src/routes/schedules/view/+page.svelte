@@ -123,7 +123,7 @@
 					&laquo;&nbsp; Back
 				</button>
 				<SlideToggle name="slider-label" bind:checked={$compact}>
-					Switch to {#if compact}
+					Switch to {#if $compact}
 						Calendar View
 					{:else}
 						Compact View

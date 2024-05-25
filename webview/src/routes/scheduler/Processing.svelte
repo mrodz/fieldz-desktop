@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type HealthCheck } from '$lib';
+	import { SHOW_SCHEDULER_URL_WHILE_WAITING, type HealthCheck } from '$lib';
 	import { ProgressRadial } from '@skeletonlabs/skeleton';
 	import { invoke } from '@tauri-apps/api';
 	import { onMount } from 'svelte';
@@ -70,4 +70,13 @@
 	<section class="text-center">
 		Elapsed: {timeString}
 	</section>
+	{#if SHOW_SCHEDULER_URL_WHILE_WAITING}
+		<section class="text-center">
+			Target: {#await invoke('get_scheduler_url')}
+				Loading...
+			{:then url}
+				{url}
+			{/await}
+		</section>
+	{/if}
 </div>

@@ -439,8 +439,7 @@
 
 			if (schedulerWait) {
 				toastStore.trigger({
-					message:
-						'Please slow down! Your account must wait 30 seconds between requesting a schedule.',
+					message: `Please slow down! Your account must wait ${SCHEDULE_CREATION_DELAY / 1_000} seconds between requesting a schedule.`,
 					background: 'variant-filled-warning'
 				});
 				return;

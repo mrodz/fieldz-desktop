@@ -765,3 +765,8 @@ pub(crate) async fn get_team(app: AppHandle, id: i32) -> Result<TeamExtension, L
 
     client.get_team(id).await
 }
+
+#[tauri::command]
+pub(crate) fn get_scheduler_url() -> String {
+    net::get_scheduler_url()
+}
