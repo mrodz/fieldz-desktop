@@ -5,7 +5,8 @@
 		signInWithPopup,
 		getAuth,
 		GithubAuthProvider,
-		OAuthProvider
+		OAuthProvider,
+		signInWithRedirect
 	} from 'firebase/auth';
 	import { goto } from '$app/navigation';
 	import { slide } from 'svelte/transition';
@@ -14,11 +15,26 @@
 	import TwitterIcon from './TwitterIcon.svelte';
 	import GitHubIcon from './GitHubIcon.svelte';
 	import MicrosoftIcon from './MicrosoftIcon.svelte';
+	import { type } from '@tauri-apps/api/os';
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const next = queryParams.get('next') ?? '/';
 
 	const toastStore = getToastStore();
+
+	const signInFunction = type().then((type) => {
+		switch (type) {
+			/*
+			 * The webview on OSX does not support browser popups.
+			 * Why, you might ask?
+			 * No one knows :(
+			 */
+			case 'Darwin':
+				return signInWithRedirect;
+			default:
+				return signInWithPopup;
+		}
+	});
 
 	function duplicatedMessage(error: any) {
 		if ('code' in error && error.code === 'auth/account-exists-with-different-credential') {
@@ -40,7 +56,7 @@
 				prompt: 'select_account'
 			});
 
-			const userCredential = await signInWithPopup(getAuth(), provider);
+			const userCredential = await (await signInFunction)(getAuth(), provider);
 
 			console.log(userCredential);
 
@@ -58,7 +74,7 @@
 				prompt: 'select_account'
 			});
 
-			const userCredential = await signInWithPopup(getAuth(), provider);
+			const userCredential = await (await signInFunction)(getAuth(), provider);
 
 			console.log(userCredential);
 
@@ -73,7 +89,7 @@
 		try {
 			const provider = new GithubAuthProvider();
 
-			const userCredential = await signInWithPopup(getAuth(), provider);
+			const userCredential = await (await signInFunction)(getAuth(), provider);
 
 			console.log(userCredential);
 
@@ -91,7 +107,7 @@
 				prompt: 'select_account'
 			});
 
-			const userCredential = await signInWithPopup(getAuth(), provider);
+			const userCredential = await (await signInFunction)(getAuth(), provider);
 
 			console.log(userCredential);
 
@@ -110,19 +126,19 @@
 	>
 
 	<div class="logo-cloud grid-cols-1 gap-0.5 md:grid-cols-2 2xl:grid-cols-4">
-		<button class="logo-item" on:click={google}>
+		<button class="logo-item card-hover" on:click={google}>
 			<GoogleIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button class="logo-item" on:click={twitter}>
+		<button class="logo-item card-hover" on:click={twitter}>
 			<TwitterIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button class="logo-item" on:click={github}>
+		<button class="logo-item card-hover" on:click={github}>
 			<GitHubIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button class="logo-item" on:click={microsoft}>
+		<button class="logo-item card-hover" on:click={microsoft}>
 			<MicrosoftIcon class="mr-4 w-12" />
 			Sign In
 		</button>
