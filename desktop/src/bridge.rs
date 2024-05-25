@@ -740,7 +740,10 @@ pub(crate) async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
 }
 
 #[tauri::command]
-pub(crate) async fn get_schedule_games(app: AppHandle, schedule_id: i32) -> Result<(db::schedule::Model, Vec<db::schedule_game::Model>), String> {
+pub(crate) async fn get_schedule_games(
+    app: AppHandle,
+    schedule_id: i32,
+) -> Result<(db::schedule::Model, Vec<db::schedule_game::Model>), String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -758,10 +761,7 @@ pub(crate) async fn get_schedule_games(app: AppHandle, schedule_id: i32) -> Resu
 pub(crate) async fn get_team(app: AppHandle, id: i32) -> Result<TeamExtension, LoadTeamsError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
-    let client = lock
-        .database
-        .as_ref()
-        .ok_or(LoadTeamsError::NoDatabase)?;
+    let client = lock.database.as_ref().ok_or(LoadTeamsError::NoDatabase)?;
 
     client.get_team(id).await
 }

@@ -36,6 +36,9 @@
 			const provider = new GoogleAuthProvider();
 
 			provider.addScope('https://www.googleapis.com/auth/userinfo.email');
+			provider.setCustomParameters({
+				prompt: 'select_account'
+			});
 
 			const userCredential = await signInWithPopup(getAuth(), provider);
 
@@ -51,6 +54,9 @@
 	async function twitter() {
 		try {
 			const provider = new TwitterAuthProvider();
+			provider.setCustomParameters({
+				prompt: 'select_account'
+			});
 
 			const userCredential = await signInWithPopup(getAuth(), provider);
 
@@ -81,6 +87,9 @@
 	async function microsoft() {
 		try {
 			const provider = new OAuthProvider('microsoft.com');
+			provider.setCustomParameters({
+				prompt: 'select_account'
+			});
 
 			const userCredential = await signInWithPopup(getAuth(), provider);
 

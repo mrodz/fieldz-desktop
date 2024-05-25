@@ -20,12 +20,8 @@
 		MIN_GAMES_PER_FIELD_TYPE,
 		type FieldConcurrency,
 		TIME_SLOT_CREATION_MODAL_ENABLE,
-
 		type Delta,
-
 		type DateRange
-
-
 	} from '$lib';
 	import Fa from 'svelte-fa';
 	import { faPaintRoller } from '@fortawesome/free-solid-svg-icons';
@@ -53,7 +49,7 @@
 
 	onMount(async () => {
 		try {
-			if (fieldId === null || isNaN(Number(fieldId))) {
+			if (fieldId === null || !Number.isInteger(Number(fieldId))) {
 				dialog.message('Could not parse number from field id', {
 					title: 'Error getting reservations',
 					type: 'error'

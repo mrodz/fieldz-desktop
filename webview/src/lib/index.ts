@@ -132,26 +132,29 @@ export function eventFromTimeSlot(input: TimeSlotExtension, title?: string): Cal
 	};
 }
 
-export async function eventFromGame(input: ScheduleGame, teamGetter: (id: number) => Promise<TeamExtension>): Promise<CalendarEvent> {
+export async function eventFromGame(
+	input: ScheduleGame,
+	teamGetter: (id: number) => Promise<TeamExtension>
+): Promise<CalendarEvent> {
 	let title = 'Empty';
 
-	if (input?.team_one !== undefined && input?.team_two !== undefined) {
-		const teamOne = await teamGetter(input.team_one);
-		const teamTwo = await teamGetter(input.team_two);
+	if (Number.isInteger(input?.team_one) && Number.isInteger(input?.team_two)) {
+		const teamOne = await teamGetter(input.team_one!);
+		const teamTwo = await teamGetter(input.team_two!);
 
-		title = `${teamOne.team.name} vs ${teamTwo.team.name}`
+		title = `${teamOne.team.name} vs ${teamTwo.team.name}`;
 	}
 
 	return {
 		allDay: false,
 		display: 'auto',
 		id: `schedule-${input.schedule_id}-game-${input.id}`,
+		resources: [],
 		start: new Date(input.start),
 		end: new Date(input.end),
-		resources: [],
-		...title === 'Empty' ? { backgroundColor: '#808080' } : {},
+		backgroundColor: title === 'Empty' ? '#808080' : 'hsl(102,21%,49%)',
 		title
-	}
+	};
 }
 
 export interface EditRegionInput {
@@ -177,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-		Interregional: number;
-	}
+			Interregional: number;
+	  }
 	| {
-		Regional: [number, number][];
-	};
+			Regional: [number, number][];
+	  };
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];

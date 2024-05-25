@@ -1,3 +1,8 @@
+<script lang="ts" context="module">
+	import { writable } from 'svelte/store';
+	let compact = writable(false);
+</script>
+
 <script lang="ts">
 	import type { Schedule, TeamExtension, ScheduleGame } from '$lib';
 	import { eventFromGame } from '$lib';
@@ -43,31 +48,46 @@
 	let calendar: typeof Calendar;
 	const plugins = [TimeGrid, List, Interaction] as const;
 
-	let compact: boolean = false;
-
 	const options = {
 		allDaySlot: false,
-		view: compact ? 'listWeek' : 'timeGridWeek',
+		view: $compact ? 'listWeek' : 'timeGridWeek',
 		firstDay: 1,
-		editable: true,
-		selectable: true,
+		eventStartEditable: false,
+		eventDurationEditable: false,
+		selectable: false,
 		events: [],
 		slotMinTime: '05:00:00',
 		slotMaxTime: '24:00:00'
 	};
 
-	$: if (calendar !== undefined) {
-		calendar?.setOption('view', compact ? 'listWeek' : 'timeGridWeek');
-	}
+	$: calendar?.setOption?.('view', $compact ? 'listWeek' : 'timeGridWeek');
+	// $: {
+	// 	calendar?.setOption?.('editable', editMode);
+	// 	console.log(calendar?.getOption?.('editable'));
+	// }
 
 	onMount(async () => {
 		try {
 			schedule = invoke<[Schedule, ScheduleGame[]]>('get_schedule_games', { scheduleId: id });
 
 			if (calendar !== undefined) {
-				const events = (await schedule)[1].map((game) => eventFromGame(game, getTeam));
+				const [_schedule, games] = await schedule;
+				const events = games.map((game) => eventFromGame(game, getTeam));
+
+				let firstDay: Date | undefined;
+
 				for await (const event of events) {
 					calendar.addEvent(event);
+
+					if (firstDay === undefined) {
+						firstDay = event.start;
+					} else if (event.start.getDate() < firstDay.getDate()) {
+						firstDay = event.start;
+					}
+				}
+
+				if (firstDay !== undefined) {
+					calendar.setOption('date', firstDay);
 				}
 			}
 		} catch (e) {
@@ -78,6 +98,8 @@
 			});
 		}
 	});
+
+	let editMode: boolean = false;
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -100,17 +122,20 @@
 				<button class="variant-filled btn" on:click={() => history.back()}>
 					&laquo;&nbsp; Back
 				</button>
-				<SlideToggle name="slider-label" bind:checked={compact}>
+				<SlideToggle name="slider-label" bind:checked={$compact}>
 					Switch to {#if compact}
 						Calendar View
 					{:else}
 						Compact View
 					{/if}
 				</SlideToggle>
-			</div>
-			<div>
-				<Calendar bind:this={calendar} {plugins} {options} />
+				<!-- <SlideToggle name="slider-label" bind:checked={editMode}>
+					Editable
+				</SlideToggle> -->
 			</div>
 		{/await}
 	{/if}
+	<div>
+		<Calendar bind:this={calendar} {plugins} {options} />
+	</div>
 </main>

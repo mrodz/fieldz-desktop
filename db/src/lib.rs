@@ -1990,9 +1990,7 @@ impl Client {
             .find_with_related(TeamGroupEntity)
             .all(&self.connection)
             .await
-            .map_err(|e| {
-                LoadTeamsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
-            })?
+            .map_err(|e| LoadTeamsError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
             .into_iter()
             .map(|(team, tags)| TeamExtension::new(team, tags))
             .collect_vec();
