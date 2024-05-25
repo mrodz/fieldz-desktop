@@ -1,15 +1,16 @@
-extern crate tinyvec;
+// extern crate tinyvec;
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::hint::unreachable_unchecked;
 use std::num::NonZeroU8;
 use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
+use chrono::TimeZone;
+use chrono::Utc;
 use itertools::Itertools;
 use itertools::MinMaxResult;
 use mcts::transposition_table::*;
@@ -20,18 +21,23 @@ use tinyvec::TinyVec;
 
 use crate::window;
 use crate::AvailabilityWindow;
+use crate::CompressionProfile;
 use crate::LossyAvailability;
 
 type TeamId = u8;
 
 #[derive(Clone, Copy, Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct Team {
+pub(crate) struct Team {
     id: TeamId,
 }
 
 impl Team {
-    fn new(id: TeamId) -> Self {
+    const fn new(id: TeamId) -> Self {
         Self { id }
+    }
+
+    pub(crate) fn id(&self) -> TeamId {
+        self.id
     }
 }
 
@@ -87,10 +93,20 @@ impl Display for Team {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Game {
+pub(crate) struct Game {
     team_one: Team,
     team_two: Team,
     group_id: NonZeroU8,
+}
+
+impl Game {
+    pub const fn team_one(&self) -> &Team {
+        &self.team_one
+    }
+
+    pub const fn team_two(&self) -> &Team {
+        &self.team_two
+    }
 }
 
 impl Display for Game {
@@ -100,37 +116,34 @@ impl Display for Game {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct Reservation {
+pub(crate) struct Reservation {
     slot: Slot,
     game: Option<Game>,
 }
 
-impl Display for Reservation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.slot)?;
+impl Reservation {
+    pub const fn slot(&self) -> &Slot {
+        &self.slot
+    }
 
-        if let Some(game) = self.game.as_ref() {
-            write!(f, " @ {game}")
-        } else {
-            write!(f, " <wasted>")
-        }
+    pub const fn game(&self) -> Option<&Game> {
+        self.game.as_ref()
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct Slot {
+pub(crate) struct Slot {
     field_id: u8,
     availability: LossyAvailability,
 }
 
-impl Display for Slot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[f{}] {}",
-            self.field_id,
-            self.availability.as_availability_window_lossy(),
-        )
+impl Slot {
+    pub const fn field_id(&self) -> u8 {
+        self.field_id
+    }
+
+    pub const fn availability(&self) -> &LossyAvailability {
+        &self.availability
     }
 }
 
@@ -138,8 +151,8 @@ impl Display for Slot {
 pub struct TeamSlot(Team, TinyVec<[Slot; 8]>);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MCTSState {
-    games: BTreeMap<Slot, Option<Game>>,
+pub(crate) struct MCTSState {
+    games: BTreeMap<Slot, Vec<Option<Game>>>,
     groups: Vec<PlayableGroup>,
     teams_len: u8,
 }
@@ -166,23 +179,26 @@ impl MCTSState {
                     .expect("max team size = 255"),
             )
             .expect("max team size = 255");
+
         self.groups.push(playable_group);
     }
 
-    pub fn add_time_slots(&mut self, field_id: u8, time_slots: impl AsRef<[AvailabilityWindow]>) {
+    pub fn add_time_slots(
+        &mut self,
+        field_id: u8,
+        time_slots: impl AsRef<[AvailabilityWindow]>,
+        compression_profile: &CompressionProfile,
+    ) {
         for time_slot in time_slots.as_ref() {
-            assert!(
-                self.games
-                    .insert(
-                        Slot {
-                            field_id,
-                            availability: time_slot.as_lossy_window().unwrap()
-                        },
-                        None
-                    )
-                    .is_none(),
-                "{time_slot} at field {field_id} was already set"
-            );
+            let entry = self
+                .games
+                .entry(Slot {
+                    field_id,
+                    availability: time_slot.as_lossy_window(compression_profile).unwrap(),
+                })
+                .or_default();
+
+            entry.push(None);
         }
     }
 
@@ -202,61 +218,64 @@ impl GameState for MCTSState {
     fn available_moves(&self) -> Vec<Reservation> {
         let mut result = tiny_vec!([Reservation; 8]);
 
-        for (slot, game) in &self.games {
-            if game.is_some() {
-                continue;
-            }
+        for (slot, games) in &self.games {
+            for game in games {
+                if game.is_some() {
+                    continue;
+                }
 
-            for group in &self.groups {
-                'outer: for permutation in group.teams.iter().permutations(2) {
-                    let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
-                        &permutation[..]
-                    else {
-                        unsafe {
-                            unreachable_unchecked();
-                        }
-                    };
+                for group in &self.groups {
+                    'outer: for permutation in group.teams.iter().permutations(2) {
+                        let [TeamSlot(team_one, t1_avail), TeamSlot(team_two, t2_avail)] =
+                            &permutation[..]
+                        else {
+                            unreachable!()
+                            // unsafe {
+                            //     unreachable_unchecked();
+                            // }
+                        };
 
-                    // let overlap = |x: &Slot| {
-                    //     LossyAvailability::overlap_fast(&x.availability, &slot.availability)
-                    // };
+                        // let overlap = |x: &Slot| {
+                        //     LossyAvailability::overlap_fast(&x.availability, &slot.availability)
+                        // };
 
-                    let mut t1_iter = t1_avail.iter();
-                    let mut t2_iter = t2_avail.iter();
+                        let mut t1_iter = t1_avail.iter();
+                        let mut t2_iter = t2_avail.iter();
 
-                    loop {
-                        match (t1_iter.next(), t2_iter.next()) {
-                            (Some(t1), Some(t2)) => {
-                                if LossyAvailability::overlap_fast(
-                                    &t1.availability,
-                                    &slot.availability,
-                                ) || LossyAvailability::overlap_fast(
-                                    &t2.availability,
-                                    &slot.availability,
-                                ) {
-                                    continue 'outer;
+                        loop {
+                            match (t1_iter.next(), t2_iter.next()) {
+                                (Some(t1), Some(t2)) => {
+                                    if LossyAvailability::overlap_fast(
+                                        &t1.availability,
+                                        &slot.availability,
+                                    ) || LossyAvailability::overlap_fast(
+                                        &t2.availability,
+                                        &slot.availability,
+                                    ) {
+                                        continue 'outer;
+                                    }
                                 }
-                            }
-                            (Some(t), None) | (None, Some(t)) => {
-                                if LossyAvailability::overlap_fast(
-                                    &t.availability,
-                                    &slot.availability,
-                                ) {
-                                    continue 'outer;
+                                (Some(t), None) | (None, Some(t)) => {
+                                    if LossyAvailability::overlap_fast(
+                                        &t.availability,
+                                        &slot.availability,
+                                    ) {
+                                        continue 'outer;
+                                    }
                                 }
+                                (None, None) => break,
                             }
-                            (None, None) => break,
                         }
+
+                        result.push(Reservation {
+                            slot: *slot,
+                            game: Some(Game {
+                                team_one: *team_one,
+                                team_two: *team_two,
+                                group_id: group.id(),
+                            }),
+                        })
                     }
-
-                    result.push(Reservation {
-                        slot: *slot,
-                        game: Some(Game {
-                            team_one: *team_one,
-                            team_two: *team_two,
-                            group_id: group.id(),
-                        }),
-                    })
                 }
             }
         }
@@ -282,14 +301,20 @@ impl GameState for MCTSState {
 
             let t2_vec = &mut self
                 .groups
-                .get_unchecked_mut((game.group_id.get() - 1) as usize)
-                .get_team_unchecked(game.team_two.id)
+                .get_mut((game.group_id.get() - 1) as usize)
+                .unwrap()
+                .get_team(game.team_two.id)
                 .1;
 
             t2_vec.push(mov.slot);
         }
 
-        self.games.insert(mov.slot, mov.game);
+        let entry = self.games.entry(mov.slot).or_default();
+        for game in entry {
+            if let empty @ None = game {
+                *empty = mov.game;
+            }
+        }
     }
 }
 
@@ -317,17 +342,19 @@ impl Evaluator<SchedulerMCTS> for ScheduleEvaluator {
 
         let mut busy: BTreeMap<Team, Vec<Slot>> = BTreeMap::new();
 
-        for (slot, game) in &state.games {
-            if let Some(game) = game.as_ref() {
-                let mut entry = busy.entry(game.team_one).or_default();
-                entry.push(*slot);
+        for (slot, games) in &state.games {
+            for game in games {
+                if let Some(game) = game.as_ref() {
+                    let mut entry = busy.entry(game.team_one).or_default();
+                    entry.push(*slot);
 
-                entry = busy.entry(game.team_two).or_default();
-                entry.push(*slot);
+                    entry = busy.entry(game.team_two).or_default();
+                    entry.push(*slot);
 
-                result += 1;
-            } else {
-                result -= 10;
+                    result += 1;
+                } else {
+                    result -= 10;
+                }
             }
         }
 
@@ -407,31 +434,39 @@ impl Output {
     pub fn all_booked(&self) -> bool {
         self.fillage == 1.
     }
-}
 
-impl Display for Output {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut r = self.reservations.iter();
-
-        if let Some(first) = r.next() {
-            write!(f, "- {first}")?;
-        }
-
-        for reservation in r {
-            write!(f, "\n- {reservation}")?;
-        }
-
-        write!(
-            f,
-            "\nBooked {:.2}%; Elapsed {}s",
-            self.fillage * 100.,
-            self.time_taken.as_secs_f32()
-        )
+    pub fn reservations(&self) -> &[Reservation] {
+        &self.reservations
     }
 }
 
-pub(crate) fn schedule(state: MCTSState) -> Result<Output> {
+pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
     let mut best: Option<Output> = None;
+
+    if state.teams_len() == 0 {
+        return Ok(Output {
+            fillage: 0.,
+            time_taken: Duration::from_millis(0),
+            reservations: state
+                .games
+                .iter()
+                .flat_map(|(slot, games)| {
+                    games.iter().map(|game| Reservation {
+                        game: *game,
+                        slot: *slot,
+                    })
+                })
+                .collect_vec(),
+        });
+    }
+
+    if state.games.is_empty() {
+        return Ok(Output {
+            fillage: 0.,
+            time_taken: Duration::from_millis(0),
+            reservations: vec![],
+        });
+    }
 
     const RETRIES: u8 = 10;
 
@@ -519,6 +554,13 @@ pub(crate) fn schedule_once(state: MCTSState) -> Result<Output> {
 pub fn test() -> Result<()> {
     let mut state = MCTSState::new();
 
+    let compression_profile = CompressionProfile::assume_date(
+        &Utc.with_ymd_and_hms(2006, 9, 1, 0, 0, 0)
+            .earliest()
+            .unwrap(),
+        // &DateTime::parse_from_rfc3339("2006-9-1T0:00:00+00:00").unwrap().to_utc(),
+    );
+
     state.add_time_slots(
         1,
         [
@@ -532,6 +574,7 @@ pub fn test() -> Result<()> {
             window!(14/9/2006 from 14:00 to 15:30)?,
             window!(14/9/2006 from 16:00 to 17:30)?,
         ],
+        &compression_profile,
     );
 
     state.add_time_slots(
@@ -547,6 +590,7 @@ pub fn test() -> Result<()> {
             window!(14/9/2006 from 14:00 to 15:30)?,
             window!(14/9/2006 from 16:00 to 17:30)?,
         ],
+        &compression_profile,
     );
 
     state.add_time_slots(
@@ -562,6 +606,7 @@ pub fn test() -> Result<()> {
             window!(14/10/2006 from 14:00 to 15:30)?,
             window!(14/10/2006 from 16:00 to 17:30)?,
         ],
+        &compression_profile,
     );
 
     let mut group_one = PlayableGroup::new(0);
@@ -572,9 +617,9 @@ pub fn test() -> Result<()> {
 
     state.add_group(group_one);
 
-    let result = schedule(state)?;
+    let result = schedule(&state)?;
 
-    println!("{result}");
+    println!("{result:?}");
 
     Ok(())
 }

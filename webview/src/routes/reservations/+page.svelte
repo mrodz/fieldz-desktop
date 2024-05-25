@@ -18,7 +18,10 @@
 		eventFromTimeSlot,
 		MAX_GAMES_PER_FIELD_TYPE,
 		MIN_GAMES_PER_FIELD_TYPE,
-		type FieldConcurrency
+		type FieldConcurrency,
+		TIME_SLOT_CREATION_MODAL_ENABLE,
+		type Delta,
+		type DateRange
 	} from '$lib';
 	import Fa from 'svelte-fa';
 	import { faPaintRoller } from '@fortawesome/free-solid-svg-icons';
@@ -46,7 +49,7 @@
 
 	onMount(async () => {
 		try {
-			if (fieldId === null || isNaN(Number(fieldId))) {
+			if (fieldId === null || !Number.isInteger(Number(fieldId))) {
 				dialog.message('Could not parse number from field id', {
 					title: 'Error getting reservations',
 					type: 'error'
@@ -106,20 +109,30 @@
 
 	const plugins = [TimeGrid, Interaction] as const;
 
-	type DateRange = {
-		start: Date;
-		end: Date;
-	};
-
-	type Delta = {
-		years: number;
-		months: number;
-		days: number;
-		seconds: number;
-		inWeeks: boolean;
-	};
-
 	const dateStart = queryParams.get('d');
+
+	async function createTimeSlot(input: CreateTimeSlotInput) {
+		try {
+			const newWindow: TimeSlotExtension = await invoke<TimeSlotExtension>('create_time_slot', {
+				input
+			});
+
+			calendar.addEvent(eventFromTimeSlot(newWindow));
+		} catch (err: any) {
+			if (typeof err === 'object' && 'Overlap' in err) {
+				toastStore.trigger({
+					message: 'This would overlap with another time slot!',
+					background: 'variant-filled-error',
+					timeout: 1500
+				});
+			} else {
+				dialog.message(JSON.stringify(err), {
+					title: 'could not move event',
+					type: 'error'
+				});
+			}
+		}
+	}
 
 	const options = {
 		allDaySlot: false,
@@ -128,6 +141,8 @@
 		editable: true,
 		selectable: true,
 		events: [],
+		slotMinTime: '05:00:00',
+		slotMaxTime: '24:00:00',
 		date: dateStart === null || isNaN(Number(dateStart)) ? new Date() : new Date(Number(dateStart)),
 		async eventDrop(e: {
 			oldEvent: CalendarEvent;
@@ -163,7 +178,8 @@
 					e.revert();
 					toastStore.trigger({
 						message: 'This would overlap with another time slot!',
-						background: 'variant-filled-error'
+						background: 'variant-filled-error',
+						timeout: 1500
 					});
 				} else {
 					dialog.message(JSON.stringify(err), {
@@ -207,7 +223,8 @@
 					e.revert();
 					toastStore.trigger({
 						message: 'This would overlap with another time slot!',
-						background: 'variant-filled-error'
+						background: 'variant-filled-error',
+						timeout: 1500
 					});
 				} else {
 					dialog.message(JSON.stringify(err), {
@@ -245,44 +262,29 @@
 			let hours = Math.floor(diffInHours);
 			let minutes = Math.floor((diffInHours - hours) * 60);
 
-			modalStore.trigger({
-				type: 'confirm',
-				title: `New Reservation (${hours}:${minutes < 10 ? '0' + minutes : minutes}h duration)`,
-				body: `From ${e.start} to ${e.end}`,
-				buttonTextConfirm: 'Yes!',
-				buttonTextCancel: 'No, go back',
-				async response(r: boolean) {
-					if (r) {
-						try {
-							const input: CreateTimeSlotInput = {
-								start: e.start.valueOf(),
-								end: e.end.valueOf(),
-								reservation_type_id: activeScheduleType!.id,
-								field_id: Number(fieldId)
-							};
+			const input = {
+				start: e.start.valueOf(),
+				end: e.end.valueOf(),
+				reservation_type_id: activeScheduleType!.id,
+				field_id: Number(fieldId)
+			};
 
-							const newWindow: TimeSlotExtension = await invoke<TimeSlotExtension>(
-								'create_time_slot',
-								{ input }
-							);
-
-							calendar.addEvent(eventFromTimeSlot(newWindow));
-						} catch (err: any) {
-							if (typeof err === 'object' && 'Overlap' in err) {
-								toastStore.trigger({
-									message: 'This would overlap with another time slot!',
-									background: 'variant-filled-error'
-								});
-							} else {
-								dialog.message(JSON.stringify(err), {
-									title: 'could not move event',
-									type: 'error'
-								});
-							}
+			if (TIME_SLOT_CREATION_MODAL_ENABLE) {
+				modalStore.trigger({
+					type: 'confirm',
+					title: `New Reservation (${hours}:${minutes < 10 ? '0' + minutes : minutes}h duration)`,
+					body: `From ${e.start} to ${e.end}`,
+					buttonTextConfirm: 'Yes!',
+					buttonTextCancel: 'No, go back',
+					async response(r: boolean) {
+						if (r) {
+							createTimeSlot(input);
 						}
 					}
-				}
-			});
+				});
+			} else {
+				createTimeSlot(input);
+			}
 		}
 	} as const;
 

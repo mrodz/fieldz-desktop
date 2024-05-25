@@ -1,3 +1,7 @@
+<script lang="ts" context="module">
+	let schedulerWait = false;
+</script>
+
 <script lang="ts">
 	import { slide, crossfade } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -17,14 +21,19 @@
 		type PreScheduleReport,
 		type PreScheduleReportInput,
 		type ReservationType,
+		type Schedule,
+		type ScheduledInput,
 		type TimeSlotExtension,
 		type FieldConcurrency,
 		type UpdateTargetReservationTypeInput,
 		regionalUnionSumTotal,
-		isSupplyRequireEntryAccountedFor
+		isSupplyRequireEntryAccountedFor,
+		SCHEDULE_CREATION_DELAY,
+		SHOW_SCHEDULER_JSON_PAYLOADS
 	} from '$lib';
 	import {
 		getModalStore,
+		getToastStore,
 		Accordion,
 		AccordionItem,
 		Paginator,
@@ -32,7 +41,8 @@
 		Table,
 		type PaginationSettings,
 		ProgressRadial,
-		RangeSlider
+		RangeSlider,
+		CodeBlock
 	} from '@skeletonlabs/skeleton';
 
 	import { dialog, event, invoke } from '@tauri-apps/api';
@@ -40,7 +50,12 @@
 	import ScheduleErrorReport from './ScheduleErrorReport.svelte';
 	import ReportTable from './ReportTable.svelte';
 
+	import authStore from '$lib/authStore';
+	import { goto } from '$app/navigation';
+	import { getAuth } from 'firebase/auth';
+
 	let modalStore = getModalStore();
+	let toastStore = getToastStore();
 
 	let calendar: typeof Calendar;
 
@@ -404,6 +419,79 @@
 	function reservationTypeGetter(reservationTypeId: number): ReservationType | undefined {
 		return reservationTypes?.find((ty) => ty.id === reservationTypeId);
 	}
+
+	let inputs_for_scheduling: ScheduledInput[] | undefined;
+
+	let scheduled_output: Promise<Schedule> | undefined;
+
+	let scheduling: boolean = false;
+
+	async function beginScheduleTransaction() {
+		try {
+			if (!$authStore.isLoggedIn) {
+				toastStore.trigger({
+					message: 'You must be signed in to send a schedule request',
+					background: 'variant-filled-error'
+				});
+
+				return;
+			}
+
+			if (schedulerWait) {
+				toastStore.trigger({
+					message: `Please slow down! Your account must wait ${SCHEDULE_CREATION_DELAY / 1_000} seconds between requesting a schedule.`,
+					background: 'variant-filled-warning'
+				});
+				return;
+			} else {
+				toastStore.trigger({
+					message: 'Bundling your payload and sending it to our servers...',
+					background: 'variant-filled-tertiary'
+				});
+			}
+
+			modalStore.trigger({
+				type: 'component',
+				component: 'processingSchedule',
+				meta: {}
+			});
+			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
+
+			const jwtToken = await getAuth().currentUser!.getIdToken();
+
+			scheduling = true;
+			scheduled_output = invoke<Schedule>('schedule', { authorizationToken: jwtToken });
+
+			schedulerWait = true;
+
+			setTimeout(() => {
+				schedulerWait = false;
+			}, SCHEDULE_CREATION_DELAY);
+
+			const schedule = await scheduled_output;
+
+			toastStore.trigger({
+				message: `The server finished its work!`,
+				background: 'variant-filled-success'
+			});
+
+			scheduling = false;
+			modalStore.close();
+
+			goto(`/schedules/view?id=${schedule.id}`);
+		} catch (e) {
+			console.error(e);
+
+			toastStore.trigger({
+				message: `⚠️ Could not schedule: ${JSON.stringify(e)}`,
+				autohide: false,
+				background: 'variant-filled-error'
+			});
+		}
+	}
+
+	let normalSeasonError: boolean;
+	let postSeasonError: boolean;
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -734,7 +822,10 @@
 						<AccordionItem open>
 							<svelte:fragment slot="summary">
 								<h3 class="h3">Normal Season</h3>
-								<ScheduleErrorReport report={normalSeasonReport} />
+								<ScheduleErrorReport
+									bind:hasErrors={normalSeasonError}
+									report={normalSeasonReport}
+								/>
 							</svelte:fragment>
 							<svelte:fragment slot="content">
 								<ReportTable
@@ -752,7 +843,7 @@
 						<AccordionItem open>
 							<svelte:fragment slot="summary">
 								<h3 class="h3">Post Season</h3>
-								<ScheduleErrorReport report={postSeasonReport} />
+								<ScheduleErrorReport bind:hasErrors={postSeasonError} report={postSeasonReport} />
 							</svelte:fragment>
 							<svelte:fragment slot="content">
 								<ReportTable
@@ -765,6 +856,85 @@
 						</AccordionItem>
 					{/if}
 				</Accordion>
+			{/if}
+
+			{#if $authStore.isLoggedIn}
+				<button
+					disabled={normalSeasonError || postSeasonError}
+					id="schedule-btn"
+					class="variant-filled btn btn-xl mx-auto mt-5 block"
+					on:click={beginScheduleTransaction}
+				>
+					Schedule
+				</button>
+
+				{#if SHOW_SCHEDULER_JSON_PAYLOADS && inputs_for_scheduling !== undefined}
+					<div class="mt-5">
+						<Accordion>
+							<AccordionItem disabled={scheduled_output === undefined || scheduling}>
+								<svelte:fragment slot="summary">
+									<h3 class="h3">
+										Output
+										{#if scheduling}
+											(loading...)
+										{/if}
+									</h3>
+								</svelte:fragment>
+								<svelte:fragment slot="content">
+									{#if scheduled_output !== undefined}
+										{#await scheduled_output}
+											<div class="my-5">
+												<div class="my-5 text-center">Talking to our server, hold tight...</div>
+
+												<ProgressRadial class="mx-auto block" />
+											</div>
+										{:then scheduled_output}
+											{@const code = JSON.stringify(scheduled_output, null, 4)}
+											<CodeBlock language="json" {code} />
+										{/await}
+									{:else}
+										<div class="text-center">
+											<strong>No Output!</strong>
+										</div>
+									{/if}
+								</svelte:fragment>
+							</AccordionItem>
+							<AccordionItem>
+								<svelte:fragment slot="summary">
+									<h3 class="h3">Input</h3>
+								</svelte:fragment>
+								<svelte:fragment slot="content">
+									{#each inputs_for_scheduling as input_payload}
+										{@const code = JSON.stringify(input_payload, null, 4)}
+										<div class="mt-4">
+											<CodeBlock language="json" {code} />
+										</div>
+									{:else}
+										<div class="text-center">
+											<strong>No Payloads!</strong>
+										</div>
+									{/each}
+								</svelte:fragment>
+							</AccordionItem>
+						</Accordion>
+					</div>
+				{/if}
+			{:else}
+				<hr class="hr my-5" />
+
+				<div class="card mx-auto w-4/5 bg-warning-500 p-4 text-center lg:w-1/2">
+					<p>
+						You must be logged in to send a schedule request to our servers at this time. We do this
+						to limit spam and block malicious requests, and hope you understand!
+					</p>
+
+					<button
+						class="variant-filled btn mt-2"
+						on:click={() => goto('/login?next=/scheduler#schedule-btn')}
+					>
+						Please Sign In
+					</button>
+				</div>
 			{/if}
 		</section>
 	{:else}

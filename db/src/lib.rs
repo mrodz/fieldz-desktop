@@ -1,16 +1,23 @@
 mod pre_schedule_report;
+
+use backend::{
+    FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow, ScheduledInput, TeamLike,
+};
+// use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
+use itertools::Itertools;
 pub use pre_schedule_report::*;
 
 pub mod errors;
 use errors::*;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::Utc;
 use chrono::{serde::ts_milliseconds, DateTime};
+use chrono::{Local, Utc};
 
+#[allow(unused_imports)]
 pub(crate) mod entity_local_exports {
     use entity::*;
     pub use field::{ActiveModel as ActiveField, Entity as FieldEntity, Model as Field};
@@ -18,6 +25,12 @@ pub(crate) mod entity_local_exports {
     pub use reservation_type::{
         ActiveModel as ActiveReservationType, Entity as ReservationTypeEntity,
         Model as ReservationType,
+    };
+    pub use schedule::{
+        ActiveModel as ActiveSchedule, Entity as ScheduleEntity, Model as Schedule,
+    };
+    pub use schedule_game::{
+        ActiveModel as ActiveScheduleGame, Entity as ScheduleGameEntity, Model as ScheduleGame,
     };
     pub use target::{ActiveModel as ActiveTarget, Entity as TargetEntity, Model as Target};
     pub use team::{ActiveModel as ActiveTeam, Entity as TeamEntity, Model as Team};
@@ -43,8 +56,7 @@ use sea_orm::{EntityOrSelect, ModelTrait};
 use sea_orm::{IntoSimpleExpr, QueryOrder};
 
 pub use entity::*;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub type DBResult<T> = Result<T, DbErr>;
 
@@ -165,15 +177,63 @@ impl CreateTeamInput {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TeamExtension {
     team: Team,
     tags: Vec<TeamGroup>,
 }
 
+impl TeamLike for TeamExtension {
+    fn unique_id(&self) -> i32 {
+        self.team.id
+    }
+}
+
 impl TeamExtension {
-    pub const fn new(team: Team, tags: Vec<TeamGroup>) -> Self {
+    pub fn new(team: Team, mut tags: Vec<TeamGroup>) -> Self {
+        tags.sort_by_key(|group| group.id);
         Self { tags, team }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldExtension {
+    field_id: i32,
+    time_slots: Vec<TimeSlotExtension>,
+}
+
+impl FieldLike for FieldExtension {
+    fn time_slots(&self) -> impl AsRef<[(ProtobufAvailabilityWindow, u8)]> {
+        self.time_slots
+            .iter()
+            .map(|not_ready| {
+                let (window, concurrency) = not_ready.to_scheduler_input();
+                (window.to_protobuf_window(), concurrency)
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn unique_id(&self) -> i32 {
+        self.field_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TeamCollection {
+    tags: Vec<TeamGroup>,
+    teams: Vec<TeamExtension>,
+}
+
+impl TeamCollection {
+    pub fn new(tags: Vec<TeamGroup>, teams: Vec<TeamExtension>) -> Self {
+        Self { tags, teams }
+    }
+}
+
+impl PlayableTeamCollection for TeamCollection {
+    type Team = TeamExtension;
+    fn teams(&self) -> impl AsRef<[Self::Team]> {
+        &self.teams
     }
 }
 
@@ -202,6 +262,27 @@ impl TimeSlotExtension {
         } else {
             self.reservation_type.default_sizing
         }
+    }
+
+    pub(crate) fn to_scheduler_input(&self) -> (backend::AvailabilityWindow, u8) {
+        let start_str = &self.time_slot.start;
+        let end_str = &self.time_slot.end;
+
+        let start = DateTime::parse_from_rfc3339(start_str)
+            .expect("time slot START is malformatted")
+            .to_utc();
+        let end = DateTime::parse_from_rfc3339(end_str)
+            .expect("time slot END is malformatted")
+            .to_utc();
+
+        (
+            backend::AvailabilityWindow::new(start, end)
+                .context("Could not transform time slot from record to scheduler parameter")
+                .unwrap(),
+            self.matches_played()
+                .try_into()
+                .expect("matches played could not fit into an 8-bit int"),
+        )
     }
 }
 
@@ -377,6 +458,24 @@ impl Validator for EditTeamInput {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditScheduleInput {
+    id: i32,
+    name: Option<NameMax64>,
+}
+
+impl Validator for EditScheduleInput {
+    type Error = EditScheduleError;
+
+    fn validate(&self) -> Result<(), Self::Error> {
+        if let Some(ref name) = self.name {
+            name.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TargetExtension {
     target: Target,
@@ -526,6 +625,74 @@ pub struct UpdateReservationTypeConcurrencyForFieldInput {
 pub struct UpdateTargetReservationTypeInput {
     target_id: i32,
     new_reservation_type_id: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledScheduleDependents {
+    field_ids: BTreeSet<i32>,
+    team_ids: BTreeSet<i32>,
+}
+
+impl CompiledScheduleDependents {
+    pub fn new(field_ids: BTreeSet<i32>, team_ids: BTreeSet<i32>) -> Self {
+        Self {
+            field_ids,
+            team_ids,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledSchedule {
+    outputs: Vec<grpc_server::proto::algo_input::ScheduledOutput>,
+}
+
+impl CompiledSchedule {
+    pub const fn new(outputs: Vec<grpc_server::proto::algo_input::ScheduledOutput>) -> Self {
+        Self { outputs }
+    }
+
+    pub fn dependents(&self) -> CompiledScheduleDependents {
+        let mut field_ids = BTreeSet::new();
+        let mut team_ids = BTreeSet::new();
+
+        for output in &self.outputs {
+            for reservation in &output.time_slots {
+                field_ids.insert(
+                    reservation
+                        .field
+                        .as_ref()
+                        .expect("no field")
+                        .unique_id
+                        .try_into()
+                        .expect("field id too big"),
+                );
+
+                if let Some(ref booking) = reservation.booking {
+                    team_ids.insert(
+                        booking
+                            .home_team
+                            .as_ref()
+                            .expect("no home team")
+                            .unique_id
+                            .try_into()
+                            .expect("team id too big"),
+                    );
+                    team_ids.insert(
+                        booking
+                            .away_team
+                            .as_ref()
+                            .expect("no away team")
+                            .unique_id
+                            .try_into()
+                            .expect("team id too big"),
+                    );
+                }
+            }
+        }
+
+        CompiledScheduleDependents::new(field_ids, team_ids)
+    }
 }
 
 impl Client {
@@ -1573,5 +1740,265 @@ impl Client {
         .update(&self.connection)
         .await
         .map(|_| ())
+    }
+
+    pub async fn get_scheduled_inputs(
+        &self,
+    ) -> Result<
+        Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension>>,
+        GetScheduledInputsError,
+    > {
+        let mut result = vec![];
+
+        let reservation_types = ReservationTypeEntity::find()
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        let targets = TargetExtension::many_new(
+            TargetEntity::find()
+                .all(&self.connection)
+                .await
+                .map_err(|e| {
+                    GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?,
+            &self.connection,
+        )
+        .await
+        .map_err(|e| {
+            GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+        })?;
+
+        for (i, reservation_type) in reservation_types.into_iter().enumerate() {
+            let field_id_with_time_slots = select_time_slot_extension()
+                .filter(reservation_type::Column::Id.eq(reservation_type.id))
+                .order_by(field::Column::Id, sea_orm::Order::Asc)
+                .into_model::<TimeSlotSelectionTypeAggregate>()
+                .all(&self.connection)
+                .await
+                .map_err(|e| {
+                    GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?
+                .into_iter()
+                .map(Into::<TimeSlotExtension>::into)
+                .group_by(|time_slot_extension| time_slot_extension.time_slot.field_id);
+
+            let fields = field_id_with_time_slots
+                .into_iter()
+                .map(|(field_id, time_slots)| FieldExtension {
+                    field_id,
+                    time_slots: time_slots.collect_vec(),
+                })
+                .collect_vec();
+
+            let mut teams = vec![];
+
+            let targets_for_this_reservation_type = targets.iter().filter(|target| {
+                target
+                    .target
+                    .maybe_reservation_type
+                    .is_some_and(|x| x == reservation_type.id)
+            });
+
+            for target in targets_for_this_reservation_type {
+                let teams_for_target = TeamEntity::find()
+                    .find_with_related(TeamGroupEntity)
+                    .filter(team_group::Column::Id.is_in(target.groups.iter().map(|g| g.id)))
+                    .group_by(team::Column::Id)
+                    .having(
+                        team_group::Column::Id
+                            .into_expr()
+                            .count_distinct()
+                            .eq(i32::try_from(target.groups.len()).unwrap()),
+                    )
+                    .all(&self.connection)
+                    .await
+                    .map_err(|e| {
+                        GetScheduledInputsError::DatabaseError(format!(
+                            "{e} {}:{}",
+                            line!(),
+                            column!()
+                        ))
+                    })?
+                    .into_iter()
+                    .map(|(team, tags)| TeamExtension::new(team, tags))
+                    .collect_vec();
+
+                teams.push(TeamCollection::new(target.groups.clone(), teams_for_target));
+            }
+
+            result.push(ScheduledInput::new(i.try_into().unwrap(), teams, fields))
+        }
+
+        Ok(result)
+    }
+
+    pub fn generate_schedule_name() -> String {
+        const ADJECTIVES: [&str; 12] = [
+            "Funky",
+            "Rambunctious",
+            "Awesome",
+            "Splendid",
+            "Tubular",
+            "Wonderful",
+            "Radical",
+            "Great",
+            "Stupendous",
+            "Remarkable",
+            "Fashionable",
+            "Elegant",
+        ];
+
+        use rand::seq::SliceRandom;
+        let random_adjective = ADJECTIVES.choose(&mut rand::thread_rng()).unwrap();
+        format!("New {random_adjective} Schedule")
+    }
+
+    pub async fn save_schedule(
+        &self,
+        schedule: CompiledSchedule,
+    ) -> Result<Schedule, SaveScheduleError> {
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    let now = Local::now().to_rfc3339();
+
+                    let new_schedule = ActiveSchedule {
+                        name: Set(Self::generate_schedule_name()),
+                        created: Set(now.clone()),
+                        last_edit: Set(now),
+                        ..Default::default()
+                    }
+                    .insert(connection)
+                    .await?;
+
+                    for output in schedule.outputs {
+                        for reservation in output.time_slots {
+                            ActiveScheduleGame {
+                                schedule_id: Set(new_schedule.id),
+                                start: Set(DateTime::from_timestamp(reservation.start, 0)
+                                    .expect("invalid start time")
+                                    .to_rfc3339()),
+                                end: Set(DateTime::from_timestamp(reservation.end, 0)
+                                    .expect("invalid end time")
+                                    .to_rfc3339()),
+                                team_one: Set(reservation
+                                    .booking
+                                    .as_ref()
+                                    .and_then(|b| b.home_team.as_ref().map(TeamLike::unique_id))),
+                                team_two: Set(reservation
+                                    .booking
+                                    .as_ref()
+                                    .and_then(|b| b.away_team.as_ref().map(TeamLike::unique_id))),
+                                ..Default::default()
+                            }
+                            .insert(connection)
+                            .await?;
+                        }
+                    }
+
+                    Ok(new_schedule)
+                })
+            })
+            .await
+            .map_err(|e: TransactionError<DbErr>| match e {
+                TransactionError::Connection(e) => {
+                    SaveScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                }
+                TransactionError::Transaction(e) => SaveScheduleError::DatabaseError(format!(
+                    "transaction failed: {e} {}:{}",
+                    line!(),
+                    column!()
+                )),
+            })
+    }
+
+    pub async fn get_schedules(&self) -> DBResult<Vec<Schedule>> {
+        ScheduleEntity::find()
+            .order_by(schedule::Column::LastEdit, sea_orm::Order::Desc)
+            .all(&self.connection)
+            .await
+    }
+
+    pub async fn delete_schedule(&self, id: i32) -> DBResult<()> {
+        ScheduleEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn edit_schedule(
+        &self,
+        input: EditScheduleInput,
+    ) -> Result<Schedule, EditScheduleError> {
+        input.validate()?;
+
+        if let Some(name) = input.name {
+            ActiveSchedule {
+                id: Set(input.id),
+                name: Set(name.0),
+                last_edit: Set(Utc::now().to_rfc3339()),
+                ..Default::default()
+            }
+            .update(&self.connection)
+            .await
+            .map_err(|e| {
+                EditScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+        }
+
+        ScheduleEntity::find_by_id(input.id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                EditScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(EditScheduleError::NotFound(input.id))
+    }
+
+    pub async fn get_schedule(&self, id: i32) -> Result<Schedule, LoadScheduleError> {
+        ScheduleEntity::find_by_id(id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(LoadScheduleError::NotFound(id))
+    }
+
+    pub async fn get_schedule_games(
+        &self,
+        schedule_id: i32,
+    ) -> anyhow::Result<(Schedule, Vec<ScheduleGame>)> {
+        let mut results = ScheduleEntity::find_by_id(schedule_id)
+            .find_with_related(ScheduleGameEntity)
+            .all(&self.connection)
+            .await
+            .context("could execute database query")?;
+
+        if results.len() != 1 {
+            bail!("missing schedule with id {schedule_id}");
+        }
+
+        Ok(results.remove(0))
+    }
+
+    pub async fn get_team(&self, team_id: i32) -> Result<TeamExtension, LoadTeamsError> {
+        let mut teams_with_id = TeamEntity::find_by_id(team_id)
+            .find_with_related(TeamGroupEntity)
+            .all(&self.connection)
+            .await
+            .map_err(|e| LoadTeamsError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
+            .into_iter()
+            .map(|(team, tags)| TeamExtension::new(team, tags))
+            .collect_vec();
+
+        if teams_with_id.len() != 1 {
+            return Err(LoadTeamsError::NotFound(team_id, teams_with_id.len()));
+        }
+
+        Ok(teams_with_id.remove(0))
     }
 }

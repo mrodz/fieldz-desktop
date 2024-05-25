@@ -1,16 +1,34 @@
 pub mod algorithm;
 
-use std::fmt::Display;
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
-use lazy_static::lazy_static;
+use chrono::{serde::ts_seconds, DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AvailabilityWindow {
+    #[serde(with = "ts_seconds")]
     start: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
     end: DateTime<Utc>,
+}
+
+pub trait TeamLike {
+    fn unique_id(&self) -> i32;
+}
+
+pub type ProtobufAvailabilityWindow = (i64, i64);
+
+pub trait FieldLike {
+    fn unique_id(&self) -> i32;
+    fn time_slots(&self) -> impl AsRef<[(ProtobufAvailabilityWindow, u8)]>;
 }
 
 impl Display for AvailabilityWindow {
@@ -65,6 +83,13 @@ impl AvailabilityWindow {
         Ok(Self { start, end })
     }
 
+    pub fn new_unix(start: i64, end: i64) -> Result<Self> {
+        Self::new(
+            DateTime::from_timestamp(start, 0).context("start")?,
+            DateTime::from_timestamp(end, 0).context("end")?,
+        )
+    }
+
     pub fn contains(&self, time: DateTime<Utc>) -> bool {
         self.start < time && time < self.end
     }
@@ -93,22 +118,37 @@ impl AvailabilityWindow {
         Ok(Self::overlap_fast(&lhs, &rhs))
     }
 
-    pub(crate) fn as_lossy_window(&self) -> Result<LossyAvailability, LossyAvailabilityError> {
-        LossyAvailability::new(&self.start, &self.end)
+    pub(crate) fn as_lossy_window(
+        &self,
+        compression_profile: &CompressionProfile,
+    ) -> Result<LossyAvailability, LossyAvailabilityError> {
+        LossyAvailability::new(&self.start, &self.end, compression_profile)
+    }
+
+    pub const fn to_protobuf_window(&self) -> ProtobufAvailabilityWindow {
+        (self.start.timestamp(), self.end.timestamp())
     }
 }
 
 #[cfg(test)]
 mod compressed_availability_window {
-    use crate::window;
+    use chrono::{TimeZone, Utc};
+
+    use crate::{window, CompressionProfile};
 
     #[test]
     fn normal_normal() {
         let time = window!(10/2/2023 from 8:00 to 9:00).unwrap();
 
-        let compressed = time.as_lossy_window().unwrap();
+        let profile = CompressionProfile::assume_date(
+            &Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0)
+                .earliest()
+                .unwrap(),
+        );
 
-        let reverted = compressed.as_availability_window_lossy();
+        let compressed = time.as_lossy_window(&profile).unwrap();
+
+        let reverted = compressed.as_availability_window_lossy(&profile);
 
         assert_eq!(time, reverted);
     }
@@ -117,9 +157,15 @@ mod compressed_availability_window {
     fn normal_half() {
         let time = window!(10/2/2023 from 8:00 to 9:30).unwrap();
 
-        let compressed = time.as_lossy_window().unwrap();
+        let profile = CompressionProfile::assume_date(
+            &Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0)
+                .earliest()
+                .unwrap(),
+        );
 
-        let reverted = compressed.as_availability_window_lossy();
+        let compressed = time.as_lossy_window(&profile).unwrap();
+
+        let reverted = compressed.as_availability_window_lossy(&profile);
 
         assert_eq!(time, reverted);
     }
@@ -128,9 +174,15 @@ mod compressed_availability_window {
     fn half_normal() {
         let time = window!(10/2/2023 from 8:30 to 9:00).unwrap();
 
-        let compressed = time.as_lossy_window().unwrap();
+        let profile = CompressionProfile::assume_date(
+            &Utc.with_ymd_and_hms(2021, 1, 1, 0, 0, 0)
+                .earliest()
+                .unwrap(),
+        );
 
-        let reverted = compressed.as_availability_window_lossy();
+        let compressed = time.as_lossy_window(&profile).unwrap();
+
+        let reverted = compressed.as_availability_window_lossy(&profile);
 
         assert_eq!(time, reverted);
     }
@@ -139,9 +191,15 @@ mod compressed_availability_window {
     fn half_half() {
         let time = window!(10/2/2023 from 8:30 to 9:30).unwrap();
 
-        let compressed = time.as_lossy_window().unwrap();
+        let profile = CompressionProfile::assume_date(
+            &Utc.with_ymd_and_hms(2021, 1, 1, 0, 0, 0)
+                .earliest()
+                .unwrap(),
+        );
 
-        let reverted = compressed.as_availability_window_lossy();
+        let compressed = time.as_lossy_window(&profile).unwrap();
+
+        let reverted = compressed.as_availability_window_lossy(&profile);
 
         assert_eq!(time, reverted);
     }
@@ -151,9 +209,15 @@ mod compressed_availability_window {
         // 8:15 will round up to 8:30
         let time = window!(10/2/2023 from 8:15 to 9:30).unwrap();
 
-        let compressed = time.as_lossy_window().unwrap();
+        let profile = CompressionProfile::assume_date(
+            &Utc.with_ymd_and_hms(2021, 1, 1, 0, 0, 0)
+                .earliest()
+                .unwrap(),
+        );
 
-        let reverted = compressed.as_availability_window_lossy();
+        let compressed = time.as_lossy_window(&profile).unwrap();
+
+        let reverted = compressed.as_availability_window_lossy(&profile);
 
         assert_eq!(window!(10/2/2023 from 8:30 to 9:30).unwrap(), reverted);
     }
@@ -183,6 +247,20 @@ mod compressed_availability_window {
 /// size = 24 (0x18), align = 0x4
 /// To:
 /// size = 4, align = 0x4
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct CompressionProfile {
+    /// UNIX timestamp
+    earliest_date: i64,
+}
+
+impl CompressionProfile {
+    pub fn assume_date(time_slot: &DateTime<Utc>) -> Self {
+        Self {
+            earliest_date: time_slot.timestamp(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct LossyAvailability(u32);
@@ -233,8 +311,12 @@ impl LossyAvailability {
     }
 
     /// Create a new compressed date range given a start and end date.
-    pub fn new(start: &DateTime<Utc>, end: &DateTime<Utc>) -> Result<Self, LossyAvailabilityError> {
-        let start_milliseconds: i64 = start.timestamp() - *Y_2023;
+    pub fn new(
+        start: &DateTime<Utc>,
+        end: &DateTime<Utc>,
+        compression_profile: &CompressionProfile,
+    ) -> Result<Self, LossyAvailabilityError> {
+        let start_milliseconds: i64 = start.timestamp() - compression_profile.earliest_date;
 
         // the compiler will optimize this away
         let start_hours = start_milliseconds / SECONDS_TO_HOURS;
@@ -254,7 +336,7 @@ impl LossyAvailability {
             start_hours |= 1;
         }
 
-        let end_milliseconds: i64 = end.timestamp() - *Y_2023;
+        let end_milliseconds: i64 = end.timestamp() - compression_profile.earliest_date;
 
         // the compiler will also optimize this away
         let end_hours = end_milliseconds / SECONDS_TO_HOURS;
@@ -277,7 +359,10 @@ impl LossyAvailability {
         Ok(Self(start_hours | end_hours))
     }
 
-    fn as_datetime_lossy(&self) -> (DateTime<Utc>, DateTime<Utc>) {
+    fn as_datetime_lossy(
+        &self,
+        compression_profile: &CompressionProfile,
+    ) -> (DateTime<Utc>, DateTime<Utc>) {
         const SECONDS_IN_HALF_AN_HOUR: i64 = 1800;
 
         let mut start = self.start_data();
@@ -299,15 +384,20 @@ impl LossyAvailability {
             end_seconds += SECONDS_IN_HALF_AN_HOUR;
         }
 
-        let start_hours = DateTime::from_timestamp(start_seconds + *Y_2023, 0).unwrap();
-        let end_hours = DateTime::from_timestamp(end_seconds + *Y_2023, 0).unwrap();
+        let start_hours =
+            DateTime::from_timestamp(start_seconds + compression_profile.earliest_date, 0).unwrap();
+        let end_hours =
+            DateTime::from_timestamp(end_seconds + compression_profile.earliest_date, 0).unwrap();
 
         (start_hours, end_hours)
     }
 
     /// This function will decompress the time window.
-    pub fn as_availability_window_lossy(&self) -> AvailabilityWindow {
-        let (start, end) = self.as_datetime_lossy();
+    pub fn as_availability_window_lossy(
+        &self,
+        compression_profile: &CompressionProfile,
+    ) -> AvailabilityWindow {
+        let (start, end) = self.as_datetime_lossy(compression_profile);
         AvailabilityWindow::new(start, end).unwrap()
     }
 
@@ -327,43 +417,357 @@ impl LossyAvailability {
 
 const SECONDS_TO_HOURS: i64 = 3_600;
 
-lazy_static! {
-    static ref Y_2023: i64 = Utc
-        .with_ymd_and_hms(2006, 1, 1, 0, 0, 0)
-        .unwrap()
-        .timestamp();
-}
-
-trait TeamLike {
-    fn id(&self) -> u8;
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Team {
-    name: Option<String>,
+    name: String,
+    id: u8,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Field {
-    name: Option<String>,
-    time_slots: Vec<AvailabilityWindow>,
+    id: u8,
+    name: Option<Box<str>>,
+    time_slots: Vec<(AvailabilityWindow, ReservationType)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct ScheduledInput {
-    teams: Vec<Team>,
-    fields: Vec<Field>,
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ReservationType(u8);
+
+pub trait PlayableTeamCollection
+where
+    Self: Clone + Debug + PartialEq,
+{
+    type Team: TeamLike;
+
+    fn teams(&self) -> impl AsRef<[Self::Team]>;
 }
 
-impl ScheduledInput {
-    pub fn new(teams: impl AsRef<[Team]>, fields: impl AsRef<[Field]>) -> Self {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScheduledInput<T, P, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
+{
+    team_groups: Vec<P>,
+    fields: Vec<F>,
+    unique_id: i32,
+}
+
+impl<T, P, F> ScheduledInput<T, P, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
+{
+    pub fn new(unique_id: i32, teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
         Self {
-            teams: teams.as_ref().to_vec(),
+            unique_id,
+            team_groups: teams.as_ref().to_vec(),
             fields: fields.as_ref().to_vec(),
+        }
+    }
+
+    pub fn get_compression_profile(&self) -> Result<Option<CompressionProfile>> {
+        let earliest_date = self
+            .fields
+            .iter()
+            .flat_map(|field| {
+                field
+                    .time_slots()
+                    .as_ref()
+                    .iter()
+                    .map(|(time_slot, _)| time_slot.0)
+                    .collect_vec()
+            })
+            .minmax();
+
+        match earliest_date {
+            itertools::MinMaxResult::NoElements => Ok(None),
+            itertools::MinMaxResult::OneElement(element) => Ok(Some(CompressionProfile {
+                earliest_date: element,
+            })),
+            itertools::MinMaxResult::MinMax(min, max) => {
+                const SECONDS_IN_15_BIT_HOUR_MAX: i64 = ((1 << 15) - 1) * SECONDS_TO_HOURS;
+
+                if let 2..=SECONDS_IN_15_BIT_HOUR_MAX = max - min {
+                    Ok(Some(CompressionProfile { earliest_date: min }))
+                } else {
+                    bail!("Cannot use date compression, as the breadth of input time slots exceeds {SECONDS_IN_15_BIT_HOUR_MAX} seconds (~3.7 years): {min} & {max}");
+                }
+            }
+        }
+    }
+
+    fn into_transformer(
+        self,
+        compression_profile: &CompressionProfile,
+    ) -> Result<StateTransformer<T, P, F>> {
+        let mut result = algorithm::v2::MCTSState::new();
+
+        // We need to use a hashmap because team with a high id would overflow.
+        let mut scheduler_field_id_to_field_id = HashMap::new();
+
+        for (this_field_id, field) in self.fields.iter().enumerate() {
+            let time_slots = field.time_slots();
+            let time_slots = time_slots.as_ref();
+            let mut availability = Vec::with_capacity(time_slots.len());
+
+            for (time_slot, supported_concurrency) in time_slots {
+                for _ in 0..*supported_concurrency {
+                    availability.push(*time_slot);
+                }
+            }
+
+            let byte = this_field_id.try_into().expect("too many fields (>= 256)");
+
+            let mut as_windows = Vec::with_capacity(availability.len());
+
+            for (start, end) in availability {
+                as_windows.push(AvailabilityWindow::new_unix(start, end)?);
+            }
+
+            result.add_time_slots(byte, as_windows, compression_profile);
+            scheduler_field_id_to_field_id.insert(byte, field.unique_id());
+        }
+
+        // We need to use a hashmap because the lineality of a team's ID is not guaranteed,
+        // but depended on by the algorithm.
+        let mut playable_group_index_to_team_index = HashMap::new();
+
+        let mut this_team_index = 0;
+
+        for team_group in &self.team_groups {
+            let mut playable_group = algorithm::v2::PlayableGroup::new(this_team_index);
+
+            for team in team_group.teams().as_ref() {
+                let g_id = this_team_index.try_into()?;
+                playable_group_index_to_team_index.insert(g_id, team.unique_id());
+                playable_group.add_team(g_id);
+                this_team_index += 1;
+            }
+
+            result.add_group(playable_group);
+        }
+
+        Ok(StateTransformer {
+            inner: result,
+            playable_group_index_to_team_index,
+            team_groups: self.team_groups,
+            scheduler_field_id_to_field_id,
+            fields: self.fields,
+            unique_id: self.unique_id,
+        })
+    }
+
+    pub fn fields(&self) -> &[F] {
+        &self.fields
+    }
+
+    pub fn team_groups(&self) -> &[P] {
+        &self.team_groups
+    }
+
+    pub fn teams_len(&self) -> usize {
+        let mut result = 0;
+        for team_group in &self.team_groups {
+            result += team_group.teams().as_ref().len();
+        }
+        result
+    }
+}
+
+#[derive(Debug)]
+struct StateTransformer<T, P, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    unique_id: i32,
+    inner: algorithm::v2::MCTSState,
+    playable_group_index_to_team_index: HashMap<u8, i32>,
+    team_groups: Vec<P>,
+    scheduler_field_id_to_field_id: HashMap<u8, i32>,
+    fields: Vec<F>,
+}
+
+impl<T, P, F> StateTransformer<T, P, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    P: PlayableTeamCollection<Team = T>,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    fn scheduler_state(&self) -> &algorithm::v2::MCTSState {
+        &self.inner
+    }
+
+    fn team_from_schedule_id(&self, schedule_id: u8) -> Option<T> {
+        let searching_for = *self.playable_group_index_to_team_index.get(&schedule_id)?;
+
+        for team_group in &self.team_groups {
+            if let Some(result) = team_group
+                .teams()
+                .as_ref()
+                .iter()
+                .find(|team| team.unique_id() == searching_for)
+            {
+                return Some(result.clone());
+            }
+        }
+
+        None
+    }
+
+    fn field_from_schedule_id(&self, schedule_id: u8) -> Option<&F> {
+        let searching_for = *self.scheduler_field_id_to_field_id.get(&schedule_id)?;
+
+        self.fields
+            .iter()
+            .find(|field| field.unique_id() == searching_for)
+    }
+
+    fn transform_v2_reservation(
+        &self,
+        reservation: &algorithm::v2::Reservation,
+        compression_profile: &CompressionProfile,
+    ) -> Reservation<T, F> {
+        Reservation {
+            field: self
+                .field_from_schedule_id(reservation.slot().field_id())
+                .expect("field was not mapped properly")
+                .clone(),
+            availability: reservation
+                .slot()
+                .availability()
+                .as_availability_window_lossy(compression_profile),
+            booking: match reservation.game() {
+                Some(game) => Booking::Booked {
+                    home_team: self
+                        .team_from_schedule_id(game.team_one().id())
+                        .expect("team was not mapped properly"),
+                    away_team: self
+                        .team_from_schedule_id(game.team_two().id())
+                        .expect("team was not mapped properly"),
+                },
+                None => Booking::Empty,
+            },
+        }
+    }
+
+    fn transform_v2(
+        self,
+        input: algorithm::v2::Output,
+        compression_profile: &CompressionProfile,
+    ) -> Output<T, F> {
+        let mut time_slots = vec![];
+
+        for reservation in input.reservations() {
+            time_slots.push(self.transform_v2_reservation(reservation, compression_profile));
+        }
+
+        Output {
+            time_slots,
+            unique_id: self.unique_id,
         }
     }
 }
 
-pub fn schedule<K>(_input: ScheduledInput) -> Result<()> {
-    algorithm::v2::test()
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Booking<T>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+{
+    Booked { home_team: T, away_team: T },
+    Empty,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Reservation<T, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    field: F,
+    availability: AvailabilityWindow,
+    booking: Booking<T>,
+}
+
+impl<T, F> Reservation<T, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    pub const fn field(&self) -> &F {
+        &self.field
+    }
+
+    pub const fn start(&self) -> i64 {
+        self.availability.start.timestamp()
+    }
+
+    pub const fn end(&self) -> i64 {
+        self.availability.end.timestamp()
+    }
+
+    pub const fn booking(&self) -> &Booking<T> {
+        &self.booking
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Output<T, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    time_slots: Vec<Reservation<T, F>>,
+    unique_id: i32,
+}
+
+impl<T, F> Output<T, F>
+where
+    T: TeamLike + Clone + Debug + PartialEq,
+    F: FieldLike + Clone + Debug + PartialEq,
+{
+    pub fn time_slots(&self) -> &[Reservation<T, F>] {
+        &self.time_slots
+    }
+
+    pub const fn unique_id(&self) -> i32 {
+        self.unique_id
+    }
+}
+
+pub fn schedule<T, P, F>(input: ScheduledInput<T, P, F>) -> Result<Output<T, F>>
+where
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
+{
+    let Some(compression_profile) = input.get_compression_profile()? else {
+        return Ok(Output {
+            time_slots: input
+                .fields()
+                .iter()
+                .flat_map(|field| {
+                    field
+                        .time_slots()
+                        .as_ref()
+                        .iter()
+                        .map(|(time_slot, _)| Reservation {
+                            field: field.clone(),
+                            availability: AvailabilityWindow::new_unix(time_slot.0, time_slot.1)
+                                .expect("field availability"),
+                            booking: Booking::Empty,
+                        })
+                        .collect_vec()
+                })
+                .collect_vec(),
+            unique_id: input.unique_id,
+        });
+    };
+    let transformer = input.into_transformer(&compression_profile)?;
+    let output = algorithm::v2::schedule(transformer.scheduler_state())?;
+    Ok(transformer.transform_v2(output, &compression_profile))
 }

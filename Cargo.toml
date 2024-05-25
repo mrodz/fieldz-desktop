@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["cli", "backend", "desktop", "db", "db/migration", "db/entity"]
+members = ["cli", "backend", "desktop", "db", "db/migration", "db/entity", "gcloud/grpc_server"]
 resolver = "2"
 
 [profile.dev.package.backend]
