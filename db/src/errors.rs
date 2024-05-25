@@ -199,6 +199,8 @@ pub enum LoadTeamsError {
     NoDatabase,
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
+    #[error("expected one entry for id {0}, found {1}")]
+    NotFound(i32, usize),
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -233,4 +235,26 @@ pub enum GetScheduledInputsError {
 pub enum SaveScheduleError {
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum EditScheduleError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error(transparent)]
+    ValidationError(#[from] NameMax64ValidationError),
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("region with id {0} not found")]
+    NotFound(i32),
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum LoadScheduleError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("region with id {0} not found")]
+    NotFound(i32),
 }

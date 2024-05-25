@@ -2,20 +2,22 @@ use backend::ScheduledInput;
 use db::errors::{
     CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
     CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError,
-    EditRegionError, EditTeamError, GetScheduledInputsError, LoadFieldsError, LoadRegionError,
-    LoadTeamsError, PreScheduleReportError, TimeSlotError,
+    EditRegionError, EditScheduleError, EditTeamError, GetScheduledInputsError, LoadFieldsError,
+    LoadRegionError, LoadScheduleError, LoadTeamsError, PreScheduleReportError, TimeSlotError,
 };
 use db::{
     CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput,
-    CreateTimeSlotInput, EditRegionInput, EditTeamInput, FieldConcurrency, FieldExtension,
-    FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput,
-    PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection, TeamExtension,
-    TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
+    CreateTimeSlotInput, EditRegionInput, EditScheduleInput, EditTeamInput, FieldConcurrency,
+    FieldExtension, FieldSupportedConcurrencyInput, ListReservationsBetweenInput,
+    MoveTimeSlotInput, PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection,
+    TeamExtension, TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
     UpdateTargetReservationTypeInput, Validator,
 };
 use tauri::{AppHandle, Manager};
 
-use crate::net::{send_grpc_schedule_request, ScheduleRequestError};
+use crate::net::{
+    self, send_grpc_schedule_request, HealthProbeError, ScheduleRequestError, ServerHealth,
+};
 use crate::SafeAppState;
 
 #[tauri::command]
@@ -670,4 +672,96 @@ pub(crate) async fn schedule(
     // force error conversion with `?`
     let model = client.save_schedule(scheduled_output).await?;
     Ok(model)
+}
+
+#[tauri::command]
+pub(crate) async fn get_schedules(app: AppHandle) -> Result<Vec<db::schedule::Model>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_schedules()
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn delete_schedule(app: AppHandle, id: i32) -> Result<(), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .delete_schedule(id)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn update_schedule(
+    app: AppHandle,
+    input: EditScheduleInput,
+) -> Result<db::schedule::Model, EditScheduleError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(EditScheduleError::NoDatabase)?;
+
+    client.edit_schedule(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_schedule(
+    app: AppHandle,
+    id: i32,
+) -> Result<db::schedule::Model, LoadScheduleError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(LoadScheduleError::NoDatabase)?;
+
+    client.get_schedule(id).await
+}
+
+#[tauri::command]
+pub(crate) async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
+    net::health_probe().await
+}
+
+#[tauri::command]
+pub(crate) async fn get_schedule_games(
+    app: AppHandle,
+    schedule_id: i32,
+) -> Result<(db::schedule::Model, Vec<db::schedule_game::Model>), String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .get_schedule_games(schedule_id)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
+
+#[tauri::command]
+pub(crate) async fn get_team(app: AppHandle, id: i32) -> Result<TeamExtension, LoadTeamsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadTeamsError::NoDatabase)?;
+
+    client.get_team(id).await
 }

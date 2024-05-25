@@ -59,6 +59,7 @@
 
 			close();
 		} catch (e: any) {
+			console.error(e);
 			/*
 			 * db\entity\src\lib.rs
 			 */

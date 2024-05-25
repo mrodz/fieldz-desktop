@@ -82,7 +82,7 @@
 	<div class="flex flex-wrap justify-center">
 		{#each regions as region, i}
 			<button
-				class="card btn m-5 block w-96 p-5"
+				class="card btn card-hover m-5 block w-96 p-5"
 				tabindex="0"
 				on:click|preventDefault={() => goto(`/region?id=${region.id}`)}
 			>

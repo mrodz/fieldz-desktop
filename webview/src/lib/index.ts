@@ -132,6 +132,31 @@ export function eventFromTimeSlot(input: TimeSlotExtension, title?: string): Cal
 	};
 }
 
+export async function eventFromGame(
+	input: ScheduleGame,
+	teamGetter: (id: number) => Promise<TeamExtension>
+): Promise<CalendarEvent> {
+	let title = 'Empty';
+
+	if (Number.isInteger(input?.team_one) && Number.isInteger(input?.team_two)) {
+		const teamOne = await teamGetter(input.team_one!);
+		const teamTwo = await teamGetter(input.team_two!);
+
+		title = `${teamOne.team.name} vs ${teamTwo.team.name}`;
+	}
+
+	return {
+		allDay: false,
+		display: 'auto',
+		id: `schedule-${input.schedule_id}-game-${input.id}`,
+		resources: [],
+		start: new Date(input.start),
+		end: new Date(input.end),
+		backgroundColor: title === 'Empty' ? '#808080' : 'hsl(102,21%,49%)',
+		title
+	};
+}
+
 export interface EditRegionInput {
 	id: number;
 	name?: string;
@@ -155,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-		Interregional: number;
-	}
+			Interregional: number;
+	  }
 	| {
-		Regional: [number, number][];
-	};
+			Regional: [number, number][];
+	  };
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -301,7 +326,7 @@ export interface UpdateTargetReservationTypeInput {
 
 export const HAS_DB_RESET_BUTTON: boolean = false;
 export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
-export const SCHEDULE_CREATION_DELAY: number = 30_000;
+export const SCHEDULE_CREATION_DELAY: number = 1_000;
 export const SHOW_SCHEDULER_JSON_PAYLOADS: boolean = false;
 
 export interface FieldExtension {
@@ -324,4 +349,33 @@ export interface Schedule {
 	name: string;
 	created: string;
 	last_edit: string;
+}
+
+export interface EditScheduleInput {
+	id: number;
+	name: string;
+}
+
+export type HealthCheck = 'Serving' | 'NotServing' | 'Unknown';
+
+export interface DateRange {
+	start: Date;
+	end: Date;
+}
+
+export interface Delta {
+	years: number;
+	months: number;
+	days: number;
+	seconds: number;
+	inWeeks: boolean;
+}
+
+export interface ScheduleGame {
+	id: number;
+	schedule_id: number;
+	start: string;
+	end: string;
+	team_one?: number;
+	team_two?: number;
 }

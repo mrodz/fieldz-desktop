@@ -114,9 +114,52 @@ where
 
     while let Some(schedule) = inbound.next().await {
         let schedule = schedule.map_err(|e| ScheduleRequestError::RPCError(format!("{e}")))?;
-        println!("{schedule:?}");
         reservations.push(schedule);
     }
 
     Ok(CompiledSchedule::new(reservations))
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ServerHealth {
+    Unknown,
+    Serving,
+    NotServing,
+}
+
+#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+pub enum HealthProbeError {
+    #[error("could not establish a channel with the backend: transport error: {0}")]
+    BadChannel(String),
+    #[error("could not probe: service not found or unavailable: {0}")]
+    ProbeFail(String),
+}
+
+pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
+    let scheduler_endpoint = std::env::var("SCHEDULER_SERVER_URL")
+        .expect("this app was not built with the correct setup to talk to the scheduler server");
+
+    let channel = grpc_server::Channel::from_shared(scheduler_endpoint)
+        .expect("invalid URI")
+        .connect()
+        .await
+        .map_err(|err| HealthProbeError::BadChannel(err.to_string()))?;
+
+    let mut health_client = grpc_server::client::HealthClient::new(channel);
+
+    let response = health_client
+        .check(grpc_server::HealthCheckRequest {
+            service: "algo_input.Scheduler".into(),
+        })
+        .await
+        .map_err(|e| HealthProbeError::ProbeFail(e.to_string()))?;
+
+    let health_check_response = response.into_inner();
+
+    Ok(match health_check_response.status {
+        0 => ServerHealth::Unknown,
+        1 => ServerHealth::Serving,
+        2 => ServerHealth::NotServing,
+        x => unreachable!("should not have recieved protobuf enum ident of {x} for non-watch"),
+    })
 }

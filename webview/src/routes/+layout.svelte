@@ -26,6 +26,8 @@
 	import TeamCreate from './fields/TeamCreate.svelte';
 	import RegionEdit from './region/RegionEdit.svelte';
 	import TeamEdit from './fields/TeamEdit.svelte';
+	import ScheduleEdit from './schedules/ScheduleEdit.svelte';
+	import Processing from './scheduler/Processing.svelte';
 	import { HAS_DB_RESET_BUTTON } from '$lib';
 	import authStore from '$lib/authStore';
 	import { initializeApp } from 'firebase/app';
@@ -34,8 +36,6 @@
 		onAuthStateChanged,
 		browserPopupRedirectResolver,
 		browserLocalPersistence,
-		GoogleAuthProvider,
-		signInWithPopup,
 		getAuth
 	} from 'firebase/auth';
 	import { onMount } from 'svelte';
@@ -104,6 +104,12 @@
 		},
 		teamEdit: {
 			ref: TeamEdit
+		},
+		scheduleEdit: {
+			ref: ScheduleEdit
+		},
+		processingSchedule: {
+			ref: Processing
 		}
 	};
 
@@ -150,6 +156,7 @@
 				<li><a href="/groups">Groups</a></li>
 				<li><a href="/field-types">Field Types</a></li>
 				<li><a href="/scheduler">Scheduler</a></li>
+				<li><a href="/schedules">Schedules</a></li>
 			</ul>
 		</nav>
 		{#await getVersion() then version}

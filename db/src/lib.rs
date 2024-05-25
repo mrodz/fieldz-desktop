@@ -14,8 +14,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::Utc;
 use chrono::{serde::ts_milliseconds, DateTime};
+use chrono::{Local, Utc};
 
 #[allow(unused_imports)]
 pub(crate) mod entity_local_exports {
@@ -452,6 +452,24 @@ impl Validator for EditTeamInput {
     fn validate(&self) -> Result<(), Self::Error> {
         if let Some(ref name) = self.name {
             name.validate().map_err(EditTeamError::ValidationError)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditScheduleInput {
+    id: i32,
+    name: Option<NameMax64>,
+}
+
+impl Validator for EditScheduleInput {
+    type Error = EditScheduleError;
+
+    fn validate(&self) -> Result<(), Self::Error> {
+        if let Some(ref name) = self.name {
+            name.validate()?;
         }
 
         Ok(())
@@ -1845,8 +1863,12 @@ impl Client {
         self.connection
             .transaction(|connection| {
                 Box::pin(async move {
+                    let now = Local::now().to_rfc3339();
+
                     let new_schedule = ActiveSchedule {
                         name: Set(Self::generate_schedule_name()),
+                        created: Set(now.clone()),
+                        last_edit: Set(now),
                         ..Default::default()
                     }
                     .insert(connection)
@@ -1893,119 +1915,90 @@ impl Client {
             })
     }
 
-    #[cfg(not)]
-    pub async fn save_schedule(&self, schedule: CompiledSchedule) -> Result<(), SaveScheduleError> {
-        let dependents = schedule.dependents();
-
-        let fields = FieldEntity::find()
-            .filter(field::Column::Id.is_in(dependents.field_ids.iter().cloned()))
+    pub async fn get_schedules(&self) -> DBResult<Vec<Schedule>> {
+        ScheduleEntity::find()
+            .order_by(schedule::Column::LastEdit, sea_orm::Order::Desc)
             .all(&self.connection)
             .await
-            .map_err(|e| {
-                SaveScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
-            })?;
+    }
 
-        let teams = TeamEntity::find()
-            .filter(team::Column::Id.is_in(dependents.team_ids.iter().cloned()))
+    pub async fn delete_schedule(&self, id: i32) -> DBResult<()> {
+        ScheduleEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn edit_schedule(
+        &self,
+        input: EditScheduleInput,
+    ) -> Result<Schedule, EditScheduleError> {
+        input.validate()?;
+
+        if let Some(name) = input.name {
+            ActiveSchedule {
+                id: Set(input.id),
+                name: Set(name.0),
+                last_edit: Set(Utc::now().to_rfc3339()),
+                ..Default::default()
+            }
+            .update(&self.connection)
+            .await
+            .map_err(|e| {
+                EditScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+        }
+
+        ScheduleEntity::find_by_id(input.id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                EditScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(EditScheduleError::NotFound(input.id))
+    }
+
+    pub async fn get_schedule(&self, id: i32) -> Result<Schedule, LoadScheduleError> {
+        ScheduleEntity::find_by_id(id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(LoadScheduleError::NotFound(id))
+    }
+
+    pub async fn get_schedule_games(
+        &self,
+        schedule_id: i32,
+    ) -> anyhow::Result<(Schedule, Vec<ScheduleGame>)> {
+        let mut results = ScheduleEntity::find_by_id(schedule_id)
+            .find_with_related(ScheduleGameEntity)
+            .all(&self.connection)
+            .await
+            .context("could execute database query")?;
+
+        if results.len() != 1 {
+            bail!("missing schedule with id {schedule_id}");
+        }
+
+        Ok(results.remove(0))
+    }
+
+    pub async fn get_team(&self, team_id: i32) -> Result<TeamExtension, LoadTeamsError> {
+        let mut teams_with_id = TeamEntity::find_by_id(team_id)
             .find_with_related(TeamGroupEntity)
             .all(&self.connection)
             .await
-            .map_err(|e| {
-                SaveScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
-            })?
+            .map_err(|e| LoadTeamsError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
             .into_iter()
             .map(|(team, tags)| TeamExtension::new(team, tags))
             .collect_vec();
 
-        let now = Utc::now();
+        if teams_with_id.len() != 1 {
+            return Err(LoadTeamsError::NotFound(team_id, teams_with_id.len()));
+        }
 
-        self.connection
-            .transaction(|connection| {
-                Box::pin(async move {
-                    let new_schedule = ActiveSchedule {
-                        created: Set(now.to_rfc3339()),
-                        name: Set("New Schedule".to_owned()),
-                        ..Default::default()
-                    };
-
-                    let new_schedule = new_schedule.insert(connection).await?;
-
-                    let mut unique_permutations: BTreeMap<
-                        BTreeSet<&TeamGroup>,
-                        (Vec<&Team>, Option<i32>),
-                    > = BTreeMap::new();
-
-                    for team_ext in &teams {
-                        let (entry, _) = unique_permutations
-                            .entry(BTreeSet::from_iter(team_ext.tags.iter()))
-                            .or_default();
-                        entry.push(&team_ext.team);
-                    }
-
-                    fn tags_to_str<'a>(
-                        mut tags: impl Iterator<Item = &'a &'a TeamGroup>,
-                    ) -> String {
-                        let mut result = String::new();
-                        let Some(first) = tags.next() else {
-                            return result;
-                        };
-                        result.push_str(&first.name);
-
-                        for tag in tags {
-                            result.push_str(", ");
-                            result.push_str(&tag.name);
-                        }
-
-                        result
-                    }
-
-                    for (tags, (_, primary_key)) in unique_permutations.iter_mut() {
-                        /*
-                         * We need to insert in a loop instead of inserting many in one query
-                         * because we need to know the primary key for every new item, and SeaORM
-                         * only returns the primary key of the most recently inserted item.
-                         */
-                        let game_group = schedule_game_group::ActiveModel {
-                            schedule_id: Set(new_schedule.id),
-                            name: Set(tags_to_str(tags.iter())),
-                            ..Default::default()
-                        }
-                        .insert(connection)
-                        .await?;
-
-                        *primary_key = Some(game_group.id);
-                    }
-
-                    let teams_to_insert = teams.iter().map(|team_ext| schedule_team::ActiveModel {
-                        name: Set(team_ext.team.name.clone()),
-                        schedule_id: Set(new_schedule.id),
-                        schedule_game_group: Set(unique_permutations
-                            .get(&BTreeSet::from_iter(&team_ext.tags))
-                            .expect("this unique set of labels was not expected")
-                            .1
-                            .unwrap()),
-                        ..Default::default()
-                    });
-
-                    schedule_team::Entity::insert_many(teams_to_insert)
-                        .exec(connection)
-                        .await?;
-
-                    todo!()
-                })
-            })
-            .await
-            .map_err(|e| match e {
-                TransactionError::Connection(e) => {
-                    SaveScheduleError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
-                }
-                TransactionError::Transaction(e) => SaveScheduleError::DatabaseError(format!(
-                    "transaction error {e} {}:{}",
-                    line!(),
-                    column!()
-                )),
-            })?;
-
-        todo!()
+        Ok(teams_with_id.remove(0))
     }
 }

@@ -451,6 +451,11 @@
 				});
 			}
 
+			modalStore.trigger({
+				type: 'component',
+				component: 'processingSchedule',
+				meta: {}
+			});
 			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
 
 			const jwtToken = await getAuth().currentUser!.getIdToken();
@@ -464,14 +469,17 @@
 				schedulerWait = false;
 			}, SCHEDULE_CREATION_DELAY);
 
-			await scheduled_output;
+			const schedule = await scheduled_output;
 
 			toastStore.trigger({
-				message: 'The server finished its work!',
+				message: `The server finished its work!`,
 				background: 'variant-filled-success'
 			});
 
 			scheduling = false;
+			modalStore.close();
+
+			goto(`/schedules/view?id=${schedule.id}`);
 		} catch (e) {
 			console.error(e);
 
