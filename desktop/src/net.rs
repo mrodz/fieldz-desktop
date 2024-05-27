@@ -166,3 +166,17 @@ pub(crate) fn get_scheduler_url() -> String {
     std::env::var("SCHEDULER_SERVER_URL")
         .expect("this app was not built with the correct setup to talk to the scheduler server")
 }
+
+pub fn get_auth_url() -> String {
+    let audience = urlencoding::encode(
+        &std::env::var("AUTH0_API_IDENTIFIER").expect("Missing `AUTH0_API_IDENTIFIER`"),
+    )
+    .into_owned();
+
+    let scope = urlencoding::encode("openid profile offline_access").into_owned();
+    let redirect_uri_encoded = urlencoding::encode("fieldz:auth").into_owned();
+    let domain = std::env::var("AUTH0_DOMAIN").expect("Missing `AUTH0_DOMAIN`");
+    let client_id = std::env::var("AUTH0_CLIENT_ID").expect("Missing `AUTH0_CLIENT_ID`");
+
+    format!("https://{domain}/authorize?audience={audience}&scope={scope}&response_type=code&client_id={client_id}&redirect_uri={redirect_uri_encoded}")
+}
