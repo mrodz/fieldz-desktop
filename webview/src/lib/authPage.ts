@@ -8,7 +8,7 @@ export default `
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
-  <title>My Notes</title>
+  <title>Fieldz Authentication Platform</title>
   <style>
     body {
       font-family: 'Open Sans', sans-serif;
@@ -19,7 +19,8 @@ export default `
   </style>
 </head>
 <body>
-  <h2>You can now open the app</h2>
+  <h1>You have authenticated with a third party.</h1>
+  <h2>You may close this tab and return to the app.</h2>
 </body>
 </html>
 `;

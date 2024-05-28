@@ -380,3 +380,12 @@ export interface ScheduleGame {
 	team_one?: number;
 	team_two?: number;
 }
+
+export interface GoogleOAuthAccessTokenExchange {
+	access_token: string,
+	expires_in: number,
+	id_token: string | undefined,
+	refresh_token: string,
+	scope: string,
+	token_type: string,
+}

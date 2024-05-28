@@ -4,29 +4,49 @@ import { open } from '@tauri-apps/api/shell';
 import { getAuth, GoogleAuthProvider, signInWithCredential, type UserCredential } from 'firebase/auth';
 import authPage from './authPage';
 import { FIREBASE_CLIENT_ID } from './secrets';
+import type { GoogleOAuthAccessTokenExchange } from '$lib';
 
-function googleSignIn(payload: string): Promise<UserCredential> {
+let codeVerifier: string | undefined;
+
+async function googleSignIn(payload: string): Promise<UserCredential> {
 	const url = new URL(payload);
-	const accessToken = new URLSearchParams(url.hash.substring(1)).get('access_token');
-	if (!accessToken) {
-		return Promise.reject('Missing `access_token`');
+	console.log(url);
+	const code = url.searchParams.get('code');
+	if (!code) {
+		return Promise.reject('Missing `code`');
 	};
 
-	const auth = getAuth();
+	if (!codeVerifier) {
+		return Promise.reject('Missing `codeChallenge`');
+	}
 
-	const credential = GoogleAuthProvider.credential(null, accessToken);
+	try {
+		const accessToken = await invoke<GoogleOAuthAccessTokenExchange>('get_access_token', { code, clientId: FIREBASE_CLIENT_ID, codeChallenge: codeVerifier });
+		console.log(accessToken);
 
-	return signInWithCredential(auth, credential);
+		const auth = getAuth();
+
+		const credential = GoogleAuthProvider.credential(null, accessToken.access_token);
+
+		return signInWithCredential(auth, credential);
+	} catch (e) {
+		console.error(e);
+		return Promise.reject(e);
+	}
 }
 
 async function openGoogleSignIn(port: string): Promise<void> {
-	console.log(port)
+	const [plain, codeChallenge] = await invoke<[string, string]>('generate_code_challenge');
+	console.log(plain, codeChallenge);
+	codeVerifier = codeChallenge;
 	return open('https://accounts.google.com/o/oauth2/auth?' +
-		'response_type=token&' +
+		'response_type=code&' +
 		`client_id=${FIREBASE_CLIENT_ID}&` +
-		`redirect_uri=http%3A//localhost:${port}&` +
+		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
 		'scope=email%20profile%20openid&' +
-		'prompt=consent'
+		'prompt=consent&' +
+		`code_challenge=${codeChallenge}&` +
+		'code_challenge_method=S256'
 	);
 }
 

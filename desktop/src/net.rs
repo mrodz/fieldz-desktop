@@ -254,3 +254,37 @@ pub fn get_auth_url() -> String {
 
     format!("https://{domain}/authorize?audience={audience}&scope={scope}&response_type=code&client_id={client_id}&redirect_uri={redirect_uri_encoded}")
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct GoogleOAuthAccessTokenExchange {
+    access_token: String,
+    expires_in: u32,
+    id_token: Option<String>,
+    refresh_token: String,
+    scope: String,
+    token_type: String,
+}
+
+/// https://developers.google.com/identity/protocols/oauth2/native-app#exchange-authorization-code
+pub async fn get_access_token(mut code: String, mut client_id: String, mut code_challenge: String) -> Result<GoogleOAuthAccessTokenExchange, anyhow::Error> {
+    let client = reqwest::Client::new();
+
+    dbg!(&code_challenge);
+
+    let client_secret = urlencoding::encode(&std::env::var("GCP_CLIENT_SECRET").unwrap()).into_owned();
+    code = urlencoding::encode(&code).into_owned();
+    client_id = urlencoding::encode(&client_id).into_owned();
+    code_challenge = urlencoding::encode(&code_challenge).into_owned();
+
+    let response = client.post("https://oauth2.googleapis.com/token")
+        .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(format!("code={code}&code_verifier={code_challenge}&client_id={client_id}&client_secret={client_secret}&grant_type=authorization_code&redirect_uri=http%3A//127.0.0.1:6969"))
+        .send()
+        .await?;
+
+    let response_text = response.text().await?;
+
+    println!("{response_text}");
+
+    Ok(serde_json::from_str(&response_text)?)
+}
