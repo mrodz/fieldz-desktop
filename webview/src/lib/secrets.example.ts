@@ -1,0 +1,1 @@
+export const FIREBASE_CLIENT_ID = ""

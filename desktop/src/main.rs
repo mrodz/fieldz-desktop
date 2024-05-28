@@ -29,6 +29,7 @@ fn main() -> Result<()> {
     match std::panic::catch_unwind(|| {
         tauri::Builder::default()
             .manage(SafeAppState::default())
+            .plugin(tauri_plugin_oauth::init())
             .setup(|app| {
                 let main_window = app.get_window("main").unwrap();
 

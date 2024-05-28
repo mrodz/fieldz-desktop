@@ -16,6 +16,8 @@
 	import GitHubIcon from './GitHubIcon.svelte';
 	import MicrosoftIcon from './MicrosoftIcon.svelte';
 	import { type } from '@tauri-apps/api/os';
+	import { login } from '$lib/auth';
+	import authStore from '$lib/authStore';
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const next = queryParams.get('next') ?? '/';
@@ -49,18 +51,20 @@
 
 	async function google() {
 		try {
-			const provider = new GoogleAuthProvider();
+			// const provider = new GoogleAuthProvider();
 
-			provider.addScope('https://www.googleapis.com/auth/userinfo.email');
-			provider.setCustomParameters({
-				prompt: 'select_account'
+			// provider.addScope('https://www.googleapis.com/auth/userinfo.email');
+			// provider.setCustomParameters({
+			// 	prompt: 'select_account'
+			// });
+
+			// const userCredential = await (await signInFunction)(getAuth(), provider);
+
+			// console.log(userCredential);
+			await login(async (credential) => {
+				console.log($authStore.user);
+				goto(next);
 			});
-
-			const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			console.log(userCredential);
-
-			goto(next);
 		} catch (e) {
 			console.warn(e);
 			duplicatedMessage(e);
