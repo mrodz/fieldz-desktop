@@ -16,7 +16,7 @@
 	import GitHubIcon from './GitHubIcon.svelte';
 	import MicrosoftIcon from './MicrosoftIcon.svelte';
 	import { type } from '@tauri-apps/api/os';
-	import { githubLogin, googleLogin } from '$lib/auth';
+	import { githubLogin, googleLogin, twitterLogin } from '$lib/auth';
 	import authStore from '$lib/authStore';
 
 	const queryParams = new URLSearchParams(window.location.search);
@@ -39,13 +39,15 @@
 	});
 
 	function duplicatedMessage(error: any) {
-		if ('code' in error && error.code === 'auth/account-exists-with-different-credential') {
+		if (typeof error === 'object' && 'code' in error && error.code === 'auth/account-exists-with-different-credential') {
 			toastStore.trigger({
 				message:
 					'You have used a different method of authentication in the past! Please try a different authentication platform.',
 				background: 'variant-filled-warning',
 				timeout: 10_000
 			});
+		} else {
+			console.error(error);
 		}
 	}
 
@@ -63,16 +65,10 @@
 
 	async function twitter() {
 		try {
-			const provider = new TwitterAuthProvider();
-			provider.setCustomParameters({
-				prompt: 'select_account'
+			await twitterLogin(async (credential) => {
+				console.log($authStore.user, credential);
+				goto(next);
 			});
-
-			const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			console.log(userCredential);
-
-			goto(next);
 		} catch (e) {
 			console.warn(e);
 			duplicatedMessage(e);
@@ -121,7 +117,7 @@
 			<GoogleIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button disabled class="logo-item card-hover" on:click={twitter}>
+		<button class="logo-item card-hover" on:click={twitter}>
 			<TwitterIcon class="mr-4 w-12" />
 			Sign In
 		</button>
