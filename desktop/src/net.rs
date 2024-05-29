@@ -1,13 +1,10 @@
 use std::fmt::Debug;
 
-use anyhow::Context;
 use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
 use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use thiserror::Error;
-use url::Url;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ScheduleRequestError {
@@ -168,91 +165,6 @@ pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
 pub(crate) fn get_scheduler_url() -> String {
     std::env::var("SCHEDULER_SERVER_URL")
         .expect("this app was not built with the correct setup to talk to the scheduler server")
-}
-
-pub const fn keyring_service() -> &'static str {
-    "fieldz-auth0-service"
-}
-
-pub fn keyring_account() -> String {
-    whoami::username()
-}
-
-pub fn auth0_domain() -> String {
-    std::env::var("AUTH0_DOMAIN").expect("Missing `AUTH0_DOMAIN`")
-}
-
-pub fn auth0_client_id() -> String {
-    std::env::var("AUTH0_CLIENT_ID").expect("Missing `AUTH0_CLIENT_ID`")
-}
-
-pub const fn auth0_redirect_uri() -> &'static str {
-    "fieldz:auth"
-}
-
-#[derive(Deserialize)]
-struct TokenExchangeResponse {
-    access_token: String,
-    id_token: String,
-    refresh_token: String,
-}
-
-#[derive(Debug)]
-pub enum AuthError {
-    RefreshTokenMissing,
-    Http,
-    InvalidUrl,
-    InvalidJson,
-}
-
-pub async fn load_tokens(callback_url: &str) -> Result<(), anyhow::Error> {
-    let parsed_url = Url::parse(callback_url)?;
-    let mut hash_query = parsed_url.query_pairs();
-    let code = hash_query
-        .find_map(|(k, v)| if k == "code" { Some(v) } else { None })
-        .context("callback URL did not contain query parameter `code`")?;
-
-    // let refresh_token = refresh_token_entry.get_password()?;
-
-    let token_exchange_body = json!({
-        "grant_type": "authorization_code",
-        "client_id": auth0_client_id(),
-        "code": code,
-        "redirect_uri": auth0_redirect_uri(),
-    })
-    .to_string();
-
-    let client = reqwest::Client::new();
-
-    let response = client
-        .post(format!("https://{}/oauth/token", auth0_domain()))
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(token_exchange_body)
-        .send()
-        .await?;
-
-    let response_text = response.text().await?;
-    let token_exchange: TokenExchangeResponse = serde_json::from_str(&response_text)?;
-
-    let refresh_token_entry = keyring::Entry::new(keyring_service(), &keyring_account())?;
-    refresh_token_entry.set_password(&token_exchange.refresh_token);
-
-
-    Ok(())
-}
-
-pub fn get_auth_url() -> String {
-    let audience = urlencoding::encode(
-        &std::env::var("AUTH0_API_IDENTIFIER").expect("Missing `AUTH0_API_IDENTIFIER`"),
-    )
-    .into_owned();
-
-    let scope = urlencoding::encode("openid profile offline_access").into_owned();
-    let redirect_uri_encoded = urlencoding::encode(auth0_redirect_uri()).into_owned();
-    let domain = auth0_domain();
-    let client_id = auth0_client_id();
-
-    format!("https://{domain}/authorize?audience={audience}&scope={scope}&response_type=code&client_id={client_id}&redirect_uri={redirect_uri_encoded}")
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

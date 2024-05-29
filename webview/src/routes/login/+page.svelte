@@ -16,7 +16,7 @@
 	import GitHubIcon from './GitHubIcon.svelte';
 	import MicrosoftIcon from './MicrosoftIcon.svelte';
 	import { type } from '@tauri-apps/api/os';
-	import { login } from '$lib/auth';
+	import { googleLogin } from '$lib/auth';
 	import authStore from '$lib/authStore';
 
 	const queryParams = new URLSearchParams(window.location.search);
@@ -51,18 +51,8 @@
 
 	async function google() {
 		try {
-			// const provider = new GoogleAuthProvider();
-
-			// provider.addScope('https://www.googleapis.com/auth/userinfo.email');
-			// provider.setCustomParameters({
-			// 	prompt: 'select_account'
-			// });
-
-			// const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			// console.log(userCredential);
-			await login(async (credential) => {
-				console.log($authStore.user);
+			await googleLogin(async (credential) => {
+				console.log($authStore.user, credential);
 				goto(next);
 			});
 		} catch (e) {
@@ -91,6 +81,7 @@
 
 	async function github() {
 		try {
+			await githubLogin()
 			const provider = new GithubAuthProvider();
 
 			const userCredential = await (await signInFunction)(getAuth(), provider);
@@ -134,7 +125,7 @@
 			<GoogleIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button class="logo-item card-hover" on:click={twitter}>
+		<button disabled class="logo-item card-hover" on:click={twitter}>
 			<TwitterIcon class="mr-4 w-12" />
 			Sign In
 		</button>
@@ -142,7 +133,7 @@
 			<GitHubIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button class="logo-item card-hover" on:click={microsoft}>
+		<button disabled class="logo-item card-hover" on:click={microsoft}>
 			<MicrosoftIcon class="mr-4 w-12" />
 			Sign In
 		</button>

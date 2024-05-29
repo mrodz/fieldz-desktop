@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auth;
 mod bridge;
 mod net;
 
@@ -29,7 +30,7 @@ fn main() -> Result<()> {
     match std::panic::catch_unwind(|| {
         tauri::Builder::default()
             .manage(SafeAppState::default())
-            .plugin(tauri_plugin_oauth::init())
+            .plugin(auth::init())
             .setup(|app| {
                 let main_window = app.get_window("main").unwrap();
 

@@ -173,6 +173,7 @@ dependencies = [
  "dotenv",
  "futures",
  "grpc_server",
+ "httparse",
  "keyring",
  "rand 0.8.5",
  "reqwest 0.12.4",
@@ -181,7 +182,6 @@ dependencies = [
  "sha2",
  "tauri",
  "tauri-build",
- "tauri-plugin-oauth",
  "thiserror",
  "url",
  "urlencoding",
@@ -6066,19 +6066,6 @@ dependencies = [
  "syn 1.0.109",
  "tauri-codegen",
  "tauri-utils",
-]
-
-[[package]]
-name = "tauri-plugin-oauth"
-version = "0.0.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddf8435691803c931b429ef68244828a2756a894ea6b48663df8be4027906912"
-dependencies = [
- "httparse",
- "log",
- "serde",
- "tauri",
- "url",
 ]
 
 [[package]]
