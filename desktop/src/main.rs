@@ -127,7 +127,7 @@ fn main() -> Result<()> {
                 get_schedule_games,
                 get_team,
                 get_scheduler_url,
-                get_access_token,
+                get_github_access_token,
                 generate_code_challenge,
             ])
             .run(tauri::generate_context!())

@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::net::{
-    self, send_grpc_schedule_request, GoogleOAuthAccessTokenExchange, HealthProbeError, ScheduleRequestError, ServerHealth
+    self, send_grpc_schedule_request, GithubOAuthAccessTokenExchange, HealthProbeError, ScheduleRequestError, ServerHealth
 };
 use crate::SafeAppState;
 
@@ -791,6 +791,6 @@ pub(crate) fn generate_code_challenge() -> (String, String) {
 }
 
 #[tauri::command]
-pub(crate) async fn get_access_token(code: String, client_id: String, code_challenge: String) -> Result<GoogleOAuthAccessTokenExchange, String> {
-    net::get_access_token(code, client_id, code_challenge).await.map_err(|e| dbg!(e.to_string()))
+pub(crate) async fn get_github_access_token(code: String, client_id: String) -> Result<GithubOAuthAccessTokenExchange, String> {
+    net::get_github_access_token(code, client_id).await.map_err(|e| dbg!(e.to_string()))
 }

@@ -16,7 +16,7 @@
 	import GitHubIcon from './GitHubIcon.svelte';
 	import MicrosoftIcon from './MicrosoftIcon.svelte';
 	import { type } from '@tauri-apps/api/os';
-	import { googleLogin } from '$lib/auth';
+	import { githubLogin, googleLogin } from '$lib/auth';
 	import authStore from '$lib/authStore';
 
 	const queryParams = new URLSearchParams(window.location.search);
@@ -81,14 +81,10 @@
 
 	async function github() {
 		try {
-			await githubLogin()
-			const provider = new GithubAuthProvider();
-
-			const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			console.log(userCredential);
-
-			goto(next);
+			await githubLogin(async (credential) => {
+				console.log($authStore.user, credential);
+				goto(next);
+			})
 		} catch (e) {
 			console.warn(e);
 			duplicatedMessage(e);

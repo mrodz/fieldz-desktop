@@ -180,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -381,11 +381,8 @@ export interface ScheduleGame {
 	team_two?: number;
 }
 
-export interface GoogleOAuthAccessTokenExchange {
+export interface GithubOAuthAccessTokenExchange {
 	access_token: string,
-	expires_in: number,
-	id_token: string | undefined,
-	refresh_token: string,
 	scope: string,
 	token_type: string,
 }

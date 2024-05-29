@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/shell';
-import { getAuth, GoogleAuthProvider, signInWithCredential, type UserCredential } from 'firebase/auth';
+import { getAuth, GithubAuthProvider, GoogleAuthProvider, signInWithCredential, type UserCredential } from 'firebase/auth';
 import { FIREBASE_CLIENT_ID, GITHUB_CLIENT_ID } from './secrets';
-import type { GoogleOAuthAccessTokenExchange } from '$lib';
+import type { GithubOAuthAccessTokenExchange } from '$lib';
 
 async function googleSignIn(payload: string): Promise<UserCredential> {
 	const url = new URL(payload);
@@ -16,6 +16,27 @@ async function googleSignIn(payload: string): Promise<UserCredential> {
 	try {
 		const auth = getAuth();
 		const credential = GoogleAuthProvider.credential(null, accessToken);
+		return signInWithCredential(auth, credential);
+	} catch (e) {
+		console.error(e);
+		return Promise.reject(e);
+	}
+}
+
+async function githubSignIn(payload: string): Promise<UserCredential> {
+	const url = new URL(payload);
+	const code = url.searchParams.get('code');
+	if (!code) {
+		return Promise.reject('Missing `code`');
+	}
+
+	try {
+		const exchange = await invoke<GithubOAuthAccessTokenExchange>('get_github_access_token', {
+			code,
+			clientId: GITHUB_CLIENT_ID
+		});
+		const auth = getAuth();
+		const credential = GithubAuthProvider.credential(exchange.access_token);
 		return signInWithCredential(auth, credential);
 	} catch (e) {
 		console.error(e);
@@ -37,12 +58,10 @@ async function openGoogleSignIn(port: string): Promise<void> {
  * https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
  */
 async function openGithubSignIn(port: string): Promise<void> {
-
 	return open('https://github.com/login/oauth/authorize?' +
 		`client_id=${GITHUB_CLIENT_ID}&` +
 		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-		'scope=email%20profile&' +
-		''
+		'scope=read:user%20user:email'
 	)
 }
 

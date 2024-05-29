@@ -168,35 +168,32 @@ pub(crate) fn get_scheduler_url() -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct GoogleOAuthAccessTokenExchange {
+pub struct GithubOAuthAccessTokenExchange {
     access_token: String,
-    expires_in: u32,
-    id_token: Option<String>,
-    refresh_token: String,
     scope: String,
     token_type: String,
 }
 
-/// https://developers.google.com/identity/protocols/oauth2/native-app#exchange-authorization-code
-pub async fn get_access_token(mut code: String, mut client_id: String, mut code_challenge: String) -> Result<GoogleOAuthAccessTokenExchange, anyhow::Error> {
+/// https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+pub async fn get_github_access_token(
+    mut code: String,
+    mut client_id: String,
+) -> Result<GithubOAuthAccessTokenExchange, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    dbg!(&code_challenge);
+    let mut client_secret = std::env::var("GITHUB_CLIENT_SECRET").expect("Missing `GITHUB_CLIENT_SECRET`");
 
-    let client_secret = urlencoding::encode(&std::env::var("GCP_CLIENT_SECRET").unwrap()).into_owned();
     code = urlencoding::encode(&code).into_owned();
     client_id = urlencoding::encode(&client_id).into_owned();
-    code_challenge = urlencoding::encode(&code_challenge).into_owned();
+    client_secret = urlencoding::encode(&client_secret).into_owned();
 
-    let response = client.post("https://oauth2.googleapis.com/token")
+    let response = client.post("https://github.com/login/oauth/access_token")
         .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(format!("code={code}&code_verifier={code_challenge}&client_id={client_id}&client_secret={client_secret}&grant_type=authorization_code&redirect_uri=http%3A//127.0.0.1:6969"))
+        .header(reqwest::header::ACCEPT, "application/json")
+        .body(format!("code={code}&client_id={client_id}&client_secret={client_secret}&redirect_uri=http%3A//127.0.0.1"))
         .send()
         .await?;
 
     let response_text = response.text().await?;
-
-    println!("{response_text}");
-
     Ok(serde_json::from_str(&response_text)?)
 }
