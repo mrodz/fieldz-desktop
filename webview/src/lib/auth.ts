@@ -1,7 +1,13 @@
 import { invoke } from '@tauri-apps/api';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/shell';
-import { getAuth, GithubAuthProvider, GoogleAuthProvider, signInWithCredential, type UserCredential } from 'firebase/auth';
+import {
+	getAuth,
+	GithubAuthProvider,
+	GoogleAuthProvider,
+	signInWithCredential,
+	type UserCredential
+} from 'firebase/auth';
 import { FIREBASE_CLIENT_ID, GITHUB_CLIENT_ID, TWITTER_CLIENT_ID } from './secrets';
 import type { GithubOAuthAccessTokenExchange } from '$lib';
 
@@ -11,7 +17,7 @@ async function googleSignIn(payload: string): Promise<UserCredential> {
 	const accessToken = new URLSearchParams(url.hash.substring(1)).get('access_token');
 	if (!accessToken) {
 		return Promise.reject('Missing `access_token`');
-	};
+	}
 
 	try {
 		const auth = getAuth();
@@ -47,11 +53,12 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 async function twitterSignIn(payload: string): Promise<UserCredential> {
 	console.log(payload);
 
-	return void 0 as any
+	return void 0 as any;
 }
 
 function openGoogleSignIn(port: string): Promise<void> {
-	return open('https://accounts.google.com/o/oauth2/auth?' +
+	return open(
+		'https://accounts.google.com/o/oauth2/auth?' +
 		'response_type=token&' +
 		`client_id=${FIREBASE_CLIENT_ID}&` +
 		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
@@ -64,11 +71,12 @@ function openGoogleSignIn(port: string): Promise<void> {
  * https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
  */
 function openGithubSignIn(port: string): Promise<void> {
-	return open('https://github.com/login/oauth/authorize?' +
+	return open(
+		'https://github.com/login/oauth/authorize?' +
 		`client_id=${GITHUB_CLIENT_ID}&` +
 		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
 		'scope=read:user%20user:email'
-	)
+	);
 }
 
 async function openTwitterSignIn(port: string): Promise<void> {
@@ -82,21 +90,27 @@ async function openTwitterSignIn(port: string): Promise<void> {
 	 */
 	const codeChallengeShortened = codeChallenge.substring(0, 100);
 
-	return open('https://twitter.com/i/oauth2/authorize?' +
+	return open(
+		'https://twitter.com/i/oauth2/authorize?' +
 		'response_type=code&' +
 		`client_id=${TWITTER_CLIENT_ID}&` +
 		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
 		`code_challenge=${codeChallengeShortened}&` +
 		'code_challenge_method=plain&' +
 		'state=state&' + // the only initiator is the desktop client
-		'scope=users.read')
+		'scope=users.read'
+	);
 }
 
-export async function googleLogin(onSuccess: (userCredential: UserCredential) => Promise<void>) {
+export async function googleLogin(onSuccess: (userCredential: UserCredential) => Promise<void>, onRejection?: (error: any) => void) {
 	listen('oauth://url', async (data) => {
 		console.log(data);
-		const credential = await googleSignIn(data.payload as string);
-		await onSuccess(credential);
+		try {
+			const credential = await googleSignIn(data.payload as string);
+			await onSuccess(credential);
+		} catch (e) {
+			onRejection?.(e);
+		}
 	});
 
 	const port: number = await invoke('plugin:oauth|start');
@@ -104,11 +118,15 @@ export async function googleLogin(onSuccess: (userCredential: UserCredential) =>
 	await openGoogleSignIn(String(port));
 }
 
-export async function githubLogin(onSuccess: (userCredential: UserCredential) => Promise<void>) {
+export async function githubLogin(onSuccess: (userCredential: UserCredential) => Promise<void>, onRejection?: (error: any) => void) {
 	listen('oauth://url', async (data) => {
 		console.log(data);
-		const credential = await githubSignIn(data.payload as string);
-		await onSuccess(credential);
+		try {
+			const credential = await githubSignIn(data.payload as string);
+			await onSuccess(credential);
+		} catch (e) {
+			onRejection?.(e);
+		}
 	});
 
 	const port: number = await invoke('plugin:oauth|start');

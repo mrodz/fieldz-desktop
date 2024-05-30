@@ -181,7 +181,8 @@ pub async fn get_github_access_token(
 ) -> Result<GithubOAuthAccessTokenExchange, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let mut client_secret = std::env::var("GITHUB_CLIENT_SECRET").expect("Missing `GITHUB_CLIENT_SECRET`");
+    let mut client_secret =
+        std::env::var("GITHUB_CLIENT_SECRET").expect("Missing `GITHUB_CLIENT_SECRET`");
 
     code = urlencoding::encode(&code).into_owned();
     client_id = urlencoding::encode(&client_id).into_owned();

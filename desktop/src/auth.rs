@@ -2,7 +2,6 @@ use std::{
     borrow::Cow,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    thread,
 };
 
 use anyhow::Context;
@@ -45,21 +44,23 @@ pub fn start_with_config<F: FnMut(String) + Send + 'static>(
 
     let port = listener.local_addr()?.port();
 
-    thread::spawn(move || -> Result<(), anyhow::Error> {
+    std::thread::spawn(move || -> Result<(), anyhow::Error> {
         for conn in listener.incoming() {
-			let conn = conn.inspect_err(|e| eprintln!("{e}"))?;
-			let connection_result = handle_connection(conn, port).inspect_err(|e| eprintln!("{e}"))?;
-			match connection_result {
-				TcpConnectionOutcome::Exit => break,
-				TcpConnectionOutcome::DidLoad(url) => {
-					handler(url);
-					break;
-				},
-				TcpConnectionOutcome::KeepAlive => (),
-			}
+            let conn = conn.inspect_err(|e| eprintln!("{e}"))?;
+            let connection_result =
+                handle_connection(conn, port).inspect_err(|e| eprintln!("{e}"))?;
+
+            match connection_result {
+                TcpConnectionOutcome::Exit => break,
+                TcpConnectionOutcome::DidLoad(url) => {
+                    handler(url);
+                    break;
+                }
+                TcpConnectionOutcome::KeepAlive => (),
+            }
         }
 
-		Ok(())
+        Ok(())
     });
 
     Ok(port)
@@ -77,9 +78,9 @@ fn handle_connection(
     mut conn: TcpStream,
     port: u16,
 ) -> Result<TcpConnectionOutcome, anyhow::Error> {
-    let mut buffer = [0; 4048];
+    let mut buffer = [0; 4096];
     if let Err(io_err) = conn.read(&mut buffer) {
-        eprintln!("Error reading incoming connection: {}", io_err.to_string());
+        eprintln!("Error reading incoming connection: {io_err}");
     };
     if buffer[..4] == EXIT {
         return Ok(TcpConnectionOutcome::Exit);
@@ -89,7 +90,7 @@ fn handle_connection(
     let mut headers = vec![httparse::EMPTY_HEADER; BASE_LEN];
     let mut request = httparse::Request::new(headers.as_mut_slice());
 
-	request.parse(&buffer)?;
+    request.parse(&buffer)?;
 
     let path = request.path.context("request is missing a path")?;
 

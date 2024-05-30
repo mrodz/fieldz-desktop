@@ -20,7 +20,8 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::net::{
-    self, send_grpc_schedule_request, GithubOAuthAccessTokenExchange, HealthProbeError, ScheduleRequestError, ServerHealth
+    self, send_grpc_schedule_request, GithubOAuthAccessTokenExchange, HealthProbeError,
+    ScheduleRequestError, ServerHealth,
 };
 use crate::SafeAppState;
 
@@ -785,12 +786,20 @@ pub(crate) fn generate_code_challenge() -> (String, String) {
     hasher.update(&entropy);
     let plain = String::from_utf8(entropy).unwrap();
     // Google OAUTH requires no padding
-    let sha256 = base64::prelude::BASE64_URL_SAFE.encode(hasher.finalize()).trim_end_matches("=").to_owned();
+    let sha256 = base64::prelude::BASE64_URL_SAFE
+        .encode(hasher.finalize())
+        .trim_end_matches('=')
+        .to_owned();
 
     (plain, sha256)
 }
 
 #[tauri::command]
-pub(crate) async fn get_github_access_token(code: String, client_id: String) -> Result<GithubOAuthAccessTokenExchange, String> {
-    net::get_github_access_token(code, client_id).await.map_err(|e| dbg!(e.to_string()))
+pub(crate) async fn get_github_access_token(
+    code: String,
+    client_id: String,
+) -> Result<GithubOAuthAccessTokenExchange, String> {
+    net::get_github_access_token(code, client_id)
+        .await
+        .map_err(|e| dbg!(e.to_string()))
 }
