@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auth;
 mod bridge;
 mod net;
 
@@ -29,6 +30,7 @@ fn main() -> Result<()> {
     match std::panic::catch_unwind(|| {
         tauri::Builder::default()
             .manage(SafeAppState::default())
+            .plugin(auth::init())
             .setup(|app| {
                 let main_window = app.get_window("main").unwrap();
 
@@ -125,6 +127,8 @@ fn main() -> Result<()> {
                 get_schedule_games,
                 get_team,
                 get_scheduler_url,
+                get_github_access_token,
+                generate_code_challenge,
             ])
             .run(tauri::generate_context!())
             .context("error while running tauri application")

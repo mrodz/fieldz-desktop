@@ -380,3 +380,9 @@ export interface ScheduleGame {
 	team_one?: number;
 	team_two?: number;
 }
+
+export interface GithubOAuthAccessTokenExchange {
+	access_token: string;
+	scope: string;
+	token_type: string;
+}
