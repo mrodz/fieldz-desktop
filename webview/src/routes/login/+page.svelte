@@ -10,7 +10,7 @@
 	} from 'firebase/auth';
 	import { goto } from '$app/navigation';
 	import { slide } from 'svelte/transition';
-	import { getToastStore } from '@skeletonlabs/skeleton';
+	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 	import GoogleIcon from './GoogleIcon.svelte';
 	import TwitterIcon from './TwitterIcon.svelte';
 	import GitHubIcon from './GitHubIcon.svelte';
@@ -22,6 +22,7 @@
 	const queryParams = new URLSearchParams(window.location.search);
 	const next = queryParams.get('next') ?? '/';
 
+	const modalStore = getModalStore();
 	const toastStore = getToastStore();
 
 	const signInFunction = type().then((type) => {
@@ -48,7 +49,7 @@
 				message:
 					'You have used a different method of authentication in the past! Please try a different authentication platform.',
 				background: 'variant-filled-warning',
-				autohide: false,
+				autohide: false
 			});
 		} else {
 			console.error(error);
@@ -57,12 +58,20 @@
 
 	async function google() {
 		try {
+			modalStore.trigger({
+				type: 'alert',
+				title: 'Please wait, you are being authenticated',
+				body: 'Visit the tab that just opened and follow their instructions to log in',
+				meta: 'FIELDZ_AUTH_POPUP'
+			});
 			await googleLogin(
 				async (credential) => {
 					console.log($authStore.user, credential);
+					modalStore.close();
 					goto(next);
 				},
 				(e) => {
+					modalStore.close();
 					console.warn(e);
 					duplicatedMessage(e);
 				}
@@ -87,12 +96,20 @@
 
 	async function github() {
 		try {
+			modalStore.trigger({
+				type: 'alert',
+				title: 'Please wait, you are being authenticated',
+				body: 'Visit the tab that just opened and follow their instructions to log in',
+				meta: 'FIELDZ_AUTH_POPUP'
+			});
 			await githubLogin(
 				async (credential) => {
 					console.log($authStore.user, credential);
+					modalStore.close();
 					goto(next);
 				},
 				(e) => {
+					modalStore.close();
 					console.warn(e);
 					duplicatedMessage(e);
 				}
@@ -147,7 +164,7 @@
 		</button>
 	</div>
 
-	<div class="card mt-4 bg-yellow-300 p-4 text-center mx-auto md:w-2/3 xl:w-1/3">
+	<div class="card mx-auto mt-4 bg-yellow-300 p-4 text-center md:w-2/3 xl:w-1/3">
 		<header class="card-header font-bold">Temporary Notice</header>
 
 		<p>
