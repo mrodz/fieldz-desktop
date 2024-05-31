@@ -166,3 +166,32 @@ pub(crate) fn get_scheduler_url() -> String {
     std::env::var("SCHEDULER_SERVER_URL")
         .expect("this app was not built with the correct setup to talk to the scheduler server")
 }
+
+pub(crate) fn get_auth_url() -> String {
+    std::env::var("AUTH_SERVER_URL")
+        .expect("this app was not built with the correct setup to talk to the auth server")
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OAuthAccessTokenExchange {
+    access_token: String,
+}
+
+pub async fn get_github_access_token(
+    code: String,
+) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get(get_auth_url())
+        .query(&[
+            ("platform", "github"),
+            ("code", urlencoding::encode(&code).as_ref()),
+        ])
+        .send()
+        .await.inspect_err(|e| eprintln!("{e}"))?;
+
+    let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
+
+    Ok(serde_json::from_str(&response_text)?)
+}

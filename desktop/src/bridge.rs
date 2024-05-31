@@ -1,4 +1,5 @@
 use backend::ScheduledInput;
+use base64::Engine;
 use db::errors::{
     CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
     CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError,
@@ -13,10 +14,13 @@ use db::{
     TeamExtension, TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
     UpdateTargetReservationTypeInput, Validator,
 };
+use rand::distributions::Alphanumeric;
+use rand::Rng;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::net::{
-    self, send_grpc_schedule_request, HealthProbeError, ScheduleRequestError, ServerHealth,
+    self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange, ScheduleRequestError, ServerHealth
 };
 use crate::SafeAppState;
 
@@ -769,4 +773,31 @@ pub(crate) async fn get_team(app: AppHandle, id: i32) -> Result<TeamExtension, L
 #[tauri::command]
 pub(crate) fn get_scheduler_url() -> String {
     net::get_scheduler_url()
+}
+
+#[tauri::command]
+pub(crate) fn generate_code_challenge() -> (String, String) {
+    let entropy = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(128)
+        .collect::<Vec<_>>();
+    let mut hasher = Sha256::new();
+    hasher.update(&entropy);
+    let plain = String::from_utf8(entropy).unwrap();
+    // Google OAUTH requires no padding
+    let sha256 = base64::prelude::BASE64_URL_SAFE
+        .encode(hasher.finalize())
+        .trim_end_matches('=')
+        .to_owned();
+
+    (plain, sha256)
+}
+
+#[tauri::command]
+pub(crate) async fn get_github_access_token(
+    code: String,
+) -> Result<OAuthAccessTokenExchange, String> {
+    net::get_github_access_token(code)
+        .await
+        .map_err(|e| e.to_string())
 }

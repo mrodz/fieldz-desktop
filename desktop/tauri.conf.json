@@ -16,6 +16,9 @@
       },
       "os": {
         "all": true
+      },
+      "shell": {
+        "all": true
       }
     },
     "bundle": {
