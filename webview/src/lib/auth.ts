@@ -38,8 +38,7 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 
 	try {
 		const exchange = await invoke<GithubOAuthAccessTokenExchange>('get_github_access_token', {
-			code,
-			clientId: GITHUB_CLIENT_ID
+			code
 		});
 		const auth = getAuth();
 		const credential = GithubAuthProvider.credential(exchange.access_token);
@@ -103,13 +102,16 @@ async function openTwitterSignIn(port: string): Promise<void> {
 }
 
 export async function googleLogin(onSuccess: (userCredential: UserCredential) => Promise<void>, onRejection?: (error: any) => void) {
-	listen('oauth://url', async (data) => {
+	let cancel = listen('oauth://url', async (data) => {
 		console.log(data);
 		try {
+
 			const credential = await googleSignIn(data.payload as string);
 			await onSuccess(credential);
 		} catch (e) {
 			onRejection?.(e);
+		} finally {
+			(await cancel)();
 		}
 	});
 
@@ -119,13 +121,15 @@ export async function googleLogin(onSuccess: (userCredential: UserCredential) =>
 }
 
 export async function githubLogin(onSuccess: (userCredential: UserCredential) => Promise<void>, onRejection?: (error: any) => void) {
-	listen('oauth://url', async (data) => {
+	let cancel = listen('oauth://url', async (data) => {
 		console.log(data);
 		try {
 			const credential = await githubSignIn(data.payload as string);
 			await onSuccess(credential);
 		} catch (e) {
 			onRejection?.(e);
+		} finally {
+			(await cancel)();
 		}
 	});
 
