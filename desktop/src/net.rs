@@ -193,7 +193,5 @@ pub async fn get_github_access_token(
 
     let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
 
-    dbg!(&response_text);
-
     Ok(serde_json::from_str(&response_text)?)
 }
