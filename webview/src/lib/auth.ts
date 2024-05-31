@@ -38,8 +38,7 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 
 	try {
 		const exchange = await invoke<GithubOAuthAccessTokenExchange>('get_github_access_token', {
-			code,
-			clientId: GITHUB_CLIENT_ID
+			code
 		});
 		const auth = getAuth();
 		const credential = GithubAuthProvider.credential(exchange.access_token);

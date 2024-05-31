@@ -167,34 +167,33 @@ pub(crate) fn get_scheduler_url() -> String {
         .expect("this app was not built with the correct setup to talk to the scheduler server")
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct GithubOAuthAccessTokenExchange {
-    access_token: String,
-    scope: String,
-    token_type: String,
+pub(crate) fn get_auth_url() -> String {
+    std::env::var("AUTH_SERVER_URL")
+        .expect("this app was not built with the correct setup to talk to the auth server")
 }
 
-/// https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OAuthAccessTokenExchange {
+    access_token: String,
+}
+
 pub async fn get_github_access_token(
-    mut code: String,
-    mut client_id: String,
-) -> Result<GithubOAuthAccessTokenExchange, anyhow::Error> {
+    code: String,
+) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let mut client_secret =
-        std::env::var("GITHUB_CLIENT_SECRET").expect("Missing `GITHUB_CLIENT_SECRET`");
-
-    code = urlencoding::encode(&code).into_owned();
-    client_id = urlencoding::encode(&client_id).into_owned();
-    client_secret = urlencoding::encode(&client_secret).into_owned();
-
-    let response = client.post("https://github.com/login/oauth/access_token")
-        .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .header(reqwest::header::ACCEPT, "application/json")
-        .body(format!("code={code}&client_id={client_id}&client_secret={client_secret}&redirect_uri=http%3A//127.0.0.1"))
+    let response = client
+        .get(get_auth_url())
+        .query(&[
+            ("platform", "github"),
+            ("code", urlencoding::encode(&code).as_ref()),
+        ])
         .send()
-        .await?;
+        .await.inspect_err(|e| eprintln!("{e}"))?;
 
-    let response_text = response.text().await?;
+    let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
+
+    dbg!(&response_text);
+
     Ok(serde_json::from_str(&response_text)?)
 }
