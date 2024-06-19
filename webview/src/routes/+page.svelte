@@ -1,34 +1,11 @@
 <script lang="ts">
-	import { type Region } from '$lib';
 	import { slide } from 'svelte/transition';
-	import RegionList from './regions/RegionList.svelte';
-	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
-
-	const toastStore = getToastStore();
-	const modalStore = getModalStore();
-
-	let regionList: RegionList;
-
-	function createRegion() {
-		modalStore.trigger({
-			type: 'component',
-			component: 'regionCreate',
-			meta: {
-				onCreate(region: Region) {
-					toastStore.trigger({
-						message: `Created new region: "${region.title}"`,
-						background: 'variant-filled-success'
-					});
-					regionList.addRegionToFrontend(region);
-				}
-			}
-		});
-	}
+	import ScheduleList from './schedules/ScheduleList.svelte';
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
-	<h2 class="h2">Regions</h2>
-
-	<RegionList bind:this={regionList} />
-	<button class="variant-filled btn mx-auto block" on:click={createRegion}> Create Region </button>
+	<h1 class="h1 mt-2">Fieldz</h1>
+	<section>
+		<ScheduleList src="home" />
+	</section>
 </main>
