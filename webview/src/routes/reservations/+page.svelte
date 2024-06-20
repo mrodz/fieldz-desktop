@@ -258,6 +258,38 @@
 					dragToSelect(range);
 					break;
 			}
+		},
+		async dateClick(e: { date: Date }) {
+			if (intendingToCopy) {
+				modalStore.trigger({
+					type: 'confirm',
+					title: `You are about to paste ${selectionBuffer.length} time slot(s) at ${e.date}. Do you wish to continue?`,
+					async response(r) {
+						if (!r) return;
+
+						try {
+							await invoke('copy_time_slots', {
+								input: {
+									src_start_id: selectionBuffer[0],
+									src_end_id: selectionBuffer[selectionBuffer.length - 1],
+									dst_start: e.date.getTime()
+								}
+							});
+							toastStore.trigger({
+								message: `Succesfully copied ${selectionBuffer.length} time slot(s)`,
+								background: 'variant-filled-success',
+							});
+						} catch (e) {
+							dialog.message(JSON.stringify(e), {
+								title: 'Error copying time slots',
+								type: 'error'
+							});
+						} finally {
+							onModeSwitch();
+						}
+					}
+				});
+			}
 		}
 	} as const;
 
@@ -295,6 +327,7 @@
 
 	let selectionBuffer: CalendarEvent[] = [];
 	let triggerId: string | undefined;
+	let copyTriggerId: string | undefined;
 
 	function dragToSelect(e: DateRange) {
 		if (triggerId !== undefined) {
@@ -302,29 +335,76 @@
 			triggerId = undefined;
 		}
 		selectionBuffer = [];
+
+		const unsorted = [];
+
 		for (const event of calendar.getEvents() as CalendarEvent[]) {
 			if (
 				(event.start > e.start && event.start < e.end) ||
 				(event.end > e.start && event.end < e.end)
 			) {
-				selectionBuffer.push(event);
+				unsorted.push(event);
 			}
 		}
 
+		selectionBuffer = unsorted.sort((a, b) => a.start.getTime() - b.start.getTime());
+
 		triggerId = toastStore.trigger({
 			message: `Selected ${selectionBuffer.length} event${selectionBuffer.length === 1 ? '' : 's'}`,
-			hideDismiss: true,
-			autohide: false
+			autohide: false,
+			callback(response) {
+				if (response.status === 'closed' && triggerId === response.id) {
+					onModeSwitch(false);
+				}
+			}
 		});
 	}
 
-	function onModeSwitch() {
+	function onModeSwitch(closeToast: boolean | undefined = true) {
 		calendar.unselect();
 		selectionBuffer = [];
-		if (triggerId !== undefined) {
+		intendingToCopy = false;
+		// the parameter is necessary to prevent a stack overflow if a toast tries to close itself
+		if (closeToast && triggerId !== undefined) {
 			toastStore.close(triggerId);
 			triggerId = undefined;
 		}
+		if (copyTriggerId !== undefined) {
+			toastStore.close(copyTriggerId);
+			copyTriggerId = undefined;
+		}
+	}
+
+	let intendingToCopy = false;
+
+	function onIntentToCopy() {
+		if (selectionBuffer.length === 0) {
+			toastStore.trigger({
+				message: 'There are no time slots in your selection',
+				background: 'variant-filled-error'
+			});
+			return;
+		}
+
+		if (intendingToCopy) {
+			toastStore.trigger({
+				message: `You are already poised to copy ${selectionBuffer.length} time slot(s)`,
+				background: 'variant-filled-error'
+			});
+			return;
+		}
+
+		intendingToCopy = true;
+
+		copyTriggerId = toastStore.trigger({
+			message: 'Copy your selection by clicking anywhere to insert',
+			autohide: false,
+			callback(response) {
+				if (response.status === 'closed') {
+					intendingToCopy = false;
+				}
+			}
+		});
 	}
 
 	async function signalCustomConcurrencyUpdate(fc: FieldConcurrency) {
@@ -401,9 +481,7 @@
 	}
 
 	function batchDelete() {
-		let sorted = selectionBuffer.sort((a, b) => a.start.getTime() - b.start.getTime());
-
-		if (sorted.length === 0) {
+		if (selectionBuffer.length === 0) {
 			toastStore.trigger({
 				message: 'There are no time slots in this selection to delete',
 				background: 'variant-filled-error'
@@ -411,15 +489,15 @@
 			return;
 		}
 
-		const first = sorted[0];
+		const first = selectionBuffer[0];
 
-		if (sorted.length === 1) {
+		if (selectionBuffer.length === 1) {
 			deleteCalendarEventPrompt(first);
 			onModeSwitch();
 			return;
 		}
 
-		const last = sorted[sorted.length - 1];
+		const last = selectionBuffer[selectionBuffer.length - 1];
 
 		modalStore.trigger({
 			type: 'confirm',
@@ -432,7 +510,7 @@
 							startId: Number(first.id),
 							endId: Number(last.id)
 						});
-						for (const event of sorted) {
+						for (const event of selectionBuffer) {
 							calendar.removeEventById(event.id);
 						}
 						toastStore.trigger({
@@ -465,16 +543,16 @@
 	{#if activeScheduleType !== undefined}
 		<Accordion>
 			<AccordionItem>
-				<svelte:fragment slot="summary"
-					>Click to expand help and accessibility information</svelte:fragment
-				>
+				<svelte:fragment slot="summary">
+					Click to expand help and accessibility information
+				</svelte:fragment>
 				<svelte:fragment slot="content">
 					<section
 						class="my-4 grid grid-cols-1 justify-items-center sm:gap-2 md:grid-cols-2 md:gap-4 lg:grid-cols-4 lg:gap-8 [&>div]:w-4/5 md:[&>div]:w-full"
 					>
 						<div class="card max-w-md p-4 text-center">
 							<strong>Click and drag</strong> over empty space to
-							{#if editMode === "create"}
+							{#if editMode === 'create'}
 								create a time slot
 							{:else}
 								select many slots
@@ -570,11 +648,17 @@
 
 	<div class="block grid grid-cols-[auto_1fr] items-center">
 		<RadioGroup active="variant-filled-primary" hover="hover:variant-soft-primary">
-			<RadioItem on:click={onModeSwitch} bind:group={editMode} name="editModePicker" value="create"
-				>Create Mode</RadioItem
+			<RadioItem
+				on:click={() => onModeSwitch()}
+				bind:group={editMode}
+				name="editModePicker"
+				value="create">Create Mode</RadioItem
 			>
-			<RadioItem on:click={onModeSwitch} bind:group={editMode} name="editModePicker" value="select"
-				>Select Mode</RadioItem
+			<RadioItem
+				on:click={() => onModeSwitch()}
+				bind:group={editMode}
+				name="editModePicker"
+				value="select">Select Mode</RadioItem
 			>
 		</RadioGroup>
 
@@ -585,8 +669,8 @@
 				</header>
 				<div>
 					<button class="btn variant-filled" on:click={batchDelete}>Delete Selected</button>
-					<button class="btn variant-filled" on:click={onModeSwitch}>Clear Selected</button>
-					<button class="btn variant-filled" disabled>Copy Selected</button>
+					<button class="btn variant-filled" on:click={() => onModeSwitch()}>Clear Selected</button>
+					<button class="btn variant-filled" on:click={onIntentToCopy}>Copy Selected</button>
 				</div>
 			</div>
 		{/if}
