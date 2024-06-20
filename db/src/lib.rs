@@ -695,6 +695,14 @@ impl CompiledSchedule {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CopyTimeSlotsInput {
+    src_start_id: i32,
+    src_end_id: i32,
+    #[serde(with = "ts_milliseconds")]
+    dst_start: DateTime<Utc>,
+}
+
 impl Client {
     pub async fn new(config: &Config) -> Result<Self> {
         let db: DatabaseConnection = Database::connect(&config.connection_url).await?;
@@ -2000,5 +2008,116 @@ impl Client {
         }
 
         Ok(teams_with_id.remove(0))
+    }
+
+    pub async fn copy_time_slots(
+        &self,
+        input: CopyTimeSlotsInput,
+    ) -> Result<(), CopyTimeSlotsError> {
+        let start = TimeSlotEntity::find_by_id(input.src_start_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_start_id))?;
+
+        let end = TimeSlotEntity::find_by_id(input.src_end_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_end_id))?;
+
+        let first_time_chrono = DateTime::parse_from_rfc3339(&start.start)
+            .expect("improperly stored date in database")
+            .to_utc();
+
+        let end_time_chrono = DateTime::parse_from_rfc3339(&end.start)
+            .expect("improperly stored date in database")
+            .to_utc();
+
+        if first_time_chrono > end_time_chrono {
+            return Err(CopyTimeSlotsError::OutOfOrder {
+                start: first_time_chrono,
+                end: end_time_chrono,
+            });
+        }
+
+        let chrono_delta = input.dst_start - first_time_chrono;
+
+        let src_time_slots = TimeSlotEntity::find()
+            .filter(time_slot::Column::Start.between(start.start, end.start))
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                CopyTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        let models_to_insert = src_time_slots.iter().map(|time_slot| {
+            let start = DateTime::parse_from_rfc3339(&time_slot.start)
+                .expect("improperly stored date in database (start)")
+                .to_utc()
+                + chrono_delta;
+
+            let end = DateTime::parse_from_rfc3339(&time_slot.end)
+                .expect("improperly stored date in database (end)")
+                .to_utc()
+                + chrono_delta;
+
+            ActiveTimeSlot {
+                field_id: Set(time_slot.field_id),
+                start: Set(start.to_rfc3339()),
+                end: Set(end.to_rfc3339()),
+                ..Default::default()
+            }
+        });
+
+        TimeSlotEntity::insert_many(models_to_insert)
+            .exec(&self.connection)
+            .await
+            .map_err(|e| {
+                CopyTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })
+            .map(|_| ())
+    }
+
+    pub async fn delete_time_slots(
+        &self,
+        start_id: i32,
+        end_id: i32,
+    ) -> Result<(), DeleteTimeSlotsError> {
+        let start = TimeSlotEntity::find_by_id(start_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| DeleteTimeSlotsError::NotFound(start_id))?;
+
+        let end = TimeSlotEntity::find_by_id(end_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| DeleteTimeSlotsError::NotFound(end_id))?;
+
+        let first_time_chrono = DateTime::parse_from_rfc3339(&start.start)
+            .expect("improperly stored date in database")
+            .to_utc();
+
+        let end_time_chrono = DateTime::parse_from_rfc3339(&end.start)
+            .expect("improperly stored date in database")
+            .to_utc();
+
+        if first_time_chrono > end_time_chrono {
+            return Err(DeleteTimeSlotsError::OutOfOrder {
+                start: first_time_chrono,
+                end: end_time_chrono,
+            });
+        }
+
+        TimeSlotEntity::delete_many()
+            .filter(time_slot::Column::Start.between(start.start, end.start))
+            .exec(&self.connection)
+            .await
+            .map_err(|e| {
+                DeleteTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })
+            .map(|_| ())
     }
 }

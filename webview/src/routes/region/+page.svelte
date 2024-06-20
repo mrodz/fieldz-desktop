@@ -239,7 +239,7 @@
 
 		<hr class="my-4" />
 
-		<div class="grid grid-cols-1 grid-rows-2 lg:grid-cols-2 lg:grid-rows-1">
+		<div class="flex flex-col lg:grid lg:grid-cols-2 lg:grid-rows-1">
 			<section class="card m-4 p-4">
 				<h2 class="h2 text-center">Teams ({teams.length})</h2>
 
@@ -372,9 +372,9 @@
 
 				{#if fields.length === 0}
 					<div class="m-4 p-4 text-center">⚠️ This region has no fields</div>
-					<button class="variant-filled btn mx-auto block" on:click={createField}
-						>Create your first field</button
-					>
+					<button class="variant-filled btn mx-auto block" on:click={createField}>
+						Create your first field
+					</button>
 				{:else if $compactFields}
 					<table class="table">
 						<thead class="table-head">

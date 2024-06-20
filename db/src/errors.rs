@@ -258,3 +258,38 @@ pub enum LoadScheduleError {
     #[error("region with id {0} not found")]
     NotFound(i32),
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CopyTimeSlotsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("time slot with id {0} not found")]
+    NotFound(i32),
+    #[error("end < start: {end} < {start}")]
+    OutOfOrder {
+        #[serde(with = "ts_milliseconds")]
+        start: DateTime<Utc>,
+        #[serde(with = "ts_milliseconds")]
+        end: DateTime<Utc>,
+    },
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum DeleteTimeSlotsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("time slot with id {0} not found")]
+    NotFound(i32),
+    #[error("end < start: {end} < {start}")]
+    OutOfOrder {
+        #[serde(with = "ts_milliseconds")]
+        start: DateTime<Utc>,
+        #[serde(with = "ts_milliseconds")]
+        end: DateTime<Utc>,
+    },
+}
+
