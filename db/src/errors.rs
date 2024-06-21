@@ -274,6 +274,15 @@ pub enum CopyTimeSlotsError {
         #[serde(with = "ts_milliseconds")]
         end: DateTime<Utc>,
     },
+    #[error("this time slot is booked from {o_start} to {o_end}")]
+    Overlap {
+        #[serde(with = "ts_milliseconds")]
+        o_start: DateTime<Utc>,
+        #[serde(with = "ts_milliseconds")]
+        o_end: DateTime<Utc>,
+    },
+    #[error("the time slots provided had different field ids")]
+    FieldMismatch,
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -291,5 +300,6 @@ pub enum DeleteTimeSlotsError {
         #[serde(with = "ts_milliseconds")]
         end: DateTime<Utc>,
     },
+    #[error("the time slots provided had different field ids")]
+    FieldMismatch,
 }
-

@@ -45,18 +45,6 @@
 				invoke<Field[]>('get_fields', { regionId: id }),
 				invoke<TeamExtension[]>('get_teams_and_tags', { regionId: id })
 			]);
-
-			if (!window.fieldz) {
-				window.fieldz = {};
-			}
-
-			if (!window.fieldz.deleteTeam) {
-				window.fieldz.deleteTeam = deleteTeam;
-			}
-
-			if (!window.fieldz.editTeam) {
-				window.fieldz.editTeam = editTeam;
-			}
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
 				title: 'Could not load resources',

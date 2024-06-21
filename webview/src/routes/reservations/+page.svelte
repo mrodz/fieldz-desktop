@@ -193,6 +193,7 @@
 						timeout: 1500
 					});
 				} else {
+					console.error(err);
 					dialog.message(JSON.stringify(err), {
 						title: 'could not move event',
 						type: 'error'
@@ -238,6 +239,7 @@
 						timeout: 1500
 					});
 				} else {
+					console.error(err);
 					dialog.message(JSON.stringify(err), {
 						title: 'could not move event',
 						type: 'error'
@@ -268,24 +270,43 @@
 						if (!r) return;
 
 						try {
-							await invoke('copy_time_slots', {
+							const first = selectionBuffer[0].id;
+							const last = selectionBuffer[selectionBuffer.length - 1].id;
+							const newTimeSlots = await invoke<TimeSlotExtension[]>('copy_time_slots', {
 								input: {
-									src_start_id: selectionBuffer[0],
-									src_end_id: selectionBuffer[selectionBuffer.length - 1],
+									src_start_id: Number(first),
+									src_end_id: Number(last),
 									dst_start: e.date.getTime()
 								}
 							});
+
+							for (const timeSlot of newTimeSlots) {
+								calendar.addEvent(eventFromTimeSlot(timeSlot));
+							}
+
 							toastStore.trigger({
 								message: `Succesfully copied ${selectionBuffer.length} time slot(s)`,
-								background: 'variant-filled-success',
+								background: 'variant-filled-success'
 							});
-						} catch (e) {
-							dialog.message(JSON.stringify(e), {
-								title: 'Error copying time slots',
-								type: 'error'
-							});
-						} finally {
+
 							onModeSwitch();
+						} catch (err) {
+							if (err !== null && typeof err === 'object' && 'Overlap' in err) {
+								toastStore.trigger({
+									message: 'This would overlap with another time slot! Try pasting elsewhere',
+									background: 'variant-filled-error',
+									timeout: 3500
+								});
+							
+								// no `onModeSwitch` because we'll let the user try again
+							} else {
+								console.error(err);
+								dialog.message(JSON.stringify(err), {
+									title: 'could not copy events',
+									type: 'error'
+								});
+								onModeSwitch();
+							}
 						}
 					}
 				});
@@ -668,9 +689,20 @@
 					Selection: {selectionBuffer.length} time slot{selectionBuffer.length === 1 ? '' : 's'}
 				</header>
 				<div>
-					<button class="btn variant-filled" on:click={batchDelete}>Delete Selected</button>
-					<button class="btn variant-filled" on:click={() => onModeSwitch()}>Clear Selected</button>
-					<button class="btn variant-filled" on:click={onIntentToCopy}>Copy Selected</button>
+					<button class="variant-filled btn" on:click={batchDelete}>Delete Selected</button>
+					<button
+						class="variant-filled btn"
+						on:click={() => {
+							toastStore.trigger({
+								message: 'Cleared selection',
+								background: 'variant-filled-success'
+							});
+							onModeSwitch();
+						}}>Clear Selected</button
+					>
+					<button class="variant-filled btn" on:click={onIntentToCopy}
+						>{intendingToCopy ? 'Paste' : 'Copy'} Selected</button
+					>
 				</div>
 			</div>
 		{/if}

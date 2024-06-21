@@ -189,7 +189,8 @@ pub async fn get_github_access_token(
             ("code", urlencoding::encode(&code).as_ref()),
         ])
         .send()
-        .await.inspect_err(|e| eprintln!("{e}"))?;
+        .await
+        .inspect_err(|e| eprintln!("{e}"))?;
 
     let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
 

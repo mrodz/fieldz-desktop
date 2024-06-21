@@ -52,7 +52,9 @@
 				</div>
 			{/each}
 			<div class="my-auto ml-10 flex flex-col">
-				<a href="/scheduler" class="variant-filled flex btn-icon mx-auto block h-[75px] w-[75px]">+</a>
+				<a href="/scheduler" class="variant-filled btn-icon mx-auto block flex h-[75px] w-[75px]"
+					>+</a
+				>
 				<span class="mx-auto mt-2 block">Create Schedule</span>
 			</div>
 		{/await}

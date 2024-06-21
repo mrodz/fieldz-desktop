@@ -47,7 +47,7 @@ use entity_local_exports::*;
 use migration::{Expr, IntoCondition, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
-    JoinType, QueryFilter, QuerySelect, RelationTrait, Select, Set, TransactionError,
+    JoinType, Order, QueryFilter, QuerySelect, RelationTrait, Select, Set, TransactionError,
     TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
@@ -2013,7 +2013,7 @@ impl Client {
     pub async fn copy_time_slots(
         &self,
         input: CopyTimeSlotsInput,
-    ) -> Result<(), CopyTimeSlotsError> {
+    ) -> Result<Vec<TimeSlotExtension>, CopyTimeSlotsError> {
         let start = TimeSlotEntity::find_by_id(input.src_start_id)
             .one(&self.connection)
             .await
@@ -2025,6 +2025,10 @@ impl Client {
             .await
             .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
             .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_end_id))?;
+
+        if start.field_id != end.field_id {
+            return Err(CopyTimeSlotsError::FieldMismatch);
+        }
 
         let first_time_chrono = DateTime::parse_from_rfc3339(&start.start)
             .expect("improperly stored date in database")
@@ -2043,40 +2047,129 @@ impl Client {
 
         let chrono_delta = input.dst_start - first_time_chrono;
 
-        let src_time_slots = TimeSlotEntity::find()
-            .filter(time_slot::Column::Start.between(start.start, end.start))
+        let src_time_slots = select_time_slot_extension()
+            .filter(
+                Condition::all()
+                    .add(time_slot::Column::FieldId.eq(start.field_id))
+                    .add(time_slot::Column::Start.between(start.start, end.start)),
+            )
+            .order_by(time_slot::Column::Start, Order::Asc)
+            .into_model::<TimeSlotSelectionTypeAggregate>()
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                CopyTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .into_iter()
+            .map(Into::<TimeSlotExtension>::into)
+            .collect_vec();
+
+        let models_to_insert = src_time_slots
+            .into_iter()
+            .map(|time_slot_ext| {
+                let start = DateTime::parse_from_rfc3339(&time_slot_ext.time_slot.start)
+                    .expect("improperly stored date in database (start)")
+                    .to_utc()
+                    + chrono_delta;
+
+                let end = DateTime::parse_from_rfc3339(&time_slot_ext.time_slot.end)
+                    .expect("improperly stored date in database (end)")
+                    .to_utc()
+                    + chrono_delta;
+
+                (
+                    ActiveTimeSlot {
+                        field_id: Set(time_slot_ext.time_slot.field_id),
+                        start: Set(start.to_rfc3339()),
+                        end: Set(end.to_rfc3339()),
+                        ..Default::default()
+                    },
+                    start,
+                    end,
+                    time_slot_ext,
+                )
+            })
+            .collect_vec();
+
+        let Some(first) = models_to_insert.first() else {
+            // there are no models to copy
+            return Ok(vec![]);
+        };
+
+        let last = models_to_insert.last().unwrap();
+
+        let potential_conflicts = TimeSlotEntity::find()
+            .filter(
+                Condition::all()
+                    .add(time_slot::Column::FieldId.eq(start.field_id))
+                    .add(time_slot::Column::End.gt(first.1.to_rfc3339()))
+                    .add(time_slot::Column::Start.lt(last.2.to_rfc3339())),
+            )
             .all(&self.connection)
             .await
             .map_err(|e| {
                 CopyTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
             })?;
 
-        let models_to_insert = src_time_slots.iter().map(|time_slot| {
-            let start = DateTime::parse_from_rfc3339(&time_slot.start)
-                .expect("improperly stored date in database (start)")
-                .to_utc()
-                + chrono_delta;
+        for existing_time_slot in &potential_conflicts {
+            let o_start = DateTime::parse_from_rfc3339(&existing_time_slot.start)
+                .unwrap()
+                .to_utc();
+            let o_end = DateTime::parse_from_rfc3339(&existing_time_slot.end)
+                .unwrap()
+                .to_utc();
 
-            let end = DateTime::parse_from_rfc3339(&time_slot.end)
-                .expect("improperly stored date in database (end)")
-                .to_utc()
-                + chrono_delta;
-
-            ActiveTimeSlot {
-                field_id: Set(time_slot.field_id),
-                start: Set(start.to_rfc3339()),
-                end: Set(end.to_rfc3339()),
-                ..Default::default()
+            for (_, start, end, _) in &models_to_insert {
+                if &o_start < end && &o_end > start {
+                    return Err(CopyTimeSlotsError::Overlap { o_start, o_end });
+                }
             }
-        });
+        }
 
-        TimeSlotEntity::insert_many(models_to_insert)
-            .exec(&self.connection)
-            .await
-            .map_err(|e| {
-                CopyTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+        let result = self
+            .connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    let mut ret_buf = Vec::with_capacity(models_to_insert.len());
+                    for (model, .., time_slot_ext) in models_to_insert {
+                        let new_time_slot = TimeSlotEntity::insert(model)
+                            .exec_with_returning(connection)
+                            .await?;
+
+                        use reservation_type_time_slot_join::{
+                            ActiveModel as RTTJM, Entity as RTTJE,
+                        };
+
+                        RTTJE::insert(RTTJM {
+                            time_slot: Set(new_time_slot.id),
+                            reservation_type: Set(time_slot_ext.reservation_type.id),
+                        })
+                        .exec_with_returning(connection)
+                        .await?;
+
+                        ret_buf.push(TimeSlotExtension {
+                            custom_matches: time_slot_ext.custom_matches,
+                            reservation_type: time_slot_ext.reservation_type,
+                            time_slot: new_time_slot,
+                        });
+                    }
+
+                    Ok(ret_buf)
+                })
             })
-            .map(|_| ())
+            .await
+            .map_err(|e: TransactionError<DbErr>| match e {
+                TransactionError::Connection(db) => {
+                    CopyTimeSlotsError::DatabaseError(format!("{db} {}:{}", line!(), column!()))
+                }
+                TransactionError::Transaction(t) => CopyTimeSlotsError::DatabaseError(format!(
+                    "transaction failed: {t} {}:{}",
+                    line!(),
+                    column!()
+                )),
+            })?;
+
+        Ok(result)
     }
 
     pub async fn delete_time_slots(
@@ -2096,6 +2189,10 @@ impl Client {
             .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
             .ok_or_else(|| DeleteTimeSlotsError::NotFound(end_id))?;
 
+        if start.field_id != end.field_id {
+            return Err(DeleteTimeSlotsError::FieldMismatch);
+        }
+
         let first_time_chrono = DateTime::parse_from_rfc3339(&start.start)
             .expect("improperly stored date in database")
             .to_utc();
@@ -2112,7 +2209,11 @@ impl Client {
         }
 
         TimeSlotEntity::delete_many()
-            .filter(time_slot::Column::Start.between(start.start, end.start))
+            .filter(
+                Condition::all()
+                    .add(time_slot::Column::FieldId.eq(start.field_id))
+                    .add(time_slot::Column::Start.between(start.start, end.start)),
+            )
             .exec(&self.connection)
             .await
             .map_err(|e| {
