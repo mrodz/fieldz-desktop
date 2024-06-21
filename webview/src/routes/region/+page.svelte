@@ -1,9 +1,22 @@
+<script context="module">
+	import { writable } from 'svelte/store';
+	let compactTeams = writable(false);
+	let compactFields = writable(false);
+</script>
+
 <script lang="ts">
 	import type { Region, Field, Team, TeamExtension } from '$lib';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { dialog, invoke } from '@tauri-apps/api';
-	import { ProgressRadial, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
+	import {
+		ProgressRadial,
+		getModalStore,
+		getToastStore,
+		SlideToggle
+	} from '@skeletonlabs/skeleton';
+	import Fa from 'svelte-fa';
+	import { faEdit, faTrash } from '@fortawesome/free-solid-svg-icons';
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const regionId = queryParams.get('id');
@@ -21,7 +34,7 @@
 
 			if (isNaN(id)) {
 				dialog.message(`[id = ${regionId}] is NaN`, {
-					title: 'Error',
+					title: 'Could not load region, missing precondition',
 					type: 'error'
 				});
 				return;
@@ -34,7 +47,7 @@
 			]);
 		} catch (e) {
 			dialog.message(JSON.stringify(e), {
-				title: 'Error',
+				title: 'Could not load resources',
 				type: 'error'
 			});
 		}
@@ -214,25 +227,98 @@
 
 		<hr class="my-4" />
 
-		<div class="grid grid-cols-1 grid-rows-2 lg:grid-cols-2 lg:grid-rows-1">
+		<div class="flex flex-col lg:grid lg:grid-cols-2 lg:grid-rows-1">
 			<section class="card m-4 p-4">
-				<h2 class="h2 text-center">Teams</h2>
+				<h2 class="h2 text-center">Teams ({teams.length})</h2>
+
+				<SlideToggle name="teams-slider-view" bind:checked={$compactTeams}>
+					{#if $compactTeams}
+						Expand
+					{:else}
+						Compact
+					{/if}
+					Teams
+				</SlideToggle>
+
+				<hr class="hr my-5" />
+
 				{#if teams.length === 0}
 					<div class="m-4 p-4 text-center">⚠️ This region has no teams</div>
 					<button class="variant-filled btn mx-auto block" on:click={createTeam}
 						>Create your first team</button
 					>
+				{:else if $compactTeams}
+					<table class="table">
+						<thead class="table-head">
+							<tr>
+								<th role="columnheader">Name</th>
+								<th role="columnheader">Tags</th>
+								<th role="columnheader">Actions</th>
+							</tr>
+						</thead>
+						<tbody class="table-body">
+							{#each teams as team_ext, i}
+								<tr aria-rowindex={i + 1}>
+									<td role="gridcell" width="1%" aria-colindex="1" tabindex="-1">
+										{team_ext.team.name}
+									</td>
+									<td role="gridcell" width="40%" aria-colindex="2" tabindex="-1">
+										{#if team_ext.tags.length !== 0}
+											<div>
+												{#each team_ext.tags as tag}
+													<span class="variant-filled-success chip">{tag.name}</span>
+												{/each}
+											</div>
+										{:else}
+											<i>No groups yet!</i>
+										{/if}
+									</td>
+									<td role="gridcell" width="20%" aria-colindex="3" tabindex="-1">
+										<div class="grid grid-cols-2 [&>button]:mx-auto lg:[&>button]:mx-0">
+											<button
+												class="variant-filled btn-icon"
+												on:click={() => editTeam(team_ext, i)}
+											>
+												<Fa icon={faEdit} />
+												<span class="sr-only">Edit Team</span>
+											</button>
+											<button
+												class="variant-filled btn-icon"
+												on:click|stopPropagation={() => deleteTeam(team_ext.team, i)}
+											>
+												<Fa icon={faTrash} />
+												<span class="sr-only">Delete Team</span>
+											</button>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+					<div class="mt-10 flex flex-col">
+						<button
+							class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
+							on:click={createTeam}>+</button
+						>
+						<span class="mx-auto mt-2 block">Create Team</span>
+					</div>
 				{:else}
 					<div class="flex flex-wrap items-stretch justify-center">
 						{#each teams as team_ext, i}
-							<div class="card m-4 w-52 p-4 lg:w-96">
+							<div class="card m-4 w-64 p-4 lg:w-96">
 								<header class="card-header flex flex-row items-center">
 									<strong class="w-1/2 grow truncate">{team_ext.team.name}</strong>
+									<button class="variant-filled btn-icon" on:click={() => editTeam(team_ext, i)}>
+										<Fa icon={faEdit} />
+										<span class="sr-only">Edit Team</span>
+									</button>
 									<button
-										type="button"
 										class="variant-filled btn-icon"
-										on:click|stopPropagation={() => deleteTeam(team_ext.team, i)}>X</button
+										on:click|stopPropagation={() => deleteTeam(team_ext.team, i)}
 									>
+										<Fa icon={faTrash} />
+										<span class="sr-only">Delete Team</span>
+									</button>
 								</header>
 
 								<hr class="my-4" />
@@ -246,12 +332,6 @@
 								{:else}
 									<i>No groups yet!</i>
 								{/if}
-
-								<hr class="my-4" />
-								<button
-									class="variant-filled btn mx-auto block"
-									on:click={() => editTeam(team_ext, i)}>Edit</button
-								>
 							</div>
 						{/each}
 						<div class="my-auto ml-10 flex flex-col">
@@ -265,13 +345,57 @@
 				{/if}
 			</section>
 			<section class="card m-4 p-4">
-				<h2 class="h2 text-center">Fields</h2>
+				<h2 class="h2 text-center">Fields ({fields.length})</h2>
+
+				<SlideToggle name="teams-slider-view" bind:checked={$compactFields}>
+					{#if $compactFields}
+						Expand
+					{:else}
+						Compact
+					{/if}
+					Fields
+				</SlideToggle>
+
+				<hr class="hr my-5" />
 
 				{#if fields.length === 0}
 					<div class="m-4 p-4 text-center">⚠️ This region has no fields</div>
-					<button class="variant-filled btn mx-auto block" on:click={createField}
-						>Create your first field</button
-					>
+					<button class="variant-filled btn mx-auto block" on:click={createField}>
+						Create your first field
+					</button>
+				{:else if $compactFields}
+					<table class="table">
+						<thead class="table-head">
+							<tr>
+								<th class="" role="columnheader">Name</th>
+								<th class="" role="columnheader">Actions</th>
+							</tr>
+						</thead>
+						<tbody class="table-body">
+							{#each fields as field, i}
+								<tr aria-rowindex={i + 1}>
+									<td role="gridcell" aria-colindex="1" tabindex="-1">
+										{field.name}
+									</td>
+									<td role="gridcell" width="1%" aria-colindex="3" tabindex="-1">
+										<a
+											class="variant-filled btn mx-auto block"
+											href={`/reservations?fieldId=${field.id}`}
+										>
+											Edit
+										</a>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+					<div class="mt-10 flex flex-col">
+						<button
+							class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
+							on:click={createField}>+</button
+						>
+						<span class="mx-auto mt-2 block">Create Field</span>
+					</div>
 				{:else}
 					<div class="flex flex-wrap items-stretch justify-center">
 						{#each fields as field, i}

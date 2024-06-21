@@ -13,7 +13,6 @@ import { env } from '$env/dynamic/public';
 
 async function googleSignIn(payload: string): Promise<UserCredential> {
 	const url = new URL(payload);
-	console.log(url);
 	const accessToken = new URLSearchParams(url.hash.substring(1)).get('access_token');
 	if (!accessToken) {
 		return Promise.reject('Missing `access_token`');
@@ -50,8 +49,6 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 }
 
 async function twitterSignIn(payload: string): Promise<UserCredential> {
-	console.log(payload);
-
 	return void 0 as any;
 }
 
@@ -106,7 +103,6 @@ export async function googleLogin(
 	onRejection?: (error: any) => void
 ): Promise<() => Promise<void>> {
 	let cancel = listen('oauth://url', async (data) => {
-		console.log(data);
 		try {
 			const credential = await googleSignIn(data.payload as string);
 			await onSuccess(credential);
@@ -131,7 +127,6 @@ export async function githubLogin(
 	onRejection?: (error: any) => void
 ): Promise<() => Promise<void>> {
 	let cancel = listen('oauth://url', async (data) => {
-		console.log(data);
 		try {
 			const credential = await githubSignIn(data.payload as string);
 			await onSuccess(credential);
@@ -153,7 +148,6 @@ export async function githubLogin(
 
 export async function twitterLogin(onSuccess: (userCredential: UserCredential) => Promise<void>) {
 	listen('oauth://url', async (data) => {
-		console.log(data);
 		const credential = await twitterSignIn(data.payload as string);
 		await onSuccess(credential);
 	});

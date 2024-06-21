@@ -55,7 +55,6 @@
 	}
 
 	const credentialFunction = async (credential: UserCredential) => {
-		console.log($authStore.user, credential);
 		modalStore.close();
 		goto(next);
 	};
@@ -99,7 +98,6 @@
 	async function twitter() {
 		try {
 			await twitterLogin(async (credential) => {
-				console.log($authStore.user, credential);
 				goto(next);
 			});
 		} catch (e) {
@@ -132,8 +130,6 @@
 			});
 
 			const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			console.log(userCredential);
 
 			goto(next);
 		} catch (e) {
