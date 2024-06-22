@@ -1,15 +1,16 @@
 use backend::ScheduledInput;
 use base64::Engine;
 use db::errors::{
-    CreateFieldError, CreateGroupError, CreateRegionError, CreateReservationTypeError,
-    CreateTeamError, DeleteFieldError, DeleteGroupError, DeleteRegionError, DeleteTeamError,
-    EditRegionError, EditScheduleError, EditTeamError, GetScheduledInputsError, LoadFieldsError,
-    LoadRegionError, LoadScheduleError, LoadTeamsError, PreScheduleReportError, TimeSlotError,
+    CopyTimeSlotsError, CreateFieldError, CreateGroupError, CreateRegionError,
+    CreateReservationTypeError, CreateTeamError, DeleteFieldError, DeleteGroupError,
+    DeleteRegionError, DeleteTeamError, DeleteTimeSlotsError, EditRegionError, EditScheduleError,
+    EditTeamError, GetScheduledInputsError, LoadFieldsError, LoadRegionError, LoadScheduleError,
+    LoadTeamsError, PreScheduleReportError, TimeSlotError,
 };
 use db::{
-    CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput,
-    CreateTimeSlotInput, EditRegionInput, EditScheduleInput, EditTeamInput, FieldConcurrency,
-    FieldExtension, FieldSupportedConcurrencyInput, ListReservationsBetweenInput,
+    CopyTimeSlotsInput, CreateFieldInput, CreateRegionInput, CreateReservationTypeInput,
+    CreateTeamInput, CreateTimeSlotInput, EditRegionInput, EditScheduleInput, EditTeamInput,
+    FieldConcurrency, FieldExtension, FieldSupportedConcurrencyInput, ListReservationsBetweenInput,
     MoveTimeSlotInput, PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection,
     TeamExtension, TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
     UpdateTargetReservationTypeInput, Validator,
@@ -20,7 +21,8 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::net::{
-    self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange, ScheduleRequestError, ServerHealth
+    self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange,
+    ScheduleRequestError, ServerHealth,
 };
 use crate::SafeAppState;
 
@@ -800,4 +802,34 @@ pub(crate) async fn get_github_access_token(
     net::get_github_access_token(code)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn copy_time_slots(
+    app: AppHandle,
+    input: CopyTimeSlotsInput,
+) -> Result<Vec<TimeSlotExtension>, CopyTimeSlotsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CopyTimeSlotsError::NoDatabase)?;
+
+    client.copy_time_slots(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn delete_time_slots_batched(
+    app: AppHandle,
+    start_id: i32,
+    end_id: i32,
+) -> Result<(), DeleteTimeSlotsError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(DeleteTimeSlotsError::NoDatabase)?;
+    client.delete_time_slots(start_id, end_id).await
 }

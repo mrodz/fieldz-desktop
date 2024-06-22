@@ -129,6 +129,8 @@ fn main() -> Result<()> {
                 get_scheduler_url,
                 get_github_access_token,
                 generate_code_challenge,
+                copy_time_slots,
+                delete_time_slots_batched,
             ])
             .run(tauri::generate_context!())
             .context("error while running tauri application")

@@ -49,13 +49,13 @@
 				} else {
 					// unknown validation error!
 					dialog.message(JSON.stringify(e), {
-						title: 'Error',
+						title: 'Could not edit field',
 						type: 'error'
 					});
 				}
 			} else {
 				dialog.message(JSON.stringify(e), {
-					title: 'Error',
+					title: 'Could not edit field',
 					type: 'error'
 				});
 			}
