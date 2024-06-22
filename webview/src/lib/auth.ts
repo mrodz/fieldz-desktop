@@ -9,11 +9,10 @@ import {
 	type UserCredential
 } from 'firebase/auth';
 import type { GithubOAuthAccessTokenExchange } from '$lib';
-import { env } from '$env/dynamic/public'
+import { env } from '$env/dynamic/public';
 
 async function googleSignIn(payload: string): Promise<UserCredential> {
 	const url = new URL(payload);
-	console.log(url);
 	const accessToken = new URLSearchParams(url.hash.substring(1)).get('access_token');
 	if (!accessToken) {
 		return Promise.reject('Missing `access_token`');
@@ -50,19 +49,17 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 }
 
 async function twitterSignIn(payload: string): Promise<UserCredential> {
-	console.log(payload);
-
 	return void 0 as any;
 }
 
 function openGoogleSignIn(port: string): Promise<void> {
 	return open(
 		'https://accounts.google.com/o/oauth2/auth?' +
-		'response_type=token&' +
-		`client_id=${env.PUBLIC_FIREBASE_CLIENT_ID}&` +
-		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-		'scope=email%20profile&' +
-		'prompt=consent'
+			'response_type=token&' +
+			`client_id=${env.PUBLIC_FIREBASE_CLIENT_ID}&` +
+			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+			'scope=email%20profile&' +
+			'prompt=consent'
 	);
 }
 
@@ -72,9 +69,9 @@ function openGoogleSignIn(port: string): Promise<void> {
 function openGithubSignIn(port: string): Promise<void> {
 	return open(
 		'https://github.com/login/oauth/authorize?' +
-		`client_id=${env.PUBLIC_GITHUB_CLIENT_ID}&` +
-		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-		'scope=read:user%20user:email'
+			`client_id=${env.PUBLIC_GITHUB_CLIENT_ID}&` +
+			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+			'scope=read:user%20user:email'
 	);
 }
 
@@ -91,19 +88,21 @@ async function openTwitterSignIn(port: string): Promise<void> {
 
 	return open(
 		'https://twitter.com/i/oauth2/authorize?' +
-		'response_type=code&' +
-		`client_id=${env.PUBLIC_TWITTER_CLIENT_ID}&` +
-		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-		`code_challenge=${codeChallengeShortened}&` +
-		'code_challenge_method=plain&' +
-		'state=state&' + // the only initiator is the desktop client
-		'scope=users.read'
+			'response_type=code&' +
+			`client_id=${env.PUBLIC_TWITTER_CLIENT_ID}&` +
+			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+			`code_challenge=${codeChallengeShortened}&` +
+			'code_challenge_method=plain&' +
+			'state=state&' + // the only initiator is the desktop client
+			'scope=users.read'
 	);
 }
 
-export async function googleLogin(onSuccess: (userCredential: UserCredential) => Promise<void>, onRejection?: (error: any) => void) {
+export async function googleLogin(
+	onSuccess: (userCredential: UserCredential) => Promise<void>,
+	onRejection?: (error: any) => void
+): Promise<() => Promise<void>> {
 	let cancel = listen('oauth://url', async (data) => {
-		console.log(data);
 		try {
 			const credential = await googleSignIn(data.payload as string);
 			await onSuccess(credential);
@@ -116,12 +115,18 @@ export async function googleLogin(onSuccess: (userCredential: UserCredential) =>
 
 	const port: number = await invoke('plugin:oauth|start');
 
-	await openGoogleSignIn(String(port));
+	openGoogleSignIn(String(port)).catch(onRejection);
+
+	return async () => {
+		await invoke('plugin:oauth|cancel', { port });
+	};
 }
 
-export async function githubLogin(onSuccess: (userCredential: UserCredential) => Promise<void>, onRejection?: (error: any) => void) {
+export async function githubLogin(
+	onSuccess: (userCredential: UserCredential) => Promise<void>,
+	onRejection?: (error: any) => void
+): Promise<() => Promise<void>> {
 	let cancel = listen('oauth://url', async (data) => {
-		console.log(data);
 		try {
 			const credential = await githubSignIn(data.payload as string);
 			await onSuccess(credential);
@@ -134,12 +139,15 @@ export async function githubLogin(onSuccess: (userCredential: UserCredential) =>
 
 	const port: number = await invoke('plugin:oauth|start');
 
-	await openGithubSignIn(String(port));
+	openGithubSignIn(String(port)).catch(onRejection);
+
+	return async () => {
+		await invoke('plugin:oauth|cancel', { port });
+	};
 }
 
 export async function twitterLogin(onSuccess: (userCredential: UserCredential) => Promise<void>) {
 	listen('oauth://url', async (data) => {
-		console.log(data);
 		const credential = await twitterSignIn(data.payload as string);
 		await onSuccess(credential);
 	});

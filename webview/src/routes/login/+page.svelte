@@ -1,11 +1,9 @@
 <script lang="ts">
 	import {
-		GoogleAuthProvider,
-		TwitterAuthProvider,
 		signInWithPopup,
 		getAuth,
-		GithubAuthProvider,
 		OAuthProvider,
+		type UserCredential,
 		signInWithRedirect
 	} from 'firebase/auth';
 	import { goto } from '$app/navigation';
@@ -56,26 +54,41 @@
 		}
 	}
 
+	const credentialFunction = async (credential: UserCredential) => {
+		modalStore.close();
+		goto(next);
+	};
+
+	const authRejection = (e: any) => {
+		modalStore.close();
+		console.warn(e);
+		duplicatedMessage(e);
+	};
+
+	const userCancellation = (kill: () => Promise<void>): ((r: boolean) => Promise<void>) => {
+		return async (r: boolean) => {
+			if (!r) {
+				toastStore.trigger({
+					message:
+						'You cancelled the sign on flow. If you had a third-party tab open, it will no longer work to log in. Please click the button again.',
+					background: 'variant-filled-warning',
+					autohide: false
+				});
+				kill();
+			}
+		};
+	};
+
 	async function google() {
 		try {
+			const kill = await googleLogin(credentialFunction, authRejection);
 			modalStore.trigger({
 				type: 'alert',
 				title: 'Please wait, you are being authenticated',
 				body: 'Visit the tab that just opened and follow their instructions to log in',
-				meta: 'FIELDZ_AUTH_POPUP'
+				meta: 'FIELDZ_AUTH_POPUP',
+				response: userCancellation(kill)
 			});
-			await googleLogin(
-				async (credential) => {
-					console.log($authStore.user, credential);
-					modalStore.close();
-					goto(next);
-				},
-				(e) => {
-					modalStore.close();
-					console.warn(e);
-					duplicatedMessage(e);
-				}
-			);
 		} catch (e) {
 			console.warn(e);
 			duplicatedMessage(e);
@@ -85,7 +98,6 @@
 	async function twitter() {
 		try {
 			await twitterLogin(async (credential) => {
-				console.log($authStore.user, credential);
 				goto(next);
 			});
 		} catch (e) {
@@ -96,24 +108,14 @@
 
 	async function github() {
 		try {
+			const kill = await githubLogin(credentialFunction, authRejection);
 			modalStore.trigger({
 				type: 'alert',
 				title: 'Please wait, you are being authenticated',
 				body: 'Visit the tab that just opened and follow their instructions to log in',
-				meta: 'FIELDZ_AUTH_POPUP'
+				meta: 'FIELDZ_AUTH_POPUP',
+				response: userCancellation(kill)
 			});
-			await githubLogin(
-				async (credential) => {
-					console.log($authStore.user, credential);
-					modalStore.close();
-					goto(next);
-				},
-				(e) => {
-					modalStore.close();
-					console.warn(e);
-					duplicatedMessage(e);
-				}
-			);
 		} catch (e) {
 			console.warn(e);
 			duplicatedMessage(e);
@@ -128,8 +130,6 @@
 			});
 
 			const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			console.log(userCredential);
 
 			goto(next);
 		} catch (e) {

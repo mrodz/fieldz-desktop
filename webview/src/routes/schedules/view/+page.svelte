@@ -61,10 +61,6 @@
 	};
 
 	$: calendar?.setOption?.('view', $compact ? 'listWeek' : 'timeGridWeek');
-	// $: {
-	// 	calendar?.setOption?.('editable', editMode);
-	// 	console.log(calendar?.getOption?.('editable'));
-	// }
 
 	onMount(async () => {
 		try {

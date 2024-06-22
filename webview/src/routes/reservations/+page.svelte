@@ -3,7 +3,15 @@
 	import TimeGrid from '@event-calendar/time-grid';
 	import Interaction from '@event-calendar/interaction';
 	import { slide, fade } from 'svelte/transition';
-	import { getModalStore, getToastStore, ProgressRadial } from '@skeletonlabs/skeleton';
+	import {
+		getModalStore,
+		getToastStore,
+		Accordion,
+		AccordionItem,
+		ProgressRadial,
+		RadioGroup,
+		RadioItem
+	} from '@skeletonlabs/skeleton';
 	import { onMount } from 'svelte';
 	import { dialog, invoke } from '@tauri-apps/api';
 	import {
@@ -134,6 +142,8 @@
 		}
 	}
 
+	let editMode: 'create' | 'select' = 'create';
+
 	const options = {
 		allDaySlot: false,
 		view: 'timeGridWeek',
@@ -143,6 +153,7 @@
 		events: [],
 		slotMinTime: '05:00:00',
 		slotMaxTime: '24:00:00',
+		unselectAuto: false,
 		date: dateStart === null || isNaN(Number(dateStart)) ? new Date() : new Date(Number(dateStart)),
 		async eventDrop(e: {
 			oldEvent: CalendarEvent;
@@ -182,6 +193,7 @@
 						timeout: 1500
 					});
 				} else {
+					console.error(err);
 					dialog.message(JSON.stringify(err), {
 						title: 'could not move event',
 						type: 'error'
@@ -227,6 +239,7 @@
 						timeout: 1500
 					});
 				} else {
+					console.error(err);
 					dialog.message(JSON.stringify(err), {
 						title: 'could not move event',
 						type: 'error'
@@ -235,58 +248,185 @@
 			}
 		},
 		eventClick(e: { el: HTMLElement; event: CalendarEvent }) {
-			modalStore.trigger({
-				type: 'confirm',
-				title: 'Delete time slot',
-				body: `Start: ${e.event.start}, End: ${e.event.end}`,
-				buttonTextConfirm: 'Delete',
-				async response(r: boolean) {
-					if (r) {
-						try {
-							await invoke('delete_time_slot', { id: Number(e.event.id) });
-							calendar.removeEventById(e.event.id);
-						} catch (e) {
-							dialog.message(JSON.stringify(e), {
-								title: 'Could not delete time slot',
-								type: 'error'
-							});
-						}
-					}
-				}
-			});
+			deleteCalendarEventPrompt(e.event);
 		},
-		select(e: DateRange) {
-			let diff: number = e.end.valueOf() - e.start.valueOf();
-			let diffInHours = diff / 1000 / 60 / 60; // Convert milliseconds to hours
-
-			let hours = Math.floor(diffInHours);
-			let minutes = Math.floor((diffInHours - hours) * 60);
-
-			const input = {
-				start: e.start.valueOf(),
-				end: e.end.valueOf(),
-				reservation_type_id: activeScheduleType!.id,
-				field_id: Number(fieldId)
-			};
-
-			if (TIME_SLOT_CREATION_MODAL_ENABLE) {
+		select(range: DateRange) {
+			switch (editMode) {
+				case 'create':
+					dragToCreate(range);
+					calendar.unselect();
+					break;
+				case 'select':
+					dragToSelect(range);
+					break;
+			}
+		},
+		async dateClick(e: { date: Date }) {
+			if (intendingToCopy) {
 				modalStore.trigger({
 					type: 'confirm',
-					title: `New Reservation (${hours}:${minutes < 10 ? '0' + minutes : minutes}h duration)`,
-					body: `From ${e.start} to ${e.end}`,
-					buttonTextConfirm: 'Yes!',
-					buttonTextCancel: 'No, go back',
-					async response(r: boolean) {
-						if (r) {
-							createTimeSlot(input);
+					title: `You are about to paste ${selectionBuffer.length} time slot(s) at ${e.date}. Do you wish to continue?`,
+					async response(r) {
+						if (!r) return;
+
+						try {
+							const first = selectionBuffer[0].id;
+							const last = selectionBuffer[selectionBuffer.length - 1].id;
+							const newTimeSlots = await invoke<TimeSlotExtension[]>('copy_time_slots', {
+								input: {
+									src_start_id: Number(first),
+									src_end_id: Number(last),
+									dst_start: e.date.getTime()
+								}
+							});
+
+							for (const timeSlot of newTimeSlots) {
+								calendar.addEvent(eventFromTimeSlot(timeSlot));
+							}
+
+							toastStore.trigger({
+								message: `Succesfully copied ${selectionBuffer.length} time slot(s)`,
+								background: 'variant-filled-success'
+							});
+
+							onModeSwitch();
+						} catch (err) {
+							if (err !== null && typeof err === 'object' && 'Overlap' in err) {
+								toastStore.trigger({
+									message: 'This would overlap with another time slot! Try pasting elsewhere',
+									background: 'variant-filled-error',
+									timeout: 3500
+								});
+							
+								// no `onModeSwitch` because we'll let the user try again
+							} else {
+								console.error(err);
+								dialog.message(JSON.stringify(err), {
+									title: 'could not copy events',
+									type: 'error'
+								});
+								onModeSwitch();
+							}
 						}
 					}
 				});
-			} else {
-				createTimeSlot(input);
 			}
 		}
 	} as const;
+
+	function dragToCreate(e: DateRange) {
+		let diff: number = e.end.valueOf() - e.start.valueOf();
+		let diffInHours = diff / 1000 / 60 / 60; // Convert milliseconds to hours
+
+		let hours = Math.floor(diffInHours);
+		let minutes = Math.floor((diffInHours - hours) * 60);
+
+		const input = {
+			start: e.start.valueOf(),
+			end: e.end.valueOf(),
+			reservation_type_id: activeScheduleType!.id,
+			field_id: Number(fieldId)
+		};
+
+		if (TIME_SLOT_CREATION_MODAL_ENABLE) {
+			modalStore.trigger({
+				type: 'confirm',
+				title: `New Reservation (${hours}:${minutes < 10 ? '0' + minutes : minutes}h duration)`,
+				body: `From ${e.start} to ${e.end}`,
+				buttonTextConfirm: 'Yes!',
+				buttonTextCancel: 'No, go back',
+				async response(r: boolean) {
+					if (r) {
+						createTimeSlot(input);
+					}
+				}
+			});
+		} else {
+			createTimeSlot(input);
+		}
+	}
+
+	let selectionBuffer: CalendarEvent[] = [];
+	let triggerId: string | undefined;
+	let copyTriggerId: string | undefined;
+
+	function dragToSelect(e: DateRange) {
+		if (triggerId !== undefined) {
+			toastStore.close(triggerId);
+			triggerId = undefined;
+		}
+		selectionBuffer = [];
+
+		const unsorted = [];
+
+		for (const event of calendar.getEvents() as CalendarEvent[]) {
+			if (
+				(event.start > e.start && event.start < e.end) ||
+				(event.end > e.start && event.end < e.end)
+			) {
+				unsorted.push(event);
+			}
+		}
+
+		selectionBuffer = unsorted.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+		triggerId = toastStore.trigger({
+			message: `Selected ${selectionBuffer.length} event${selectionBuffer.length === 1 ? '' : 's'}`,
+			autohide: false,
+			callback(response) {
+				if (response.status === 'closed' && triggerId === response.id) {
+					onModeSwitch(false);
+				}
+			}
+		});
+	}
+
+	function onModeSwitch(closeToast: boolean | undefined = true) {
+		calendar.unselect();
+		selectionBuffer = [];
+		intendingToCopy = false;
+		// the parameter is necessary to prevent a stack overflow if a toast tries to close itself
+		if (closeToast && triggerId !== undefined) {
+			toastStore.close(triggerId);
+			triggerId = undefined;
+		}
+		if (copyTriggerId !== undefined) {
+			toastStore.close(copyTriggerId);
+			copyTriggerId = undefined;
+		}
+	}
+
+	let intendingToCopy = false;
+
+	function onIntentToCopy() {
+		if (selectionBuffer.length === 0) {
+			toastStore.trigger({
+				message: 'There are no time slots in your selection',
+				background: 'variant-filled-error'
+			});
+			return;
+		}
+
+		if (intendingToCopy) {
+			toastStore.trigger({
+				message: `You are already poised to copy ${selectionBuffer.length} time slot(s)`,
+				background: 'variant-filled-error'
+			});
+			return;
+		}
+
+		intendingToCopy = true;
+
+		copyTriggerId = toastStore.trigger({
+			message: 'Copy your selection by clicking anywhere to insert',
+			autohide: false,
+			callback(response) {
+				if (response.status === 'closed') {
+					intendingToCopy = false;
+				}
+			}
+		});
+	}
 
 	async function signalCustomConcurrencyUpdate(fc: FieldConcurrency) {
 		try {
@@ -338,6 +478,78 @@
 			await signalCustomConcurrencyUpdate(thisType!);
 		}
 	}
+
+	async function deleteCalendarEventPrompt(event: CalendarEvent) {
+		modalStore.trigger({
+			type: 'confirm',
+			title: 'Delete time slot',
+			body: `Start: ${event.start}, End: ${event.end}`,
+			buttonTextConfirm: 'Delete',
+			async response(r: boolean) {
+				if (r) {
+					try {
+						await invoke('delete_time_slot', { id: Number(event.id) });
+						calendar.removeEventById(event.id);
+					} catch (e) {
+						dialog.message(JSON.stringify(e), {
+							title: 'Could not delete time slot',
+							type: 'error'
+						});
+					}
+				}
+			}
+		});
+	}
+
+	function batchDelete() {
+		if (selectionBuffer.length === 0) {
+			toastStore.trigger({
+				message: 'There are no time slots in this selection to delete',
+				background: 'variant-filled-error'
+			});
+			return;
+		}
+
+		const first = selectionBuffer[0];
+
+		if (selectionBuffer.length === 1) {
+			deleteCalendarEventPrompt(first);
+			onModeSwitch();
+			return;
+		}
+
+		const last = selectionBuffer[selectionBuffer.length - 1];
+
+		modalStore.trigger({
+			type: 'confirm',
+			title: "You're about to delete multiple time slots",
+			body: `Please confirm that you would like to delete ${selectionBuffer.length} time slots. This means every time slot from ${first.start} to ${last.end} will be <b>PERMANENTLY DELETED</b>. Only proceed if you are sure you'd like to delete these time slots.`,
+			async response(r) {
+				if (r) {
+					try {
+						await invoke('delete_time_slots_batched', {
+							startId: Number(first.id),
+							endId: Number(last.id)
+						});
+						for (const event of selectionBuffer) {
+							calendar.removeEventById(event.id);
+						}
+						toastStore.trigger({
+							message: `Permanently deleted ${selectionBuffer.length} time slots`,
+							background: 'variant-filled-success'
+						});
+					} catch (e) {
+						dialog.message(JSON.stringify(e), {
+							title: 'Could not delete time slots',
+							type: 'error'
+						});
+					} finally {
+						onModeSwitch();
+					}
+				}
+			}
+		});
+	}
 </script>
 
 <main class="p-4" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
@@ -350,22 +562,36 @@
 	{/if}
 
 	{#if activeScheduleType !== undefined}
-		<section
-			class="my-4 grid grid-cols-1 justify-items-center sm:gap-2 md:grid-cols-2 md:gap-4 lg:grid-cols-4 lg:gap-8 [&>div]:w-4/5 md:[&>div]:w-full"
-		>
-			<div class="card max-w-md p-4 text-center">
-				<strong>Click and drag</strong> over empty space to create a time slot
-			</div>
-			<div class="card max-w-md p-4 text-center">
-				<strong>Click and drag</strong> an event to move it or resize it
-			</div>
-			<div class="card max-w-md p-4 text-center">
-				<strong>Click</strong> an event to delete it
-			</div>
-			<div class="card max-w-md p-4 text-center">
-				<strong>Select</strong> a field type to switch between reservation sizes
-			</div>
-		</section>
+		<Accordion>
+			<AccordionItem>
+				<svelte:fragment slot="summary">
+					Click to expand help and accessibility information
+				</svelte:fragment>
+				<svelte:fragment slot="content">
+					<section
+						class="my-4 grid grid-cols-1 justify-items-center sm:gap-2 md:grid-cols-2 md:gap-4 lg:grid-cols-4 lg:gap-8 [&>div]:w-4/5 md:[&>div]:w-full"
+					>
+						<div class="card max-w-md p-4 text-center">
+							<strong>Click and drag</strong> over empty space to
+							{#if editMode === 'create'}
+								create a time slot
+							{:else}
+								select many slots
+							{/if}
+						</div>
+						<div class="card max-w-md p-4 text-center">
+							<strong>Click and drag</strong> an event to move it or resize it
+						</div>
+						<div class="card max-w-md p-4 text-center">
+							<strong>Click</strong> an event to delete it
+						</div>
+						<div class="card max-w-md p-4 text-center">
+							<strong>Select</strong> a field type to switch between reservation sizes
+						</div>
+					</section>
+				</svelte:fragment>
+			</AccordionItem>
+		</Accordion>
 	{/if}
 
 	<hr class="hr my-5" />
@@ -373,7 +599,7 @@
 	{#if reservationTypes === undefined}
 		<ProgressRadial />
 	{:else if reservationTypes.length === 0}
-		<div class="card m-4 mx-auto bg-warning-500 p-8 text-center">
+		<div class="card bg-warning-500 m-4 mx-auto p-8 text-center">
 			You must create at least one reservation type before you can craft a schedule. You can do so <a
 				class="btn underline"
 				href="/field-types">here</a
@@ -440,6 +666,47 @@
 	{/if}
 
 	<hr class="hr my-5" />
+
+	<div class="block grid grid-cols-[auto_1fr] items-center">
+		<RadioGroup active="variant-filled-primary" hover="hover:variant-soft-primary">
+			<RadioItem
+				on:click={() => onModeSwitch()}
+				bind:group={editMode}
+				name="editModePicker"
+				value="create">Create Mode</RadioItem
+			>
+			<RadioItem
+				on:click={() => onModeSwitch()}
+				bind:group={editMode}
+				name="editModePicker"
+				value="select">Select Mode</RadioItem
+			>
+		</RadioGroup>
+
+		{#if editMode === 'select'}
+			<div class="ml-4 flex items-center gap-2" in:slide={{ axis: 'y' }} out:slide={{ axis: 'y' }}>
+				<header>
+					Selection: {selectionBuffer.length} time slot{selectionBuffer.length === 1 ? '' : 's'}
+				</header>
+				<div>
+					<button class="variant-filled btn" on:click={batchDelete}>Delete Selected</button>
+					<button
+						class="variant-filled btn"
+						on:click={() => {
+							toastStore.trigger({
+								message: 'Cleared selection',
+								background: 'variant-filled-success'
+							});
+							onModeSwitch();
+						}}>Clear Selected</button
+					>
+					<button class="variant-filled btn" on:click={onIntentToCopy}
+						>{intendingToCopy ? 'Paste' : 'Copy'} Selected</button
+					>
+				</div>
+			</div>
+		{/if}
+	</div>
 
 	<div class:hidden={activeScheduleType === undefined}>
 		<Calendar bind:this={calendar} {plugins} {options} />

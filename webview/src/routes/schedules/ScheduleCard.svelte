@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 
 	export let schedule: Schedule;
+	export let src: string;
 
 	const modalStore = getModalStore();
 	const toastStore = getToastStore();
@@ -25,7 +26,7 @@
 		minute: 'numeric'
 	};
 
-	const target = `popupClick-schedule-${schedule.id}-${schedule.name}`;
+	const target = `popupClick-schedule-${schedule.id}-${schedule.name}-${src}`;
 
 	const popupClick: PopupSettings = {
 		event: 'click',

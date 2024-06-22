@@ -258,3 +258,48 @@ pub enum LoadScheduleError {
     #[error("region with id {0} not found")]
     NotFound(i32),
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CopyTimeSlotsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("time slot with id {0} not found")]
+    NotFound(i32),
+    #[error("end < start: {end} < {start}")]
+    OutOfOrder {
+        #[serde(with = "ts_milliseconds")]
+        start: DateTime<Utc>,
+        #[serde(with = "ts_milliseconds")]
+        end: DateTime<Utc>,
+    },
+    #[error("this time slot is booked from {o_start} to {o_end}")]
+    Overlap {
+        #[serde(with = "ts_milliseconds")]
+        o_start: DateTime<Utc>,
+        #[serde(with = "ts_milliseconds")]
+        o_end: DateTime<Utc>,
+    },
+    #[error("the time slots provided had different field ids")]
+    FieldMismatch,
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum DeleteTimeSlotsError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("time slot with id {0} not found")]
+    NotFound(i32),
+    #[error("end < start: {end} < {start}")]
+    OutOfOrder {
+        #[serde(with = "ts_milliseconds")]
+        start: DateTime<Utc>,
+        #[serde(with = "ts_milliseconds")]
+        end: DateTime<Utc>,
+    },
+    #[error("the time slots provided had different field ids")]
+    FieldMismatch,
+}
