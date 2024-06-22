@@ -49,14 +49,26 @@
 			{:else}
 				<div class="mt-4 absolute left-1/2 -translate-x-1/2">
 					You haven't generated a schedule yet.
+					<!-- This has to go here because of position: absolute trickery -->
+					<div class="my-auto mt-6 flex flex-col">
+						<a
+							href="/scheduler"
+							class="variant-filled btn-icon mx-auto block flex h-[75px] w-[75px]"
+						>
+							+
+						</a>
+						<span class="mx-auto mt-2 block">Create Schedule</span>
+					</div>
 				</div>
 			{/each}
-			<div class="my-auto ml-10 flex flex-col">
-				<a href="/scheduler" class="variant-filled btn-icon mx-auto block flex h-[75px] w-[75px]"
-					>+</a
-				>
-				<span class="mx-auto mt-2 block">Create Schedule</span>
-			</div>
+			{#if schedules.length > 0}
+				<div class="my-auto ml-10 flex flex-col">
+					<a href="/scheduler" class="variant-filled btn-icon mx-auto block flex h-[75px] w-[75px]">
+						+
+					</a>
+					<span class="mx-auto mt-2 block">Create Schedule</span>
+				</div>
+			{/if}
 		{/await}
 	{/if}
 </div>
