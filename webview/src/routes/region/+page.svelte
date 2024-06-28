@@ -282,10 +282,8 @@
 				// TODO
 
 				conflicts = conflicts;
-
-			},
-		})
-
+			}
+		});
 	}
 
 	async function addTeamToConflict(options: { addTeamToConflict: (team: TeamExtension) => void }) {
@@ -339,7 +337,7 @@
 								{teamById}
 							/>
 						{/each}
-						<div class="my-auto md:ml-10 flex flex-col">
+						<div class="my-auto flex flex-col md:ml-10">
 							<button
 								class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
 								on:click={createCoachConflictMapping}>+</button
