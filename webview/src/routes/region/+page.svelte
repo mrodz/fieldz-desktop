@@ -266,10 +266,34 @@
 		}
 
 		// TODO
+
+		conflicts = conflicts;
 	}
 
 	async function createCoachConflictMapping() {
+		modalStore.trigger({
+			type: 'prompt',
+			title: "Enter this coach's name (Optional)",
+			response(r: false | undefined | string) {
+				if (r === false) {
+					return; // the user clicked "cancel"
+				}
+
+				// TODO
+
+				conflicts = conflicts;
+
+			},
+		})
+
+	}
+
+	async function addTeamToConflict(options: { addTeamToConflict: (team: TeamExtension) => void }) {
 		// TODO
+
+		let team: TeamExtension = void 0 as any;
+
+		options.addTeamToConflict(team);
 	}
 </script>
 
@@ -310,6 +334,7 @@
 							<ConflictCard
 								on:debouncedUpdate={(e) => updateConflict(e.detail.conflict, e.detail.options)}
 								on:delete={(e) => deleteConflict(e.detail, i)}
+								on:addTeam={(e) => addTeamToConflict(e.detail)}
 								{conflict}
 								{teamById}
 							/>
@@ -317,9 +342,9 @@
 						<div class="my-auto md:ml-10 flex flex-col">
 							<button
 								class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
-								on:click={createField}>+</button
+								on:click={createCoachConflictMapping}>+</button
 							>
-							<span class="mx-auto mt-2 block">Create Field</span>
+							<span class="mx-auto mt-2 block">Add Coach Rule</span>
 						</div>
 					</div>
 				{/if}
