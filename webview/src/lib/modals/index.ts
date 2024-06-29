@@ -6,3 +6,4 @@ export * as RegionEdit from './RegionEdit.svelte';
 export * as ScheduleEdit from './ScheduleEdit.svelte';
 export * as TeamCreate from './TeamCreate.svelte';
 export * as TeamEdit from './TeamEdit.svelte';
+export * as TeamSelector from './TeamSelector.svelte'

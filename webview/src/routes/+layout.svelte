@@ -28,7 +28,8 @@
 		RegionEdit,
 		TeamEdit,
 		ScheduleEdit,
-		Processing
+		Processing,
+		TeamSelector
 	} from '$lib/modals/index';
 	import { HAS_DB_RESET_BUTTON } from '$lib';
 	import authStore from '$lib/authStore';
@@ -112,6 +113,9 @@
 		},
 		processingSchedule: {
 			ref: Processing
+		},
+		teamSelector: {
+			ref: TeamSelector
 		}
 	};
 
