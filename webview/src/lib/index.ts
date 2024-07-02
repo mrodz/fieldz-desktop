@@ -386,3 +386,8 @@ export interface GithubOAuthAccessTokenExchange {
 	scope: string;
 	token_type: string;
 }
+
+export interface CoachingConflict {
+	teams: number[];
+	coach_name?: string;
+}
