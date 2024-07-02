@@ -4,7 +4,6 @@
 	import { getModalStore } from '@skeletonlabs/skeleton';
 	import { createEventDispatcher } from 'svelte';
 	import Fa from 'svelte-fa';
-	import Page from '../+page.svelte';
 
 	export let teamById: (id: number) => TeamExtension;
 	export let conflict: CoachingConflict;
@@ -67,8 +66,8 @@
 		}, 1_000);
 	}
 
-	function addTeamToConflict(team: TeamExtension) {
-		// TODO!
+	function addTeamToConflict(team_ext: TeamExtension) {
+		conflict.teams.push(team_ext.team.id);
 		requestUpdate();
 	}
 
