@@ -6,32 +6,37 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize, PartialOrd, Ord,
 )]
-#[sea_orm(table_name = "region")]
+#[sea_orm(table_name = "coach_conflict_team_join")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i32,
-    pub title: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub coach_conflict: i32,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub team: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::coach_conflict::Entity")]
+    #[sea_orm(
+        belongs_to = "super::coach_conflict::Entity",
+        from = "Column::CoachConflict",
+        to = "super::coach_conflict::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
     CoachConflict,
-    #[sea_orm(has_many = "super::field::Entity")]
-    Field,
-    #[sea_orm(has_many = "super::team::Entity")]
+    #[sea_orm(
+        belongs_to = "super::team::Entity",
+        from = "Column::Team",
+        to = "super::team::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
     Team,
 }
 
 impl Related<super::coach_conflict::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::CoachConflict.def()
-    }
-}
-
-impl Related<super::field::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Field.def()
     }
 }
 

@@ -390,4 +390,5 @@ export interface GithubOAuthAccessTokenExchange {
 export interface CoachingConflict {
 	teams: number[];
 	coach_name?: string;
+	region: number;
 }
