@@ -21,13 +21,16 @@
 
 	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
 
-	import RegionCreate from './region/RegionCreate.svelte';
-	import FieldCreate from './fields/FieldCreate.svelte';
-	import TeamCreate from './fields/TeamCreate.svelte';
-	import RegionEdit from './region/RegionEdit.svelte';
-	import TeamEdit from './fields/TeamEdit.svelte';
-	import ScheduleEdit from './schedules/ScheduleEdit.svelte';
-	import Processing from './scheduler/Processing.svelte';
+	import {
+		RegionCreate,
+		FieldCreate,
+		TeamCreate,
+		RegionEdit,
+		TeamEdit,
+		ScheduleEdit,
+		Processing,
+		TeamSelector
+	} from '$lib/modals/index';
 	import { HAS_DB_RESET_BUTTON } from '$lib';
 	import authStore from '$lib/authStore';
 	import { initializeApp } from 'firebase/app';
@@ -110,6 +113,9 @@
 		},
 		processingSchedule: {
 			ref: Processing
+		},
+		teamSelector: {
+			ref: TeamSelector
 		}
 	};
 

@@ -265,7 +265,7 @@
 			return; // no changes
 		}
 
-		// TODO
+		// TODO <invoke>
 
 		conflicts = conflicts;
 	}
@@ -279,21 +279,29 @@
 					return; // the user clicked "cancel"
 				}
 
-				// TODO
+				// TODO <invoke>
 
 				conflicts = conflicts;
-
-			},
-		})
-
+			}
+		});
 	}
 
-	async function addTeamToConflict(options: { addTeamToConflict: (team: TeamExtension) => void }) {
-		// TODO
-
-		let team: TeamExtension = void 0 as any;
-
-		options.addTeamToConflict(team);
+	async function addTeamToConflict(
+		conflict: CoachingConflict,
+		options: { addTeamToConflict: (team: TeamExtension) => void }
+	) {
+		modalStore.trigger({
+			type: 'component',
+			component: 'teamSelector',
+			meta: {
+				regionId,
+				onTeamSelected(team: TeamExtension) {
+					// TODO <invoke>
+					options.addTeamToConflict(team); // update the UI inside the card
+				},
+				excludeTeams: conflict.teams
+			}
+		});
 	}
 </script>
 
@@ -329,17 +337,17 @@
 						<span class="mx-auto mt-2 block">Create coach conflict mapping</span>
 					</div>
 				{:else}
-					<div class="flex flex-col gap-2 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+					<div class="flex flex-col gap-2 lg:grid lg:grid-cols-2 xl:grid-cols-3">
 						{#each conflicts as conflict, i}
 							<ConflictCard
 								on:debouncedUpdate={(e) => updateConflict(e.detail.conflict, e.detail.options)}
 								on:delete={(e) => deleteConflict(e.detail, i)}
-								on:addTeam={(e) => addTeamToConflict(e.detail)}
+								on:addTeam={(e) => addTeamToConflict(conflict, e.detail)}
 								{conflict}
 								{teamById}
 							/>
 						{/each}
-						<div class="my-auto md:ml-10 flex flex-col">
+						<div class="my-auto flex flex-col md:ml-10">
 							<button
 								class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
 								on:click={createCoachConflictMapping}>+</button
