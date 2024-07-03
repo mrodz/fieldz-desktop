@@ -47,7 +47,7 @@
 	}
 
 	function onRemoveTeam(teamId: number) {
-		conflict.teams = conflict.teams.filter((id) => id !== teamId);
+		conflict.teams = conflict.teams.filter((team) => team.id !== teamId);
 		requestUpdate();
 	}
 
@@ -59,7 +59,7 @@
 				conflict,
 				options: {
 					nameOnLoad: mappingNameOnLoad,
-					teamsOnLoad
+					teamsOnLoad: teamsOnLoad.map(team => team.id)
 				}
 			});
 			pendingPost = false;
@@ -67,7 +67,7 @@
 	}
 
 	function addTeamToConflict(team_ext: TeamExtension) {
-		conflict.teams.push(team_ext.team.id);
+		conflict.teams.push(team_ext.team);
 		requestUpdate();
 	}
 
@@ -97,7 +97,7 @@
 		{/if}
 		<dl class="list-dl">
 			{#each conflict.teams as teamId}
-				{@const team_ext = teamById(teamId)}
+				{@const team_ext = teamById(teamId.id)}
 				<div>
 					{#if pendingPost}
 						<div class="flex flex-col items-center" aria-disabled="true">
@@ -105,7 +105,7 @@
 							<span class="sr-only">Please wait</span>
 						</div>
 					{:else}
-						<button class="btn-icon-md btn-icon m-auto" on:click={() => onRemoveTeam(teamId)}>
+						<button class="btn-icon-md btn-icon m-auto" on:click={() => onRemoveTeam(teamId.id)}>
 							<Fa class="inline" size="xs" icon={faX} />
 							<span class="sr-only">Remove team</span>
 						</button>

@@ -30,20 +30,6 @@
 	let teams: TeamExtension[] | undefined;
 	let conflicts: CoachingConflict[] | undefined;
 
-	const mockConflict = () => {
-		if (teams === undefined) return;
-
-		const teamOne = teams[Math.floor(Math.random() * teams.length)];
-		let teamTwo;
-		do {
-			teamTwo = teams[Math.floor(Math.random() * teams.length)];
-		} while (teamTwo.team.id === teamOne.team.id);
-
-		return {
-			teams: [teamOne.team.id, teamTwo.team.id]
-		};
-	};
-
 	onMount(async () => {
 		try {
 			const id = Number(regionId);
@@ -62,8 +48,6 @@
 				invoke<TeamExtension[]>('get_teams_and_tags', { regionId: id }),
 				[] /* TODO */
 			]);
-
-			conflicts = [mockConflict()!];
 		} catch (e) {
 			console.error(e);
 			dialog.message(JSON.stringify(e), {
@@ -260,7 +244,7 @@
 		const teamsOnLoadSorted = options.teamsOnLoad.sort();
 		if (
 			conflict.coach_name === options.nameOnLoad &&
-			conflict.teams.sort().every((val, index) => val === teamsOnLoadSorted[index])
+			conflict.teams.sort().every((val, index) => val.id === teamsOnLoadSorted[index])
 		) {
 			return; // no changes
 		}

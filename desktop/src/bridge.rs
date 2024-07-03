@@ -872,3 +872,15 @@ pub(crate) async fn coaching_conflict_rename(app: AppHandle, id: i32, new_name: 
     
     client.coaching_conflict_rename(id, new_name).await
 }
+
+#[tauri::command]
+pub(crate) async fn get_coach_conflicts(app: AppHandle, region_id: i32) -> Result<Vec<CoachConflict>, CoachConflictError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or(CoachConflictError::NoDatabase)?;
+
+    client.get_coach_conflicts(region_id).await
+}

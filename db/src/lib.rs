@@ -709,9 +709,10 @@ pub struct CopyTimeSlotsInput {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct CoachConflict {
+    id: i32,
     region: i32,
     coach_name: Option<String>,
-    teams: Vec<i32>,
+    teams: Vec<Team>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2266,6 +2267,7 @@ impl Client {
         .map_err(|e| CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
 
         Ok(CoachConflict {
+            id: model.id,
             coach_name: model.coach_name,
             region: model.region,
             teams: vec![],
@@ -2367,7 +2369,11 @@ impl Client {
             })?
             .ok_or(CoachConflictError::CoachConflictNotFound(id))?;
 
-        if model.coach_name.as_ref().is_some_and(|name| name == &new_name) {
+        if model
+            .coach_name
+            .as_ref()
+            .is_some_and(|name| name == &new_name)
+        {
             return Ok(());
         }
 
@@ -2380,5 +2386,27 @@ impl Client {
         })?;
 
         Ok(())
+    }
+
+    pub async fn get_coach_conflicts(
+        &self,
+        region_id: i32,
+    ) -> Result<Vec<CoachConflict>, CoachConflictError> {
+        Ok(CoachConflictEntity::find()
+            .find_with_related(TeamEntity)
+            .filter(coach_conflict::Column::Region.eq(region_id))
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .into_iter()
+            .map(|(conflict, teams)| CoachConflict {
+                id: conflict.id,
+                region: conflict.region,
+                coach_name: conflict.coach_name,
+                teams,
+            })
+            .collect())
     }
 }

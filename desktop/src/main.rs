@@ -135,6 +135,7 @@ fn main() -> Result<()> {
                 delete_coaching_conflict,
                 coaching_conflict_team_op,
                 coaching_conflict_rename,
+                get_coach_conflicts,
             ])
             .run(tauri::generate_context!())
             .context("error while running tauri application")
