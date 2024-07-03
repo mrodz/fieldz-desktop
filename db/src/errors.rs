@@ -303,3 +303,17 @@ pub enum DeleteTimeSlotsError {
     #[error("the time slots provided had different field ids")]
     FieldMismatch,
 }
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum CoachConflictError {
+    #[error("database was not initialized")]
+    NoDatabase,
+    #[error("database operation failed: `{0}`")]
+    DatabaseError(String),
+    #[error("coach conflict with id {0} not found")]
+    CoachConflictNotFound(i32),
+    #[error("team with id {0} not found")]
+    TeamNotFound(i32),
+    #[error("the coach conflict and team are from different regions")]
+    RegionMismatch,
+}

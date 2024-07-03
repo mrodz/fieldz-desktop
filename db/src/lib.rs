@@ -19,6 +19,10 @@ use chrono::{Local, Utc};
 
 #[allow(unused_imports)]
 pub(crate) mod entity_local_exports {
+    pub use coach_conflict::{
+        ActiveModel as ActiveCoachConflict, Entity as CoachConflictEntity,
+        Model as CoachConflictModel,
+    };
     use entity::*;
     pub use field::{ActiveModel as ActiveField, Entity as FieldEntity, Model as Field};
     pub use region::{ActiveModel as ActiveRegion, Entity as RegionEntity, Model as Region};
@@ -701,6 +705,32 @@ pub struct CopyTimeSlotsInput {
     src_end_id: i32,
     #[serde(with = "ts_milliseconds")]
     dst_start: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CoachConflict {
+    region: i32,
+    coach_name: Option<String>,
+    teams: Vec<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CreateCoachConflictInput {
+    region_id: i32,
+    coach_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub enum CoachConflictTeamInputOp {
+    Create,
+    Delete,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CoachConflictTeamInput {
+    coach_conflict_id: i32,
+    team_id: i32,
+    op: CoachConflictTeamInputOp,
 }
 
 impl Client {
@@ -2220,5 +2250,135 @@ impl Client {
                 DeleteTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
             })
             .map(|_| ())
+    }
+
+    pub async fn create_coaching_conflict(
+        &self,
+        input: CreateCoachConflictInput,
+    ) -> Result<CoachConflict, CoachConflictError> {
+        let model = ActiveCoachConflict {
+            coach_name: Set(input.coach_name),
+            region: Set(input.region_id),
+            ..Default::default()
+        }
+        .insert(&self.connection)
+        .await
+        .map_err(|e| CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
+
+        Ok(CoachConflict {
+            coach_name: model.coach_name,
+            region: model.region,
+            teams: vec![],
+        })
+    }
+
+    pub async fn delete_coaching_conflict(&self, id: i32) -> Result<(), CoachConflictError> {
+        let maybe_deleted = CoachConflictEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        if maybe_deleted.rows_affected != 1 {
+            return Err(CoachConflictError::CoachConflictNotFound(id));
+        }
+
+        Ok(())
+    }
+
+    pub async fn coaching_conflict_team_op(
+        &self,
+        input: CoachConflictTeamInput,
+    ) -> Result<(), CoachConflictError> {
+        let coach_conflict = CoachConflictEntity::find_by_id(input.coach_conflict_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(CoachConflictError::CoachConflictNotFound(
+                input.coach_conflict_id,
+            ))?;
+
+        let team = TeamEntity::find_by_id(input.team_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(CoachConflictError::TeamNotFound(input.coach_conflict_id))?;
+
+        if coach_conflict.region != team.region_owner {
+            return Err(CoachConflictError::RegionMismatch);
+        }
+
+        use coach_conflict_team_join as CCTJ;
+
+        let join_table_record = CCTJ::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(CCTJ::Column::CoachConflict.eq(coach_conflict.id))
+                    .add(CCTJ::Column::Team.eq(team.id)),
+            )
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        match input.op {
+            CoachConflictTeamInputOp::Create if join_table_record.is_none() => {
+                CCTJ::ActiveModel {
+                    coach_conflict: Set(coach_conflict.id),
+                    team: Set(team.id),
+                }
+                .insert(&self.connection)
+                .await
+                .map_err(|e| {
+                    CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?;
+            }
+            CoachConflictTeamInputOp::Delete if join_table_record.is_some() => {
+                join_table_record
+                    .unwrap()
+                    .delete(&self.connection)
+                    .await
+                    .map_err(|e| {
+                        CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                    })?;
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    pub async fn coaching_conflict_rename(
+        &self,
+        id: i32,
+        new_name: String,
+    ) -> Result<(), CoachConflictError> {
+        let model = CoachConflictEntity::find_by_id(id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(CoachConflictError::CoachConflictNotFound(id))?;
+
+        if model.coach_name.as_ref().is_some_and(|name| name == &new_name) {
+            return Ok(());
+        }
+
+        let mut active_model = model.into_active_model();
+
+        active_model.set(coach_conflict::Column::CoachName, new_name.into());
+
+        active_model.update(&self.connection).await.map_err(|e| {
+            CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+        })?;
+
+        Ok(())
     }
 }
