@@ -30,20 +30,6 @@
 	let teams: TeamExtension[] | undefined;
 	let conflicts: CoachingConflict[] | undefined;
 
-	const mockConflict = () => {
-		if (teams === undefined) return;
-
-		const teamOne = teams[Math.floor(Math.random() * teams.length)];
-		let teamTwo;
-		do {
-			teamTwo = teams[Math.floor(Math.random() * teams.length)];
-		} while (teamTwo.team.id === teamOne.team.id);
-
-		return {
-			teams: [teamOne.team.id, teamTwo.team.id]
-		};
-	};
-
 	onMount(async () => {
 		try {
 			const id = Number(regionId);
@@ -60,10 +46,8 @@
 				invoke<Region>('load_region', { id }),
 				invoke<Field[]>('get_fields', { regionId: id }),
 				invoke<TeamExtension[]>('get_teams_and_tags', { regionId: id }),
-				[] /* TODO */
+				invoke<CoachingConflict[]>('get_coach_conflicts', { regionId: id })
 			]);
-
-			conflicts = [mockConflict()!];
 		} catch (e) {
 			console.error(e);
 			dialog.message(JSON.stringify(e), {
@@ -234,13 +218,17 @@
 
 	async function deleteConflict(conflict: CoachingConflict, index: number) {
 		try {
-			/*
-			await invoke
-			 */
+			await invoke('delete_coaching_conflict', {
+				id: conflict.id
+			});
 
-			console.log('DELETING', index, conflicts);
 			conflicts?.splice(index, 1);
 			conflicts = conflicts;
+
+			toastStore.trigger({
+				message: 'Deleted coach conflict mapping',
+				background: 'variant-filled-success'
+			});
 		} catch (e) {
 			console.error(e);
 			dialog.message(JSON.stringify(e), {
@@ -254,34 +242,54 @@
 		conflict: CoachingConflict,
 		options: {
 			nameOnLoad: string | undefined;
-			teamsOnLoad: number[];
 		}
 	) {
-		const teamsOnLoadSorted = options.teamsOnLoad.sort();
-		if (
-			conflict.coach_name === options.nameOnLoad &&
-			conflict.teams.sort().every((val, index) => val === teamsOnLoadSorted[index])
-		) {
-			return; // no changes
+		if (conflict.coach_name !== options.nameOnLoad) {
+			try {
+				await invoke('coaching_conflict_rename', {
+					id: conflict.id,
+					newName: conflict.coach_name
+				});
+				conflicts = conflicts;
+			} catch (e) {
+				console.error(e);
+				dialog.message(JSON.stringify(e), {
+					type: 'error',
+					title: 'Could not rename coach'
+				});
+			}
 		}
-
-		// TODO <invoke>
-
-		conflicts = conflicts;
 	}
 
 	async function createCoachConflictMapping() {
 		modalStore.trigger({
 			type: 'prompt',
 			title: "Enter this coach's name (Optional)",
-			response(r: false | undefined | string) {
+			async response(r: false | undefined | string) {
 				if (r === false) {
 					return; // the user clicked "cancel"
 				}
 
-				// TODO <invoke>
-
-				conflicts = conflicts;
+				try {
+					const conflict = await invoke<CoachingConflict>('create_coaching_conflict', {
+						input: {
+							region_id: region!.id,
+							coach_name: r
+						}
+					});
+					conflicts?.push?.(conflict);
+					conflicts = conflicts;
+					toastStore.trigger({
+						message: 'Created new coach mapping',
+						background: 'variant-filled-success'
+					});
+				} catch (e) {
+					console.error(e);
+					dialog.message(JSON.stringify(e), {
+						type: 'error',
+						title: 'Could not create coach conflict mapping'
+					});
+				}
 			}
 		});
 	}
@@ -295,13 +303,52 @@
 			component: 'teamSelector',
 			meta: {
 				regionId,
-				onTeamSelected(team: TeamExtension) {
-					// TODO <invoke>
-					options.addTeamToConflict(team); // update the UI inside the card
+				onTeamSelected(team_ext: TeamExtension) {
+					const creation = invoke('coaching_conflict_team_op', {
+						input: {
+							coach_conflict_id: conflict.id,
+							team_id: team_ext.team.id,
+							op: 'Create'
+						}
+					});
+
+					creation
+						.then(() => {
+							toastStore.trigger({
+								message: `Added ${team_ext.team.name}`,
+								background: 'variant-filled-success'
+							});
+							options.addTeamToConflict(team_ext); // update the UI inside the card
+						})
+						.catch((e) => {
+							console.error(e);
+							dialog.message(JSON.stringify(e), {
+								title: 'Could not add team to conflict card',
+								type: 'error'
+							});
+						});
 				},
 				excludeTeams: conflict.teams
 			}
 		});
+	}
+
+	async function removeTeamFromConflict(conflict: CoachingConflict, options: { teamId: number }) {
+		try {
+			await invoke('coaching_conflict_team_op', {
+				input: {
+					coach_conflict_id: conflict.id,
+					team_id: options.teamId,
+					op: 'Delete'
+				}
+			});
+		} catch (e) {
+			console.error(e);
+			dialog.message(JSON.stringify(e), {
+				title: 'Could not add team to conflict card',
+				type: 'error'
+			});
+		}
 	}
 </script>
 
@@ -343,6 +390,7 @@
 								on:debouncedUpdate={(e) => updateConflict(e.detail.conflict, e.detail.options)}
 								on:delete={(e) => deleteConflict(e.detail, i)}
 								on:addTeam={(e) => addTeamToConflict(conflict, e.detail)}
+								on:removeTeam={(e) => removeTeamFromConflict(conflict, e.detail)}
 								{conflict}
 								{teamById}
 							/>

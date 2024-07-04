@@ -131,6 +131,11 @@ fn main() -> Result<()> {
                 generate_code_challenge,
                 copy_time_slots,
                 delete_time_slots_batched,
+                create_coaching_conflict,
+                delete_coaching_conflict,
+                coaching_conflict_team_op,
+                coaching_conflict_rename,
+                get_coach_conflicts,
             ])
             .run(tauri::generate_context!())
             .context("error while running tauri application")

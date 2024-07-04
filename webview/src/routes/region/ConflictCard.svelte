@@ -8,7 +8,6 @@
 	export let teamById: (id: number) => TeamExtension;
 	export let conflict: CoachingConflict;
 	const mappingNameOnLoad = conflict.coach_name;
-	const teamsOnLoad = conflict.teams.slice();
 
 	let reportTimer: NodeJS.Timeout | undefined;
 	let pendingPost: boolean = false;
@@ -22,11 +21,13 @@
 			conflict: CoachingConflict;
 			options: {
 				nameOnLoad: string | undefined;
-				teamsOnLoad: number[];
 			};
 		};
 		addTeam: {
 			addTeamToConflict: typeof addTeamToConflict;
+		};
+		removeTeam: {
+			teamId: number;
 		};
 	}>();
 
@@ -46,11 +47,6 @@
 		});
 	}
 
-	function onRemoveTeam(teamId: number) {
-		conflict.teams = conflict.teams.filter((id) => id !== teamId);
-		requestUpdate();
-	}
-
 	function requestUpdate() {
 		clearTimeout(reportTimer);
 		pendingPost = true;
@@ -58,8 +54,7 @@
 			dispatch('debouncedUpdate', {
 				conflict,
 				options: {
-					nameOnLoad: mappingNameOnLoad,
-					teamsOnLoad
+					nameOnLoad: mappingNameOnLoad
 				}
 			});
 			pendingPost = false;
@@ -67,12 +62,17 @@
 	}
 
 	function addTeamToConflict(team_ext: TeamExtension) {
-		conflict.teams.push(team_ext.team.id);
-		requestUpdate();
+		conflict.teams.push(team_ext.team);
+		conflict = conflict;
 	}
 
 	function onAddTeam() {
 		dispatch('addTeam', { addTeamToConflict });
+	}
+
+	function onRemoveTeam(teamId: number) {
+		dispatch('removeTeam', { teamId });
+		conflict.teams = conflict.teams.filter((team) => team.id !== teamId);
 	}
 </script>
 
@@ -97,7 +97,7 @@
 		{/if}
 		<dl class="list-dl">
 			{#each conflict.teams as teamId}
-				{@const team_ext = teamById(teamId)}
+				{@const team_ext = teamById(teamId.id)}
 				<div>
 					{#if pendingPost}
 						<div class="flex flex-col items-center" aria-disabled="true">
@@ -105,7 +105,7 @@
 							<span class="sr-only">Please wait</span>
 						</div>
 					{:else}
-						<button class="btn-icon-md btn-icon m-auto" on:click={() => onRemoveTeam(teamId)}>
+						<button class="btn-icon-md btn-icon m-auto" on:click={() => onRemoveTeam(teamId.id)}>
 							<Fa class="inline" size="xs" icon={faX} />
 							<span class="sr-only">Remove team</span>
 						</button>

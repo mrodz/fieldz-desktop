@@ -388,6 +388,8 @@ export interface GithubOAuthAccessTokenExchange {
 }
 
 export interface CoachingConflict {
-	teams: number[];
+	id: number;
+	teams: Team[];
 	coach_name?: string;
+	region: number;
 }
