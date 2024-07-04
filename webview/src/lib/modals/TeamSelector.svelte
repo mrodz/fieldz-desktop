@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TeamExtension } from '$lib';
+	import type { Team, TeamExtension } from '$lib';
 	import {
 		Autocomplete,
 		getModalStore,
@@ -15,9 +15,9 @@
 	const modalStore = getModalStore();
 
 	let { regionId, onTeamSelected, excludeTeams } = $modalStore[0].meta as {
-		regionId?: number | string;
-		onTeamSelected?: (team: TeamExtension) => void;
-		excludeTeams?: number[];
+		regionId: number | string;
+		onTeamSelected: (team: TeamExtension) => void;
+		excludeTeams?: (number | Team)[];
 	};
 
 	excludeTeams = excludeTeams ?? [];
@@ -45,7 +45,13 @@
 			let options: AutocompleteOption<string, TeamExtension>[] = [];
 
 			for (const team_ext of teams) {
-				if (excludeTeams!.includes(team_ext.team.id)) continue;
+				const thisId = team_ext.team.id;
+				const isExcluded = excludeTeams!.some((idOrTeam) => {
+					if (typeof idOrTeam === 'number' && idOrTeam === thisId) return true;
+					return typeof idOrTeam === 'object' && idOrTeam.id === thisId;
+				});
+
+				if (isExcluded) continue;
 
 				const option: AutocompleteOption<string, TeamExtension> = {
 					label: team_ext.team.name,

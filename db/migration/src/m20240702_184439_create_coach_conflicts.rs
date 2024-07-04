@@ -61,13 +61,17 @@ impl MigrationTrait for Migration {
                                 CoachConflictTeamJoin::Table,
                                 CoachConflictTeamJoin::CoachConflict,
                             )
-                            .to(CoachConflict::Table, CoachConflict::Id),
+                            .to(CoachConflict::Table, CoachConflict::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_join_coach-conflict_team")
                             .from(CoachConflictTeamJoin::Table, CoachConflictTeamJoin::Team)
-                            .to(Team::Table, Team::Id),
+                            .to(Team::Table, Team::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .take(),
             )

@@ -2,7 +2,13 @@ use backend::ScheduledInput;
 use base64::Engine;
 use db::{errors::*, CoachConflictTeamInput, CreateCoachConflictInput};
 use db::{
-    CoachConflict, CopyTimeSlotsInput, CreateFieldInput, CreateRegionInput, CreateReservationTypeInput, CreateTeamInput, CreateTimeSlotInput, EditRegionInput, EditScheduleInput, EditTeamInput, FieldConcurrency, FieldExtension, FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput, PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection, TeamExtension, TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput, UpdateTargetReservationTypeInput, Validator
+    CoachConflict, CopyTimeSlotsInput, CreateFieldInput, CreateRegionInput,
+    CreateReservationTypeInput, CreateTeamInput, CreateTimeSlotInput, EditRegionInput,
+    EditScheduleInput, EditTeamInput, FieldConcurrency, FieldExtension,
+    FieldSupportedConcurrencyInput, ListReservationsBetweenInput, MoveTimeSlotInput,
+    PreScheduleReport, PreScheduleReportInput, TargetExtension, TeamCollection, TeamExtension,
+    TimeSlotExtension, UpdateReservationTypeConcurrencyForFieldInput,
+    UpdateTargetReservationTypeInput, Validator,
 };
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -823,9 +829,11 @@ pub(crate) async fn delete_time_slots_batched(
     client.delete_time_slots(start_id, end_id).await
 }
 
-
 #[tauri::command]
-pub(crate) async fn create_coaching_conflict(app: AppHandle, input: CreateCoachConflictInput) -> Result<CoachConflict, CoachConflictError> {
+pub(crate) async fn create_coaching_conflict(
+    app: AppHandle,
+    input: CreateCoachConflictInput,
+) -> Result<CoachConflict, CoachConflictError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -837,7 +845,10 @@ pub(crate) async fn create_coaching_conflict(app: AppHandle, input: CreateCoachC
 }
 
 #[tauri::command]
-pub(crate) async fn delete_coaching_conflict(app: AppHandle, id: i32) -> Result<(), CoachConflictError> {
+pub(crate) async fn delete_coaching_conflict(
+    app: AppHandle,
+    id: i32,
+) -> Result<(), CoachConflictError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
@@ -849,32 +860,41 @@ pub(crate) async fn delete_coaching_conflict(app: AppHandle, id: i32) -> Result<
 }
 
 #[tauri::command]
-pub(crate) async fn coaching_conflict_team_op(app: AppHandle, input: CoachConflictTeamInput) -> Result<(), CoachConflictError> {
+pub(crate) async fn coaching_conflict_team_op(
+    app: AppHandle,
+    input: CoachConflictTeamInput,
+) -> Result<(), CoachConflictError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
         .database
         .as_ref()
         .ok_or(CoachConflictError::NoDatabase)?;
-
 
     client.coaching_conflict_team_op(input).await
 }
 
 #[tauri::command]
-pub(crate) async fn coaching_conflict_rename(app: AppHandle, id: i32, new_name: String) -> Result<(), CoachConflictError> {
+pub(crate) async fn coaching_conflict_rename(
+    app: AppHandle,
+    id: i32,
+    new_name: String,
+) -> Result<(), CoachConflictError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock
         .database
         .as_ref()
         .ok_or(CoachConflictError::NoDatabase)?;
-    
+
     client.coaching_conflict_rename(id, new_name).await
 }
 
 #[tauri::command]
-pub(crate) async fn get_coach_conflicts(app: AppHandle, region_id: i32) -> Result<Vec<CoachConflict>, CoachConflictError> {
+pub(crate) async fn get_coach_conflicts(
+    app: AppHandle,
+    region_id: i32,
+) -> Result<Vec<CoachConflict>, CoachConflictError> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
     let client = lock

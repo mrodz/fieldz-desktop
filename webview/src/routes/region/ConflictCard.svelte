@@ -8,7 +8,6 @@
 	export let teamById: (id: number) => TeamExtension;
 	export let conflict: CoachingConflict;
 	const mappingNameOnLoad = conflict.coach_name;
-	const teamsOnLoad = conflict.teams.slice();
 
 	let reportTimer: NodeJS.Timeout | undefined;
 	let pendingPost: boolean = false;
@@ -22,11 +21,13 @@
 			conflict: CoachingConflict;
 			options: {
 				nameOnLoad: string | undefined;
-				teamsOnLoad: number[];
 			};
 		};
 		addTeam: {
 			addTeamToConflict: typeof addTeamToConflict;
+		};
+		removeTeam: {
+			teamId: number;
 		};
 	}>();
 
@@ -46,11 +47,6 @@
 		});
 	}
 
-	function onRemoveTeam(teamId: number) {
-		conflict.teams = conflict.teams.filter((team) => team.id !== teamId);
-		requestUpdate();
-	}
-
 	function requestUpdate() {
 		clearTimeout(reportTimer);
 		pendingPost = true;
@@ -58,8 +54,7 @@
 			dispatch('debouncedUpdate', {
 				conflict,
 				options: {
-					nameOnLoad: mappingNameOnLoad,
-					teamsOnLoad: teamsOnLoad.map(team => team.id)
+					nameOnLoad: mappingNameOnLoad
 				}
 			});
 			pendingPost = false;
@@ -68,11 +63,16 @@
 
 	function addTeamToConflict(team_ext: TeamExtension) {
 		conflict.teams.push(team_ext.team);
-		requestUpdate();
+		conflict = conflict;
 	}
 
 	function onAddTeam() {
 		dispatch('addTeam', { addTeamToConflict });
+	}
+
+	function onRemoveTeam(teamId: number) {
+		dispatch('removeTeam', { teamId });
+		conflict.teams = conflict.teams.filter((team) => team.id !== teamId);
 	}
 </script>
 

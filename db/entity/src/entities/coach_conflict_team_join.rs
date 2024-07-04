@@ -20,16 +20,16 @@ pub enum Relation {
         belongs_to = "super::coach_conflict::Entity",
         from = "Column::CoachConflict",
         to = "super::coach_conflict::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
+        on_update = "Cascade",
+        on_delete = "Cascade"
     )]
     CoachConflict,
     #[sea_orm(
         belongs_to = "super::team::Entity",
         from = "Column::Team",
         to = "super::team::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
+        on_update = "Cascade",
+        on_delete = "Cascade"
     )]
     Team,
 }
