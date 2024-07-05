@@ -73,6 +73,7 @@ where
                     )
                     .collect(),
                 unique_id: i as u32,
+                coach_conflicts: todo!("Add in #97 (Update payloads in network package)"),
             },
         )
         .collect::<Vec<_>>();
