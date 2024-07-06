@@ -744,7 +744,7 @@ impl CoachConflictLike for CoachConflict {
     }
 
     fn region_id(&self) -> i32 {
-        self.region    
+        self.region
     }
 
     fn unique_id(&self) -> i32 {

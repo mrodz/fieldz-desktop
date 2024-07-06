@@ -588,6 +588,10 @@ where
         &self.team_groups
     }
 
+    pub fn coach_conflicts(&self) -> &[C] {
+        &self.coach_conflicts
+    }
+
     pub fn teams_len(&self) -> usize {
         let mut result = 0;
         for team_group in &self.team_groups {
