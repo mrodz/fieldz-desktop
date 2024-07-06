@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use algo_input::scheduler_server::Scheduler;
 use algo_input::{ScheduledInput, ScheduledOutput};
-use backend::{FieldLike, PlayableTeamCollection, TeamLike};
+use backend::{CoachConflictLike, FieldLike, PlayableTeamCollection, TeamLike};
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status};
 
@@ -58,11 +58,28 @@ impl PlayableTeamCollection for algo_input::PlayableTeamCollection {
     }
 }
 
+impl CoachConflictLike for algo_input::CoachConflict {
+    type Team = algo_input::Team;
+
+    fn teams(&self) -> impl AsRef<[Self::Team]> {
+        &self.teams
+    }
+
+    fn unique_id(&self) -> i32 {
+        self.unique_id.try_into().expect("unique id too big")
+    }
+
+    fn region_id(&self) -> i32 {
+        self.region_id.try_into().expect("region id too big")
+    }
+}
+
 impl From<algo_input::ScheduledInput>
     for backend::ScheduledInput<
         algo_input::Team,
         algo_input::PlayableTeamCollection,
         algo_input::Field,
+        algo_input::CoachConflict,
     >
 {
     fn from(value: algo_input::ScheduledInput) -> Self {
@@ -73,6 +90,7 @@ impl From<algo_input::ScheduledInput>
                 .expect("protobuf ScheduledInput unique_id"),
             value.team_groups,
             value.fields,
+            value.coach_conflicts,
         )
     }
 }
@@ -200,7 +218,7 @@ impl Scheduler for ScheduleManager {
             while let Some(schedule_payload) = stream.next().await {
                 let schedule_payload: algo_input::ScheduledInput = schedule_payload?;
 
-                let backend_payload: backend::ScheduledInput<_, _, _> = schedule_payload.into();
+                let backend_payload: backend::ScheduledInput<_, _, _, _> = schedule_payload.into();
 
                 tracing::info!("Recieved payload (fields: {}, teams: {})", backend_payload.fields().as_ref().len(), backend_payload.teams_len());
 

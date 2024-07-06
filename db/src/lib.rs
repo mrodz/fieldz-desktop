@@ -1,7 +1,8 @@
 mod pre_schedule_report;
 
 use backend::{
-    FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow, ScheduledInput, TeamLike,
+    CoachConflictLike, FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow,
+    ScheduledInput, TeamLike,
 };
 // use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
 use itertools::Itertools;
@@ -11,6 +12,7 @@ pub mod errors;
 use errors::*;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::Deref;
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -707,12 +709,47 @@ pub struct CopyTimeSlotsInput {
     dst_start: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct CoachConflict {
     id: i32,
     region: i32,
     coach_name: Option<String>,
     teams: Vec<Team>,
+}
+
+#[derive(Clone, PartialEq, PartialOrd)]
+pub struct TeamModelWrapper(Team);
+
+impl Deref for TeamModelWrapper {
+    type Target = Team;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TeamLike for TeamModelWrapper {
+    fn unique_id(&self) -> i32 {
+        self.id
+    }
+}
+
+impl CoachConflictLike for CoachConflict {
+    type Team = TeamModelWrapper;
+    fn teams(&self) -> impl AsRef<[Self::Team]> {
+        self.teams
+            .iter()
+            .cloned()
+            .map(TeamModelWrapper)
+            .collect_vec()
+    }
+
+    fn region_id(&self) -> i32 {
+        self.region
+    }
+
+    fn unique_id(&self) -> i32 {
+        self.id
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1784,7 +1821,7 @@ impl Client {
     pub async fn get_scheduled_inputs(
         &self,
     ) -> Result<
-        Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension>>,
+        Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension, CoachConflict>>,
         GetScheduledInputsError,
     > {
         let mut result = vec![];
@@ -1868,7 +1905,35 @@ impl Client {
                 teams.push(TeamCollection::new(target.groups.clone(), teams_for_target));
             }
 
-            result.push(ScheduledInput::new(i.try_into().unwrap(), teams, fields))
+            let unique_teams = teams
+                .iter()
+                .flat_map(|team_collection| &team_collection.teams)
+                .unique_by(|team_ext| team_ext.team.id)
+                .map(|team_ext| team_ext.team.id);
+
+            let coach_conflicts_to_keep_in_mind = CoachConflictEntity::find()
+                .find_with_related(TeamEntity)
+                .filter(team::Column::Id.is_in(unique_teams))
+                .all(&self.connection)
+                .await
+                .map_err(|e| {
+                    GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?
+                .into_iter()
+                .map(|(coach_conflict, teams)| CoachConflict {
+                    coach_name: coach_conflict.coach_name,
+                    id: coach_conflict.id,
+                    region: coach_conflict.region,
+                    teams,
+                })
+                .collect_vec();
+
+            result.push(ScheduledInput::new(
+                i.try_into().unwrap(),
+                teams,
+                fields,
+                coach_conflicts_to_keep_in_mind,
+            ))
         }
 
         Ok(result)
@@ -2049,13 +2114,13 @@ impl Client {
             .one(&self.connection)
             .await
             .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_start_id))?;
+            .ok_or(CopyTimeSlotsError::NotFound(input.src_start_id))?;
 
         let end = TimeSlotEntity::find_by_id(input.src_end_id)
             .one(&self.connection)
             .await
             .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_end_id))?;
+            .ok_or(CopyTimeSlotsError::NotFound(input.src_end_id))?;
 
         if start.field_id != end.field_id {
             return Err(CopyTimeSlotsError::FieldMismatch);
@@ -2212,13 +2277,13 @@ impl Client {
             .one(&self.connection)
             .await
             .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| DeleteTimeSlotsError::NotFound(start_id))?;
+            .ok_or(DeleteTimeSlotsError::NotFound(start_id))?;
 
         let end = TimeSlotEntity::find_by_id(end_id)
             .one(&self.connection)
             .await
             .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| DeleteTimeSlotsError::NotFound(end_id))?;
+            .ok_or(DeleteTimeSlotsError::NotFound(end_id))?;
 
         if start.field_id != end.field_id {
             return Err(DeleteTimeSlotsError::FieldMismatch);
