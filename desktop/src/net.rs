@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
+use backend::{CoachConflictLike, FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
 use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -20,14 +20,15 @@ pub enum ScheduleRequestError {
     SaveScheduleError(#[from] SaveScheduleError),
 }
 
-pub(crate) async fn send_grpc_schedule_request<T, P, F>(
-    input: impl AsRef<[ScheduledInput<T, P, F>]>,
+pub(crate) async fn send_grpc_schedule_request<T, P, F, C>(
+    input: impl AsRef<[ScheduledInput<T, P, F, C>]>,
     authorization_token: String,
 ) -> Result<CompiledSchedule, ScheduleRequestError>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
     let scheduler_endpoint = get_scheduler_url();
 
@@ -73,7 +74,7 @@ where
                     )
                     .collect(),
                 unique_id: i as u32,
-                coach_conflicts: todo!("Add in #97 (Update payloads in network package)"),
+                coach_conflicts: todo!(),
             },
         )
         .collect::<Vec<_>>();

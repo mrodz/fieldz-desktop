@@ -442,29 +442,49 @@ where
     fn teams(&self) -> impl AsRef<[Self::Team]>;
 }
 
+pub trait CoachConflictLike
+where
+    Self: Clone + Debug + PartialEq,
+{
+    type Team: TeamLike;
+
+    fn teams(&self) -> impl AsRef<[Self::Team]>;
+    fn unique_id(&self) -> i32;
+    fn region_id(&self) -> i32;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScheduledInput<T, P, F>
+pub struct ScheduledInput<T, P, F, C>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
     team_groups: Vec<P>,
     fields: Vec<F>,
     unique_id: i32,
+    coach_conflicts: Vec<C>,
 }
 
-impl<T, P, F> ScheduledInput<T, P, F>
+impl<T, P, F, C> ScheduledInput<T, P, F, C>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
-    pub fn new(unique_id: i32, teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
+    pub fn new(
+        unique_id: i32,
+        teams: impl AsRef<[P]>,
+        fields: impl AsRef<[F]>,
+        coach_conflicts: impl AsRef<[C]>,
+    ) -> Self {
         Self {
             unique_id,
             team_groups: teams.as_ref().to_vec(),
             fields: fields.as_ref().to_vec(),
+            coach_conflicts: coach_conflicts.as_ref().to_vec(),
         }
     }
 
@@ -739,11 +759,12 @@ where
     }
 }
 
-pub fn schedule<T, P, F>(input: ScheduledInput<T, P, F>) -> Result<Output<T, F>>
+pub fn schedule<T, P, F, C>(input: ScheduledInput<T, P, F, C>) -> Result<Output<T, F>>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
     let Some(compression_profile) = input.get_compression_profile()? else {
         return Ok(Output {
