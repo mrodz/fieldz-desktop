@@ -551,9 +551,11 @@ where
             scheduler_field_id_to_field_id.insert(byte, field.unique_id());
         }
 
-        // We need to use a hashmap because the lineality of a team's ID is not guaranteed,
+        // We need to use a hashmap because the sequentiality of a team's ID is not guaranteed,
         // but depended on by the algorithm.
         let mut playable_group_index_to_team_index = HashMap::new();
+        // We create two hashmaps because there is no standard bidirectional map in Rust.
+        let mut team_index_to_playable_group_index = HashMap::new();
 
         let mut this_team_index = 0;
 
@@ -563,11 +565,16 @@ where
             for team in team_group.teams().as_ref() {
                 let g_id = this_team_index.try_into()?;
                 playable_group_index_to_team_index.insert(g_id, team.unique_id());
+                team_index_to_playable_group_index.insert(team.unique_id(), g_id);
                 playable_group.add_team(g_id);
                 this_team_index += 1;
             }
 
             result.add_group(playable_group);
+        }
+
+        for coach_conflict in self.coach_conflicts() {
+            result.add_team_collisions(coach_conflict.teams(), Some(&team_index_to_playable_group_index))
         }
 
         Ok(StateTransformer {
