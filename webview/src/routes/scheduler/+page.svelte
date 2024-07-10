@@ -374,9 +374,6 @@
 	const key = Symbol('key for crossfade animation');
 
 	function isTargetOk(report: PreScheduleReport, target: TargetExtension): boolean {
-		console.log(report);
-		console.log(target);
-
 		const isDuplicate = report.target_has_duplicates.includes(target.target.id);
 
 		if (isDuplicate) {
@@ -487,6 +484,9 @@
 				autohide: false,
 				background: 'variant-filled-error'
 			});
+
+			scheduling = false;
+			modalStore.close();
 		}
 	}
 

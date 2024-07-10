@@ -386,3 +386,10 @@ export interface GithubOAuthAccessTokenExchange {
 	scope: string;
 	token_type: string;
 }
+
+export interface CoachingConflict {
+	id: number;
+	teams: Team[];
+	coach_name?: string;
+	region: number;
+}

@@ -5,7 +5,7 @@
 </script>
 
 <script lang="ts">
-	import type { Region, Field, Team, TeamExtension } from '$lib';
+	import type { Region, Field, Team, TeamExtension, CoachingConflict } from '$lib';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { dialog, invoke } from '@tauri-apps/api';
@@ -17,6 +17,7 @@
 	} from '@skeletonlabs/skeleton';
 	import Fa from 'svelte-fa';
 	import { faEdit, faTrash } from '@fortawesome/free-solid-svg-icons';
+	import ConflictCard from './ConflictCard.svelte';
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const regionId = queryParams.get('id');
@@ -27,6 +28,7 @@
 	let region: Region | undefined;
 	let fields: Field[] | undefined;
 	let teams: TeamExtension[] | undefined;
+	let conflicts: CoachingConflict[] | undefined;
 
 	onMount(async () => {
 		try {
@@ -40,12 +42,14 @@
 				return;
 			}
 
-			[region, fields, teams] = await Promise.all([
+			[region, fields, teams, conflicts] = await Promise.all([
 				invoke<Region>('load_region', { id }),
 				invoke<Field[]>('get_fields', { regionId: id }),
-				invoke<TeamExtension[]>('get_teams_and_tags', { regionId: id })
+				invoke<TeamExtension[]>('get_teams_and_tags', { regionId: id }),
+				invoke<CoachingConflict[]>('get_coach_conflicts', { regionId: id })
 			]);
 		} catch (e) {
+			console.error(e);
 			dialog.message(JSON.stringify(e), {
 				title: 'Could not load resources',
 				type: 'error'
@@ -205,27 +209,203 @@
 			}
 		});
 	}
+
+	function teamById(id: number): TeamExtension {
+		const result = teams?.find((team_ext) => team_ext.team.id === id);
+		if (result === undefined) throw new Error(`team with id = ${id} not found in this region`);
+		return result;
+	}
+
+	async function deleteConflict(conflict: CoachingConflict, index: number) {
+		try {
+			await invoke('delete_coaching_conflict', {
+				id: conflict.id
+			});
+
+			conflicts?.splice(index, 1);
+			conflicts = conflicts;
+
+			toastStore.trigger({
+				message: 'Deleted coach conflict mapping',
+				background: 'variant-filled-success'
+			});
+		} catch (e) {
+			console.error(e);
+			dialog.message(JSON.stringify(e), {
+				title: 'Could not delete coach conflict mapping',
+				type: 'error'
+			});
+		}
+	}
+
+	async function updateConflict(
+		conflict: CoachingConflict,
+		options: {
+			nameOnLoad: string | undefined;
+		}
+	) {
+		if (conflict.coach_name !== options.nameOnLoad) {
+			try {
+				await invoke('coaching_conflict_rename', {
+					id: conflict.id,
+					newName: conflict.coach_name
+				});
+				conflicts = conflicts;
+			} catch (e) {
+				console.error(e);
+				dialog.message(JSON.stringify(e), {
+					type: 'error',
+					title: 'Could not rename coach'
+				});
+			}
+		}
+	}
+
+	async function createCoachConflictMapping() {
+		modalStore.trigger({
+			type: 'prompt',
+			title: "Enter this coach's name (Optional)",
+			async response(r: false | undefined | string) {
+				if (r === false) {
+					return; // the user clicked "cancel"
+				}
+
+				try {
+					const conflict = await invoke<CoachingConflict>('create_coaching_conflict', {
+						input: {
+							region_id: region!.id,
+							coach_name: r
+						}
+					});
+					conflicts?.push?.(conflict);
+					conflicts = conflicts;
+					toastStore.trigger({
+						message: 'Created new coach mapping',
+						background: 'variant-filled-success'
+					});
+				} catch (e) {
+					console.error(e);
+					dialog.message(JSON.stringify(e), {
+						type: 'error',
+						title: 'Could not create coach conflict mapping'
+					});
+				}
+			}
+		});
+	}
+
+	async function addTeamToConflict(
+		conflict: CoachingConflict,
+		options: { addTeamToConflict: (team: TeamExtension) => void }
+	) {
+		modalStore.trigger({
+			type: 'component',
+			component: 'teamSelector',
+			meta: {
+				regionId,
+				onTeamSelected(team_ext: TeamExtension) {
+					const creation = invoke('coaching_conflict_team_op', {
+						input: {
+							coach_conflict_id: conflict.id,
+							team_id: team_ext.team.id,
+							op: 'Create'
+						}
+					});
+
+					creation
+						.then(() => {
+							toastStore.trigger({
+								message: `Added ${team_ext.team.name}`,
+								background: 'variant-filled-success'
+							});
+							options.addTeamToConflict(team_ext); // update the UI inside the card
+						})
+						.catch((e) => {
+							console.error(e);
+							dialog.message(JSON.stringify(e), {
+								title: 'Could not add team to conflict card',
+								type: 'error'
+							});
+						});
+				},
+				excludeTeams: conflict.teams
+			}
+		});
+	}
+
+	async function removeTeamFromConflict(conflict: CoachingConflict, options: { teamId: number }) {
+		try {
+			await invoke('coaching_conflict_team_op', {
+				input: {
+					coach_conflict_id: conflict.id,
+					team_id: options.teamId,
+					op: 'Delete'
+				}
+			});
+		} catch (e) {
+			console.error(e);
+			dialog.message(JSON.stringify(e), {
+				title: 'Could not add team to conflict card',
+				type: 'error'
+			});
+		}
+	}
 </script>
 
 <main class="p-4" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
 	<button class="variant-filled btn" on:click={() => history.back()}>&laquo;&nbsp;Regions</button>
 
-	{#if region === undefined || fields === undefined || teams === undefined}
+	{#if region === undefined || fields === undefined || teams === undefined || conflicts === undefined}
 		<div class="placeholder" />
 		<ProgressRadial />
 	{:else}
 		<h1 class="h1 my-4 flex">
 			{region.title}
 			<button class="variant-ghost btn-icon my-auto ml-4" on:click={editRegion}>
-				<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24">
-					<path
-						d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"
-					/>
-				</svg>
+				<Fa icon={faEdit} />
 			</button>
 		</h1>
 
 		<hr class="my-4" />
+
+		<div>
+			<section class="card m-4 p-4">
+				<h2 class="h2">Coaching conflict resolver</h2>
+				{#if conflicts.length === 0}
+					<i class="my-4 inline-block w-full text-center">
+						You haven't specified any coaches who coach multiple teams
+					</i>
+
+					<div class="flex flex-col">
+						<button
+							class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
+							on:click={createCoachConflictMapping}>+</button
+						>
+						<span class="mx-auto mt-2 block">Create coach conflict mapping</span>
+					</div>
+				{:else}
+					<div class="flex flex-col gap-2 lg:grid lg:grid-cols-2 xl:grid-cols-3">
+						{#each conflicts as conflict, i}
+							<ConflictCard
+								on:debouncedUpdate={(e) => updateConflict(e.detail.conflict, e.detail.options)}
+								on:delete={(e) => deleteConflict(e.detail, i)}
+								on:addTeam={(e) => addTeamToConflict(conflict, e.detail)}
+								on:removeTeam={(e) => removeTeamFromConflict(conflict, e.detail)}
+								{conflict}
+								{teamById}
+							/>
+						{/each}
+						<div class="my-auto flex flex-col md:ml-10">
+							<button
+								class="variant-filled btn-icon mx-auto block h-[75px] w-[75px]"
+								on:click={createCoachConflictMapping}>+</button
+							>
+							<span class="mx-auto mt-2 block">Add Coach Rule</span>
+						</div>
+					</div>
+				{/if}
+			</section>
+		</div>
 
 		<div class="flex flex-col lg:grid lg:grid-cols-2 lg:grid-rows-1">
 			<section class="card m-4 p-4">
@@ -244,9 +424,9 @@
 
 				{#if teams.length === 0}
 					<div class="m-4 p-4 text-center">⚠️ This region has no teams</div>
-					<button class="variant-filled btn mx-auto block" on:click={createTeam}
-						>Create your first team</button
-					>
+					<button class="variant-filled btn mx-auto block" on:click={createTeam}>
+						Create your first team
+					</button>
 				{:else if $compactTeams}
 					<table class="table">
 						<thead class="table-head">
@@ -405,8 +585,10 @@
 									<button
 										type="button"
 										class="variant-filled btn-icon"
-										on:click|stopPropagation={() => deleteField(field, i)}>X</button
+										on:click|stopPropagation={() => deleteField(field, i)}
 									>
+										<Fa icon={faTrash} />
+									</button>
 								</header>
 
 								<a
