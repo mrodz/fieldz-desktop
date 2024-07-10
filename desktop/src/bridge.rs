@@ -638,7 +638,7 @@ pub(crate) async fn update_target_reservation_type(
 pub(crate) async fn generate_schedule_payload(
     app: AppHandle,
 ) -> Result<
-    Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension>>,
+    Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension, CoachConflict>>,
     GetScheduledInputsError,
 > {
     let state = app.state::<SafeAppState>();
