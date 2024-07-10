@@ -484,6 +484,9 @@
 				autohide: false,
 				background: 'variant-filled-error'
 			});
+
+			scheduling = false;
+			modalStore.close();
 		}
 	}
 
