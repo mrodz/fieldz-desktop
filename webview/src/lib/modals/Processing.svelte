@@ -1,15 +1,23 @@
 <script lang="ts">
 	import { SHOW_SCHEDULER_URL_WHILE_WAITING, type HealthCheck } from '$lib';
-	import { ProgressRadial } from '@skeletonlabs/skeleton';
+	import { getModalStore, ProgressRadial } from '@skeletonlabs/skeleton';
 	import { invoke } from '@tauri-apps/api';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+
+	// suppress DOM warnings for not specifying `parent` as a prop
+	export let parent: any;
+	// use the variable to suppress linter warnings for unused variable
+	(() => parent)();
+
+	const modalStore = getModalStore();
 
 	let backendHealth: Promise<HealthCheck> | undefined;
 	const start = Date.now();
 
 	let timeString: string;
+	let mounted: boolean = false;
 
-	const counter = setInterval(() => {
+	let counter: NodeJS.Timeout | null = setInterval(() => {
 		const now = Date.now();
 
 		const minutesDiff = ((now - start) / 60_000) | 0;
@@ -23,12 +31,27 @@
 	}, 50);
 
 	onMount(async () => {
+		mounted = true;
 		try {
 			backendHealth = invoke<HealthCheck>('health_probe');
-			if ((await backendHealth) !== 'Serving') clearInterval(counter);
+			backendHealth.then((backendHealth) => {
+				if (mounted && $modalStore[0] !== undefined) {
+					const { onPing } = $modalStore[0].meta;
+					if (typeof onPing === 'function') onPing(backendHealth);
+				}
+
+				if (backendHealth !== 'Serving' && counter !== null) {
+					clearInterval(counter);
+					counter = null;
+				}
+			});
 		} catch (e) {
-			clearInterval(counter);
+			if (counter !== null) clearInterval(counter);
 		}
+	});
+
+	onDestroy(() => {
+		mounted = false;
 	});
 </script>
 

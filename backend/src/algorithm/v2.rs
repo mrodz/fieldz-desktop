@@ -561,7 +561,10 @@ pub(crate) fn schedule_once(state: MCTSState) -> Result<Output> {
         22.. => 1 << 15,
     };
 
-    log::info!("Building MCTSManager manager with capacity {:.3} kb", (approx_table_capacity as f32 * 16. / 1000.));
+    log::info!(
+        "Building MCTSManager manager with capacity {:.3} kb",
+        (approx_table_capacity as f32 * 16. / 1000.)
+    );
 
     let mut mcts = MCTSManager::new(
         state.clone(),

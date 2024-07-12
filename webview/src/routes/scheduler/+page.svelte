@@ -29,7 +29,9 @@
 		regionalUnionSumTotal,
 		isSupplyRequireEntryAccountedFor,
 		SCHEDULE_CREATION_DELAY,
-		SHOW_SCHEDULER_JSON_PAYLOADS
+		SCHEDULE_TIMEOUT_MS,
+		SHOW_SCHEDULER_JSON_PAYLOADS,
+		type HealthCheck
 	} from '$lib';
 	import {
 		getModalStore,
@@ -447,17 +449,33 @@
 				});
 			}
 
+			let wasPingSuccessful = false;
+
+			const rejectAfterDelay = new Promise<never>((_, reject) => {
+				setTimeout(() => {
+					if (!wasPingSuccessful) reject(new Error('timed out'));
+				}, SCHEDULE_TIMEOUT_MS);
+			});
+
 			modalStore.trigger({
 				type: 'component',
 				component: 'processingSchedule',
-				meta: {}
+				meta: {
+					onPing(health: HealthCheck) {
+						wasPingSuccessful = health === 'Serving';
+					}
+				}
 			});
 			inputs_for_scheduling = await invoke<ScheduledInput[]>('generate_schedule_payload');
 
 			const jwtToken = await getAuth().currentUser!.getIdToken();
 
 			scheduling = true;
-			scheduled_output = invoke<Schedule>('schedule', { authorizationToken: jwtToken });
+
+			scheduled_output = Promise.race([
+				invoke<Schedule>('schedule', { authorizationToken: jwtToken }),
+				rejectAfterDelay
+			]);
 
 			schedulerWait = true;
 
@@ -479,11 +497,19 @@
 		} catch (e) {
 			console.error(e);
 
-			toastStore.trigger({
-				message: `⚠️ Could not schedule: ${JSON.stringify(e)}`,
-				autohide: false,
-				background: 'variant-filled-error'
-			});
+			if (e !== null && typeof e === 'object' && 'message' in e && e.message === 'timed out') {
+				toastStore.trigger({
+					message: `⚠️ It appears that your client could not find our servers. Please check your internet connection, and update Fieldz if possible. If the problem persists, please fill out a bug report and we will be in contact with you shortly.`,
+					autohide: false,
+					background: 'variant-filled-error'
+				});
+			} else {
+				toastStore.trigger({
+					message: `⚠️ Could not schedule: ${JSON.stringify(e)}`,
+					autohide: false,
+					background: 'variant-filled-error'
+				});
+			}
 
 			scheduling = false;
 			modalStore.close();

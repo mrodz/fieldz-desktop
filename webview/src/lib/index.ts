@@ -327,6 +327,7 @@ export interface UpdateTargetReservationTypeInput {
 export const HAS_DB_RESET_BUTTON: boolean = false;
 export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
 export const SCHEDULE_CREATION_DELAY: number = 30_000;
+export const SCHEDULE_TIMEOUT_MS: number = 15_000;
 export const SHOW_SCHEDULER_JSON_PAYLOADS: boolean = false;
 export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = false;
 
