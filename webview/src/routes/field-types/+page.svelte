@@ -127,6 +127,5 @@
 				<button class="variant-filled btn" on:click={() => newType()}>+ New Type</button>
 			</div>
 		{/if}
-		<!-- <ReservationTypeComponent reservation={{ id: 1, name: 'small field', color: '#ffffff' }} /> -->
 	</section>
 </main>
