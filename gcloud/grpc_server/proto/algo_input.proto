@@ -21,11 +21,18 @@ message ScheduledInput {
   uint32 unique_id = 1;
   repeated PlayableTeamCollection team_groups = 2;
   repeated Field fields = 3;
+  repeated CoachConflict coach_conflicts = 4;
 }
 
 message ScheduledOutput {
   uint32 unique_id = 1;
   repeated Reservation time_slots = 2;
+}
+
+message CoachConflict {
+  uint32 unique_id = 1;
+  uint32 region_id = 2;
+  repeated Team teams = 3;
 }
 
 message Reservation {
@@ -41,5 +48,5 @@ message Reservation {
 }
 
 service Scheduler {
-  rpc Schedule (stream ScheduledInput) returns (stream ScheduledOutput);
+  rpc Schedule(stream ScheduledInput) returns (stream ScheduledOutput);
 }

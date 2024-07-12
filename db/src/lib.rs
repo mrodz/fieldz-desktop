@@ -1,7 +1,8 @@
 mod pre_schedule_report;
 
 use backend::{
-    FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow, ScheduledInput, TeamLike,
+    CoachConflictLike, FieldLike, PlayableTeamCollection, ProtobufAvailabilityWindow,
+    ScheduledInput, TeamLike,
 };
 // use communication::{FieldLike, ProtobufAvailabilityWindow, TeamLike};
 use itertools::Itertools;
@@ -11,6 +12,7 @@ pub mod errors;
 use errors::*;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::Deref;
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -19,6 +21,10 @@ use chrono::{Local, Utc};
 
 #[allow(unused_imports)]
 pub(crate) mod entity_local_exports {
+    pub use coach_conflict::{
+        ActiveModel as ActiveCoachConflict, Entity as CoachConflictEntity,
+        Model as CoachConflictModel,
+    };
     use entity::*;
     pub use field::{ActiveModel as ActiveField, Entity as FieldEntity, Model as Field};
     pub use region::{ActiveModel as ActiveRegion, Entity as RegionEntity, Model as Region};
@@ -47,8 +53,8 @@ use entity_local_exports::*;
 use migration::{Expr, IntoCondition, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
-    JoinType, Order, QueryFilter, QuerySelect, RelationTrait, Select, Set, TransactionError,
-    TransactionTrait, TryIntoModel, UpdateResult, Value,
+    JoinType, Order, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, Set,
+    TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -701,6 +707,76 @@ pub struct CopyTimeSlotsInput {
     src_end_id: i32,
     #[serde(with = "ts_milliseconds")]
     dst_start: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct CoachConflict {
+    id: i32,
+    region: i32,
+    coach_name: Option<String>,
+    teams: Vec<Team>,
+}
+
+#[derive(Clone, PartialEq, PartialOrd)]
+pub struct TeamModelWrapper(Team);
+
+impl Deref for TeamModelWrapper {
+    type Target = Team;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TeamLike for TeamModelWrapper {
+    fn unique_id(&self) -> i32 {
+        self.id
+    }
+}
+
+impl CoachConflictLike for CoachConflict {
+    type Team = TeamModelWrapper;
+    fn teams(&self) -> impl AsRef<[Self::Team]> {
+        self.teams
+            .iter()
+            .cloned()
+            .map(TeamModelWrapper)
+            .collect_vec()
+    }
+
+    fn region_id(&self) -> i32 {
+        self.region
+    }
+
+    fn unique_id(&self) -> i32 {
+        self.id
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CreateCoachConflictInput {
+    region_id: i32,
+    coach_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub enum CoachConflictTeamInputOp {
+    Create,
+    Delete,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CoachConflictTeamInput {
+    coach_conflict_id: i32,
+    team_id: i32,
+    op: CoachConflictTeamInputOp,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RegionMetadata {
+    region_id: i32,
+    team_count: u64,
+    field_count: u64,
+    time_slot_count: u64,
 }
 
 impl Client {
@@ -1753,7 +1829,7 @@ impl Client {
     pub async fn get_scheduled_inputs(
         &self,
     ) -> Result<
-        Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension>>,
+        Vec<ScheduledInput<TeamExtension, TeamCollection, FieldExtension, CoachConflict>>,
         GetScheduledInputsError,
     > {
         let mut result = vec![];
@@ -1837,7 +1913,35 @@ impl Client {
                 teams.push(TeamCollection::new(target.groups.clone(), teams_for_target));
             }
 
-            result.push(ScheduledInput::new(i.try_into().unwrap(), teams, fields))
+            let unique_teams = teams
+                .iter()
+                .flat_map(|team_collection| &team_collection.teams)
+                .unique_by(|team_ext| team_ext.team.id)
+                .map(|team_ext| team_ext.team.id);
+
+            let coach_conflicts_to_keep_in_mind = CoachConflictEntity::find()
+                .find_with_related(TeamEntity)
+                .filter(team::Column::Id.is_in(unique_teams))
+                .all(&self.connection)
+                .await
+                .map_err(|e| {
+                    GetScheduledInputsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?
+                .into_iter()
+                .map(|(coach_conflict, teams)| CoachConflict {
+                    coach_name: coach_conflict.coach_name,
+                    id: coach_conflict.id,
+                    region: coach_conflict.region,
+                    teams,
+                })
+                .collect_vec();
+
+            result.push(ScheduledInput::new(
+                i.try_into().unwrap(),
+                teams,
+                fields,
+                coach_conflicts_to_keep_in_mind,
+            ))
         }
 
         Ok(result)
@@ -2018,13 +2122,13 @@ impl Client {
             .one(&self.connection)
             .await
             .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_start_id))?;
+            .ok_or(CopyTimeSlotsError::NotFound(input.src_start_id))?;
 
         let end = TimeSlotEntity::find_by_id(input.src_end_id)
             .one(&self.connection)
             .await
             .map_err(|e| CopyTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CopyTimeSlotsError::NotFound(input.src_end_id))?;
+            .ok_or(CopyTimeSlotsError::NotFound(input.src_end_id))?;
 
         if start.field_id != end.field_id {
             return Err(CopyTimeSlotsError::FieldMismatch);
@@ -2181,13 +2285,13 @@ impl Client {
             .one(&self.connection)
             .await
             .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| DeleteTimeSlotsError::NotFound(start_id))?;
+            .ok_or(DeleteTimeSlotsError::NotFound(start_id))?;
 
         let end = TimeSlotEntity::find_by_id(end_id)
             .one(&self.connection)
             .await
             .map_err(|e| DeleteTimeSlotsError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| DeleteTimeSlotsError::NotFound(end_id))?;
+            .ok_or(DeleteTimeSlotsError::NotFound(end_id))?;
 
         if start.field_id != end.field_id {
             return Err(DeleteTimeSlotsError::FieldMismatch);
@@ -2220,5 +2324,207 @@ impl Client {
                 DeleteTimeSlotsError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
             })
             .map(|_| ())
+    }
+
+    pub async fn create_coaching_conflict(
+        &self,
+        input: CreateCoachConflictInput,
+    ) -> Result<CoachConflict, CoachConflictError> {
+        let model = ActiveCoachConflict {
+            coach_name: Set(input.coach_name),
+            region: Set(input.region_id),
+            ..Default::default()
+        }
+        .insert(&self.connection)
+        .await
+        .map_err(|e| CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
+
+        Ok(CoachConflict {
+            id: model.id,
+            coach_name: model.coach_name,
+            region: model.region,
+            teams: vec![],
+        })
+    }
+
+    pub async fn delete_coaching_conflict(&self, id: i32) -> Result<(), CoachConflictError> {
+        let maybe_deleted = CoachConflictEntity::delete_by_id(id)
+            .exec(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        if maybe_deleted.rows_affected != 1 {
+            return Err(CoachConflictError::CoachConflictNotFound(id));
+        }
+
+        Ok(())
+    }
+
+    pub async fn coaching_conflict_team_op(
+        &self,
+        input: CoachConflictTeamInput,
+    ) -> Result<(), CoachConflictError> {
+        let coach_conflict = CoachConflictEntity::find_by_id(input.coach_conflict_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(CoachConflictError::CoachConflictNotFound(
+                input.coach_conflict_id,
+            ))?;
+
+        let team = TeamEntity::find_by_id(input.team_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(CoachConflictError::TeamNotFound(input.coach_conflict_id))?;
+
+        if coach_conflict.region != team.region_owner {
+            return Err(CoachConflictError::RegionMismatch);
+        }
+
+        use coach_conflict_team_join as CCTJ;
+
+        let join_table_record = CCTJ::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(CCTJ::Column::CoachConflict.eq(coach_conflict.id))
+                    .add(CCTJ::Column::Team.eq(team.id)),
+            )
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        match input.op {
+            CoachConflictTeamInputOp::Create if join_table_record.is_none() => {
+                CCTJ::ActiveModel {
+                    coach_conflict: Set(coach_conflict.id),
+                    team: Set(team.id),
+                }
+                .insert(&self.connection)
+                .await
+                .map_err(|e| {
+                    CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?;
+            }
+            CoachConflictTeamInputOp::Delete if join_table_record.is_some() => {
+                join_table_record
+                    .unwrap()
+                    .delete(&self.connection)
+                    .await
+                    .map_err(|e| {
+                        CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                    })?;
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    pub async fn coaching_conflict_rename(
+        &self,
+        id: i32,
+        new_name: String,
+    ) -> Result<(), CoachConflictError> {
+        let model = CoachConflictEntity::find_by_id(id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .ok_or(CoachConflictError::CoachConflictNotFound(id))?;
+
+        if model
+            .coach_name
+            .as_ref()
+            .is_some_and(|name| name == &new_name)
+        {
+            return Ok(());
+        }
+
+        let mut active_model = model.into_active_model();
+
+        active_model.set(coach_conflict::Column::CoachName, new_name.into());
+
+        active_model.update(&self.connection).await.map_err(|e| {
+            CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+        })?;
+
+        Ok(())
+    }
+
+    pub async fn get_coach_conflicts(
+        &self,
+        region_id: i32,
+    ) -> Result<Vec<CoachConflict>, CoachConflictError> {
+        Ok(CoachConflictEntity::find()
+            .find_with_related(TeamEntity)
+            .filter(coach_conflict::Column::Region.eq(region_id))
+            .all(&self.connection)
+            .await
+            .map_err(|e| {
+                CoachConflictError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?
+            .into_iter()
+            .map(|(conflict, teams)| CoachConflict {
+                id: conflict.id,
+                region: conflict.region,
+                coach_name: conflict.coach_name,
+                teams,
+            })
+            .collect())
+    }
+
+    pub async fn get_region_metadata(
+        &self,
+        region_id: i32,
+    ) -> Result<RegionMetadata, LoadRegionError> {
+        let region = RegionEntity::find_by_id(region_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
+            .ok_or(LoadRegionError::NotFound(region_id))?;
+
+        let team_count = TeamEntity::find()
+            .filter(team::Column::RegionOwner.eq(region.id))
+            .count(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        let field_count = FieldEntity::find()
+            .filter(field::Column::RegionOwner.eq(region.id))
+            .count(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        // the fields we need should be cached internally after this `COUNT(*)`
+
+        let time_slot_count = TimeSlotEntity::find()
+            .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+            .filter(field::Column::RegionOwner.eq(region.id))
+            .count(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        Ok(RegionMetadata {
+            region_id,
+            team_count,
+            field_count,
+            time_slot_count,
+        })
     }
 }

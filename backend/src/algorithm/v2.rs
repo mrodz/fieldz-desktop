@@ -1,6 +1,5 @@
-// extern crate tinyvec;
-
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -16,6 +15,7 @@ use itertools::MinMaxResult;
 use mcts::transposition_table::*;
 use mcts::tree_policy::*;
 use mcts::*;
+use petgraph::graphmap::UnGraphMap;
 use tinyvec::tiny_vec;
 use tinyvec::TinyVec;
 
@@ -23,6 +23,7 @@ use crate::window;
 use crate::AvailabilityWindow;
 use crate::CompressionProfile;
 use crate::LossyAvailability;
+use crate::TeamLike;
 
 type TeamId = u8;
 
@@ -43,7 +44,7 @@ impl Team {
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PlayableGroup {
-    teams: TinyVec<[TeamSlot; 8]>,
+    teams: Vec<TeamSlot>,
     external_id: Option<NonZeroU8>,
     index_start: usize,
 }
@@ -51,7 +52,7 @@ pub struct PlayableGroup {
 impl PlayableGroup {
     pub fn new(index_start: usize) -> Self {
         Self {
-            teams: tiny_vec![],
+            teams: vec![],
             external_id: None,
             index_start,
         }
@@ -150,10 +151,11 @@ impl Slot {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct TeamSlot(Team, TinyVec<[Slot; 8]>);
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct MCTSState {
     games: BTreeMap<Slot, Vec<Option<Game>>>,
     groups: Vec<PlayableGroup>,
+    team_collisions: UnGraphMap<Team, ()>,
     teams_len: u8,
 }
 
@@ -202,6 +204,48 @@ impl MCTSState {
         }
     }
 
+    pub fn add_team_collisions<T: TeamLike>(
+        &mut self,
+        teams: impl AsRef<[T]>,
+        id_mapper: Option<&HashMap<i32, u8>>,
+    ) {
+        if id_mapper.is_none() {
+            log::warn!("Missing id mapper from db->transformer, team collisions *may* be incorrect for ids larger than 255.")
+        }
+
+        let dyn_ptr_to_v2 = |team: &dyn TeamLike| -> Team {
+            let unique_id = team.unique_id();
+            let team_id = id_mapper
+                .and_then(|id_mapper| id_mapper.get(&unique_id))
+                .cloned()
+                .unwrap_or_else(|| {
+                    unique_id
+                        .try_into()
+                        .expect("team id is larger than 255 and no id mapper was provided")
+                });
+            Team::new(team_id)
+        };
+
+        // reduce the amount of lookups in the table by mapping prior to iteration
+        let teams = teams
+            .as_ref()
+            .iter()
+            .map(|team| dyn_ptr_to_v2(team))
+            .collect_vec();
+
+        for (i, team_as_node) in teams.iter().enumerate() {
+            let node = self.team_collisions.add_node(*team_as_node);
+
+            for (j, team) in teams.iter().enumerate() {
+                if j == i {
+                    continue;
+                }
+
+                self.team_collisions.add_edge(node, *team, ());
+            }
+        }
+    }
+
     pub const fn teams_len(&self) -> u8 {
         self.teams_len
     }
@@ -219,8 +263,18 @@ impl GameState for MCTSState {
         let mut result = tiny_vec!([Reservation; 8]);
 
         for (slot, games) in &self.games {
+            let mut teams_busy_right_now = vec![];
             for game in games {
-                if game.is_some() {
+                if let Some(game) = game {
+                    let edges = self
+                        .team_collisions
+                        .edges(game.team_one)
+                        .chain(self.team_collisions.edges(game.team_two));
+
+                    teams_busy_right_now.extend(edges.map(
+                        |(_this_coach_team, team_belonging_to_coach, _)| team_belonging_to_coach,
+                    ));
+
                     continue;
                 }
 
@@ -230,14 +284,14 @@ impl GameState for MCTSState {
                             &permutation[..]
                         else {
                             unreachable!()
-                            // unsafe {
-                            //     unreachable_unchecked();
-                            // }
                         };
 
-                        // let overlap = |x: &Slot| {
-                        //     LossyAvailability::overlap_fast(&x.availability, &slot.availability)
-                        // };
+                        if teams_busy_right_now
+                            .iter()
+                            .any(|team| team == team_one || team == team_two)
+                        {
+                            continue;
+                        }
 
                         let mut t1_iter = t1_avail.iter();
                         let mut t2_iter = t2_avail.iter();
@@ -499,25 +553,35 @@ pub(crate) fn schedule_once(state: MCTSState) -> Result<Output> {
     let total_slots = state.games.len();
     let team_len = state.teams_len();
 
+    let approx_table_capacity = match team_len {
+        0 => 0,
+        1..=3 => 1 << 8,
+        4..=15 => 1 << 12,
+        16..=21 => 1 << 14,
+        22.. => 1 << 15,
+    };
+
+    log::info!(
+        "Building MCTSManager manager with capacity {:.3} kb",
+        (approx_table_capacity as f32 * 16. / 1000.)
+    );
+
     let mut mcts = MCTSManager::new(
         state.clone(),
         SchedulerMCTS::new(total_slots),
         ScheduleEvaluator,
-        UCTPolicy::new(0.01),
-        ApproxTable::new(4096),
+        UCTPolicy::new(0.3),
+        ApproxTable::new(approx_table_capacity),
     );
 
-    let iterations = if (8..=13).contains(&team_len) {
-        (10_000. * (20. * team_len as f32 + 10.).powf(0.335)) as u32
-    } else {
-        /*
-         * Lower rounds need more iterations because the algorithm
-         * will have less of a chance of picking the right path.
-         *
-         * Higher rounds (>14) are not going to be supported as well
-         * as lower team counts.
-         */
-        100_000
+    let iterations = match team_len {
+        0 => 0,
+        1..=3 => 20_000,
+        4..=7 => 100_000,
+        8..=12 => 150_000,
+        13..=15 => 200_000,
+        16..=21 => 1_000_000,
+        22.. => 2_500_000,
     };
 
     let runners = std::thread::available_parallelism()

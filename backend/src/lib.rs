@@ -442,29 +442,49 @@ where
     fn teams(&self) -> impl AsRef<[Self::Team]>;
 }
 
+pub trait CoachConflictLike
+where
+    Self: Clone + Debug + PartialEq,
+{
+    type Team: TeamLike;
+
+    fn teams(&self) -> impl AsRef<[Self::Team]>;
+    fn unique_id(&self) -> i32;
+    fn region_id(&self) -> i32;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScheduledInput<T, P, F>
+pub struct ScheduledInput<T, P, F, C>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
     team_groups: Vec<P>,
     fields: Vec<F>,
     unique_id: i32,
+    coach_conflicts: Vec<C>,
 }
 
-impl<T, P, F> ScheduledInput<T, P, F>
+impl<T, P, F, C> ScheduledInput<T, P, F, C>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
-    pub fn new(unique_id: i32, teams: impl AsRef<[P]>, fields: impl AsRef<[F]>) -> Self {
+    pub fn new(
+        unique_id: i32,
+        teams: impl AsRef<[P]>,
+        fields: impl AsRef<[F]>,
+        coach_conflicts: impl AsRef<[C]>,
+    ) -> Self {
         Self {
             unique_id,
             team_groups: teams.as_ref().to_vec(),
             fields: fields.as_ref().to_vec(),
+            coach_conflicts: coach_conflicts.as_ref().to_vec(),
         }
     }
 
@@ -531,9 +551,11 @@ where
             scheduler_field_id_to_field_id.insert(byte, field.unique_id());
         }
 
-        // We need to use a hashmap because the lineality of a team's ID is not guaranteed,
+        // We need to use a hashmap because the sequentiality of a team's ID is not guaranteed,
         // but depended on by the algorithm.
         let mut playable_group_index_to_team_index = HashMap::new();
+        // We create two hashmaps because there is no standard bidirectional map in Rust.
+        let mut team_index_to_playable_group_index = HashMap::new();
 
         let mut this_team_index = 0;
 
@@ -543,11 +565,19 @@ where
             for team in team_group.teams().as_ref() {
                 let g_id = this_team_index.try_into()?;
                 playable_group_index_to_team_index.insert(g_id, team.unique_id());
+                team_index_to_playable_group_index.insert(team.unique_id(), g_id);
                 playable_group.add_team(g_id);
                 this_team_index += 1;
             }
 
             result.add_group(playable_group);
+        }
+
+        for coach_conflict in self.coach_conflicts() {
+            result.add_team_collisions(
+                coach_conflict.teams(),
+                Some(&team_index_to_playable_group_index),
+            )
         }
 
         Ok(StateTransformer {
@@ -566,6 +596,10 @@ where
 
     pub fn team_groups(&self) -> &[P] {
         &self.team_groups
+    }
+
+    pub fn coach_conflicts(&self) -> &[C] {
+        &self.coach_conflicts
     }
 
     pub fn teams_len(&self) -> usize {
@@ -739,11 +773,12 @@ where
     }
 }
 
-pub fn schedule<T, P, F>(input: ScheduledInput<T, P, F>) -> Result<Output<T, F>>
+pub fn schedule<T, P, F, C>(input: ScheduledInput<T, P, F, C>) -> Result<Output<T, F>>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
     let Some(compression_profile) = input.get_compression_profile()? else {
         return Ok(Output {

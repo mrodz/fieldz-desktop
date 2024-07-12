@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize, PartialOrd, Ord,
 )]
-#[sea_orm(table_name = "team")]
+#[sea_orm(table_name = "coach_conflict")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub name: String,
-    pub region_owner: i32,
+    pub region: i32,
+    pub coach_name: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -20,14 +20,12 @@ pub enum Relation {
     CoachConflictTeamJoin,
     #[sea_orm(
         belongs_to = "super::region::Entity",
-        from = "Column::RegionOwner",
+        from = "Column::Region",
         to = "super::region::Column::Id",
         on_update = "Cascade",
         on_delete = "Cascade"
     )]
     Region,
-    #[sea_orm(has_many = "super::team_group_join::Entity")]
-    TeamGroupJoin,
 }
 
 impl Related<super::coach_conflict_team_join::Entity> for Entity {
@@ -42,27 +40,16 @@ impl Related<super::region::Entity> for Entity {
     }
 }
 
-impl Related<super::team_group_join::Entity> for Entity {
+impl Related<super::team::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TeamGroupJoin.def()
-    }
-}
-
-impl Related<super::coach_conflict::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::coach_conflict_team_join::Relation::CoachConflict.def()
+        super::coach_conflict_team_join::Relation::Team.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::coach_conflict_team_join::Relation::Team.def().rev())
-    }
-}
-
-impl Related<super::team_group::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::team_group_join::Relation::TeamGroup.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::team_group_join::Relation::Team.def().rev())
+        Some(
+            super::coach_conflict_team_join::Relation::CoachConflict
+                .def()
+                .rev(),
+        )
     }
 }
 

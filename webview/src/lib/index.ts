@@ -180,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -327,6 +327,7 @@ export interface UpdateTargetReservationTypeInput {
 export const HAS_DB_RESET_BUTTON: boolean = false;
 export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
 export const SCHEDULE_CREATION_DELAY: number = 30_000;
+export const SCHEDULE_TIMEOUT_MS: number = 15_000;
 export const SHOW_SCHEDULER_JSON_PAYLOADS: boolean = false;
 export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = false;
 
@@ -385,4 +386,18 @@ export interface GithubOAuthAccessTokenExchange {
 	access_token: string;
 	scope: string;
 	token_type: string;
+}
+
+export interface CoachingConflict {
+	id: number;
+	teams: Team[];
+	coach_name?: string;
+	region: number;
+}
+
+export interface RegionMetadata {
+	region_id: number;
+	team_count: number;
+	field_count: number;
+	time_slot_count: number;
 }

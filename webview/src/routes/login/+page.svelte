@@ -15,7 +15,6 @@
 	import MicrosoftIcon from './MicrosoftIcon.svelte';
 	import { type } from '@tauri-apps/api/os';
 	import { githubLogin, googleLogin, twitterLogin } from '$lib/auth';
-	import authStore from '$lib/authStore';
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const next = queryParams.get('next') ?? '/';

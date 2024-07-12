@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use backend::{FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
+use backend::{CoachConflictLike, FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
 use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -18,18 +18,25 @@ pub enum ScheduleRequestError {
     NoSaveAppData,
     #[error(transparent)]
     SaveScheduleError(#[from] SaveScheduleError),
+    #[error("Missing environment variable: {0}")]
+    BadEnvironment(String),
+    #[error("The bearer JWT token is poorly encoded")]
+    AuthorizationHeaderMissingOrBad,
 }
 
-pub(crate) async fn send_grpc_schedule_request<T, P, F>(
-    input: impl AsRef<[ScheduledInput<T, P, F>]>,
+pub(crate) async fn send_grpc_schedule_request<T, P, F, C>(
+    input: impl AsRef<[ScheduledInput<T, P, F, C>]>,
     authorization_token: String,
 ) -> Result<CompiledSchedule, ScheduleRequestError>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
     P: PlayableTeamCollection<Team = T> + Send,
     F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
 {
-    let scheduler_endpoint = get_scheduler_url();
+    let scheduler_endpoint = try_get_scheduler_url().map_err(|msg| {
+        ScheduleRequestError::BadEnvironment(format!("environment:scheduler_url {msg}"))
+    })?;
 
     let messages = input
         .as_ref()
@@ -73,6 +80,30 @@ where
                     )
                     .collect(),
                 unique_id: i as u32,
+                coach_conflicts: non_message
+                    .coach_conflicts()
+                    .iter()
+                    .map(
+                        |coach_conflict| grpc_server::proto::algo_input::CoachConflict {
+                            region_id: coach_conflict
+                                .region_id()
+                                .try_into()
+                                .expect("coach conflict region id"),
+                            unique_id: coach_conflict
+                                .unique_id()
+                                .try_into()
+                                .expect("coach conflict id"),
+                            teams: coach_conflict
+                                .teams()
+                                .as_ref()
+                                .iter()
+                                .map(|team| grpc_server::proto::algo_input::Team {
+                                    unique_id: team.unique_id().try_into().expect("team id"),
+                                })
+                                .collect(),
+                        },
+                    )
+                    .collect(),
             },
         )
         .collect::<Vec<_>>();
@@ -99,7 +130,8 @@ where
         "authorization",
         format!("Bearer {authorization_token}")
             .parse()
-            .expect("bearer jwt token"),
+            .inspect_err(|e| eprintln!("{e} {}:{}", line!(), column!()))
+            .map_err(|_err| ScheduleRequestError::AuthorizationHeaderMissingOrBad)?,
     );
 
     let response = client
@@ -158,17 +190,26 @@ pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
         0 => ServerHealth::Unknown,
         1 => ServerHealth::Serving,
         2 => ServerHealth::NotServing,
-        x => unreachable!("should not have recieved protobuf enum ident of {x} for non-watch"),
+        x => unreachable!("should not have received protobuf enum ident of {x} for non-watch"),
     })
 }
 
-pub(crate) fn get_scheduler_url() -> String {
+pub(crate) fn try_get_scheduler_url() -> Result<String, std::env::VarError> {
     std::env::var("SCHEDULER_SERVER_URL")
+}
+
+pub(crate) fn get_scheduler_url() -> String {
+    try_get_scheduler_url()
         .expect("this app was not built with the correct setup to talk to the scheduler server")
 }
 
-pub(crate) fn get_auth_url() -> String {
+pub(crate) fn try_get_auth_url() -> Result<String, std::env::VarError> {
     std::env::var("AUTH_SERVER_URL")
+}
+
+#[allow(unused)]
+pub(crate) fn get_auth_url() -> String {
+    try_get_auth_url()
         .expect("this app was not built with the correct setup to talk to the auth server")
 }
 
@@ -183,7 +224,7 @@ pub async fn get_github_access_token(
     let client = reqwest::Client::new();
 
     let response = client
-        .get(get_auth_url())
+        .get(try_get_auth_url()?)
         .query(&[
             ("platform", "github"),
             ("code", urlencoding::encode(&code).as_ref()),

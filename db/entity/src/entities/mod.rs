@@ -2,6 +2,8 @@
 
 pub mod prelude;
 
+pub mod coach_conflict;
+pub mod coach_conflict_team_join;
 pub mod field;
 pub mod region;
 pub mod reservation_type;
