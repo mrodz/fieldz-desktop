@@ -53,8 +53,8 @@ use entity_local_exports::*;
 use migration::{Expr, IntoCondition, Migrator, MigratorTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, FromQueryResult, IntoActiveModel,
-    JoinType, Order, QueryFilter, QuerySelect, RelationTrait, Select, Set, TransactionError,
-    TransactionTrait, TryIntoModel, UpdateResult, Value,
+    JoinType, Order, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, Set,
+    TransactionError, TransactionTrait, TryIntoModel, UpdateResult, Value,
 };
 use sea_orm::{Database, DatabaseConnection, EntityTrait};
 pub use sea_orm::{DbErr, DeleteResult};
@@ -769,6 +769,14 @@ pub struct CoachConflictTeamInput {
     coach_conflict_id: i32,
     team_id: i32,
     op: CoachConflictTeamInputOp,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RegionMetadata {
+    region_id: i32,
+    team_count: u64,
+    field_count: u64,
+    time_slot_count: u64,
 }
 
 impl Client {
@@ -2473,5 +2481,50 @@ impl Client {
                 teams,
             })
             .collect())
+    }
+
+    pub async fn get_region_metadata(
+        &self,
+        region_id: i32,
+    ) -> Result<RegionMetadata, LoadRegionError> {
+        let region = RegionEntity::find_by_id(region_id)
+            .one(&self.connection)
+            .await
+            .map_err(|e| LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?
+            .ok_or(LoadRegionError::NotFound(region_id))?;
+
+        let team_count = TeamEntity::find()
+            .filter(team::Column::RegionOwner.eq(region.id))
+            .count(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        let field_count = FieldEntity::find()
+            .filter(field::Column::RegionOwner.eq(region.id))
+            .count(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        // the fields we need should be cached internally after this `COUNT(*)`
+
+        let time_slot_count = TimeSlotEntity::find()
+            .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
+            .filter(field::Column::RegionOwner.eq(region.id))
+            .count(&self.connection)
+            .await
+            .map_err(|e| {
+                LoadRegionError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+            })?;
+
+        Ok(RegionMetadata {
+            region_id,
+            team_count,
+            field_count,
+            time_slot_count,
+        })
     }
 }

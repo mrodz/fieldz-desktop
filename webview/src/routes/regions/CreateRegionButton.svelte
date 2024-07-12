@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { Region } from "$lib";
-	import { getModalStore, getToastStore } from "@skeletonlabs/skeleton";
-	import RegionList from "./RegionList.svelte";
+	import type { Region } from '$lib';
+	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
+	import RegionList from './RegionList.svelte';
 
 	export let regionList: RegionList;
 
@@ -18,7 +18,15 @@
 						message: `Created new region: "${region.title}"`,
 						background: 'variant-filled-success'
 					});
-					regionList.addRegionToFrontend(region);
+					regionList.addRegionToFrontend([
+						region,
+						Promise.resolve({
+							region_id: region.id,
+							field_count: 0,
+							team_count: 0,
+							time_slot_count: 0
+						})
+					]);
 				}
 			}
 		});

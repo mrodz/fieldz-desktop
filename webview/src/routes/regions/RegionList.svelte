@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import type { Region } from '$lib';
+	import type { Region, RegionMetadata } from '$lib';
 	import { ProgressRadial, getModalStore, getToastStore } from '@skeletonlabs/skeleton';
 	import { dialog, invoke } from '@tauri-apps/api';
 	import { onMount } from 'svelte';
 
 	let toastStore = getToastStore();
 	let modalStore = getModalStore();
-	let regions: Region[] | undefined = undefined;
+	let regions: [Region, Promise<RegionMetadata>][] | undefined = undefined;
 
-	export const addRegionToFrontend = (region: Region) => {
+	export const addRegionToFrontend = (region: [Region, Promise<RegionMetadata>]) => {
 		if (regions === undefined) {
 			regions = [region];
 		} else {
@@ -30,11 +30,24 @@
 	onMount(async () => {
 		try {
 			const data = await invoke<Region[]>('get_regions');
-			if (regions === undefined) {
-				regions = data;
-			} else {
-				regions = regions.concat(data);
-			}
+			regions = data.map((region) => {
+				const metadata = invoke<RegionMetadata>('get_region_metadata', {
+					regionId: region.id
+				}).catch((e) => {
+					toastStore.trigger({
+						message: `Could not load region metadata: ${e}`,
+						background: 'variant-filled-error',
+						timeout: 10_000
+					});
+					return {
+						region_id: region.id,
+						field_count: 0,
+						team_count: 0,
+						time_slot_count: 0
+					} satisfies RegionMetadata;
+				});
+				return [region, metadata];
+			});
 		} catch (error) {
 			dialog.message('Could not load regions', {
 				title: 'Fieldz',
@@ -77,23 +90,51 @@
 {#if regions === undefined}
 	<ProgressRadial />
 {:else if regions.length === 0}
-	<div class="m-4 p-4 text-center">You aren't a part of any regions!</div>
+	<div class="m-4 p-4 text-center">You haven't created any regions!</div>
 {:else}
 	<div class="flex flex-wrap justify-center">
-		{#each regions as region, i}
+		{#each regions as [region, metadata], i}
 			<button
-				class="card btn card-hover m-5 block w-96 p-5"
+				class="card btn card-hover m-5 block flex w-96 flex-col p-5"
 				tabindex="0"
 				on:click|preventDefault={() => goto(`/region?id=${region.id}`)}
 			>
-				<header class="card-header flex flex-row items-center">
-					<strong class="w-1/2 grow truncate">{region.title}</strong>
+				<div class="flex w-full flex-row items-center gap-2">
+					<header class="h4 grow truncate align-middle font-bold">{region.title}</header>
 					<button
 						type="button"
-						class="variant-filled btn-icon"
+						class="variant-filled btn-icon shrink"
 						on:click|stopPropagation={() => deleteRegion(region, i)}>X</button
 					>
-				</header>
+				</div>
+				<div class="mt-8 w-full">
+					{#await metadata}
+						Loading details...
+					{:then metadata}
+						<table class="table">
+							<thead class="table-head">
+								<tr class="[&>th]:text-center">
+									<th role="columnheader">Teams</th>
+									<th role="columnheader">Fields</th>
+									<th role="columnheader">Time Slots</th>
+								</tr>
+							</thead>
+							<tbody class="table-body">
+								<tr aria-rowindex={i + 1}>
+									<td role="gridcell" aria-colindex="1" tabindex="-1">
+										{metadata.team_count}
+									</td>
+									<td role="gridcell" aria-colindex="2" tabindex="-1">
+										{metadata.field_count}
+									</td>
+									<td role="gridcell" aria-colindex="3" tabindex="-1">
+										{metadata.time_slot_count}
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					{/await}
+				</div>
 			</button>
 		{/each}
 	</div>

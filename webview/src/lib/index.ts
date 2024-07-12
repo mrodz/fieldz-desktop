@@ -180,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -393,4 +393,11 @@ export interface CoachingConflict {
 	teams: Team[];
 	coach_name?: string;
 	region: number;
+}
+
+export interface RegionMetadata {
+	region_id: number;
+	team_count: number;
+	field_count: number;
+	time_slot_count: number;
 }

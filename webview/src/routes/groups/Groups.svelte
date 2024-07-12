@@ -8,7 +8,7 @@
 	let toastStore = getToastStore();
 
 	let groups: TeamGroup[] = [];
-	$: groupsFrontend = groups.map((group) => `${group.name} (${group.usages})`);
+	$: groupsFrontend = groups.map((group) => `${group.name} (${group.usages} teams)`);
 
 	onMount(async () => {
 		try {
