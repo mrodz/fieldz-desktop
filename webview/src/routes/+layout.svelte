@@ -144,11 +144,17 @@
 		}
 	}
 
+	let popupCard: HTMLDivElement;
+
 	const avatarClick = {
 		event: 'click',
 		target: 'avatarClick',
-		placement: 'bottom'
+		placement: 'bottom',
+		state(event) {
+			if (event.state) popupCard.style.zIndex = '100000';
+		},
 	} satisfies PopupSettings;
+
 </script>
 
 <Toast />
@@ -196,7 +202,7 @@
 
 			<svelte:fragment slot="trail">
 				{#if $authStore.user !== undefined}
-					<div use:popup={avatarClick}>
+					<div use:popup={avatarClick} class="z-[500]">
 						{#if $authStore.user.photoURL}
 							<Avatar
 								cursor="cursor-pointer"
@@ -221,7 +227,7 @@
 						{/if}
 					</div>
 
-					<div class="card variant-filled-primary w-96 p-4" data-popup="avatarClick">
+					<div class="card variant-filled-primary w-96 p-4" data-popup="avatarClick" bind:this={popupCard}>
 						<p>
 							Hi, {$authStore.user.displayName ?? 'Guest'}.
 						</p>
