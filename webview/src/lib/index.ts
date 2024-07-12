@@ -394,3 +394,10 @@ export interface CoachingConflict {
 	coach_name?: string;
 	region: number;
 }
+
+export interface RegionMetadata {
+	region_id: number;
+	team_count: number;
+	field_count: number;
+	time_slot_count: number;
+}

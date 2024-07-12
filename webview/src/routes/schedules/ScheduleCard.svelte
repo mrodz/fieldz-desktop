@@ -26,7 +26,9 @@
 		minute: 'numeric'
 	};
 
-	const target = `popupClick-schedule-${schedule.id}-${schedule.name}-${src}`;
+	const escapeScheduleName = (name: string) => name.replace(/[^a-zA-Z0-9-_:.]/g, '_');
+
+	const target = `popupClick-schedule-${schedule.id}-${escapeScheduleName(schedule.name)}-${src}-${schedule.created}`;
 
 	const popupClick: PopupSettings = {
 		event: 'click',

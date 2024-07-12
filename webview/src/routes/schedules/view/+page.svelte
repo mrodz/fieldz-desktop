@@ -30,7 +30,7 @@
 	}
 
 	if (idParam === null || idParam === '') {
-		dialog.message(`Recieved a bad query parameter for 'id' (got: ${JSON.stringify(idParam)})`);
+		dialog.message(`Received a bad query parameter for 'id' (got: ${JSON.stringify(idParam)})`);
 		history.back();
 	}
 
@@ -38,7 +38,7 @@
 
 	if (!Number.isInteger(id)) {
 		dialog.message(
-			`Recieved a bad query parameter for 'id' (got non-int: ${JSON.stringify(idParam)})`
+			`Received a bad query parameter for 'id' (got non-int: ${JSON.stringify(idParam)})`
 		);
 		history.back();
 	}

@@ -557,7 +557,7 @@
 									<td role="gridcell" aria-colindex="1" tabindex="-1">
 										{field.name}
 									</td>
-									<td role="gridcell" width="1%" aria-colindex="3" tabindex="-1">
+									<td role="gridcell" width="1%" aria-colindex="2" tabindex="-1">
 										<a
 											class="variant-filled btn mx-auto block"
 											href={`/reservations?fieldId=${field.id}`}

@@ -1,6 +1,6 @@
 use backend::ScheduledInput;
 use base64::Engine;
-use db::{errors::*, CoachConflictTeamInput, CreateCoachConflictInput};
+use db::{errors::*, CoachConflictTeamInput, CreateCoachConflictInput, RegionMetadata};
 use db::{
     CoachConflict, CopyTimeSlotsInput, CreateFieldInput, CreateRegionInput,
     CreateReservationTypeInput, CreateTeamInput, CreateTimeSlotInput, EditRegionInput,
@@ -903,4 +903,16 @@ pub(crate) async fn get_coach_conflicts(
         .ok_or(CoachConflictError::NoDatabase)?;
 
     client.get_coach_conflicts(region_id).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_region_metadata(
+    app: AppHandle,
+    region_id: i32,
+) -> Result<RegionMetadata, LoadRegionError> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock.database.as_ref().ok_or(LoadRegionError::NoDatabase)?;
+
+    client.get_region_metadata(region_id).await
 }

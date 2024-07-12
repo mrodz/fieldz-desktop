@@ -32,11 +32,23 @@
 			if (typeof e === 'object' && 'ValidationError' in e) {
 				const error = e['ValidationError'];
 
-				if (error === 'EmptyName') {
-					regionNameError = 'Region name cannot be empty';
-				} else if (typeof error === 'object' && 'NameTooLong' in error) {
-					const nameTooLong = error['NameTooLong'];
-					regionNameError = `Region name is ${nameTooLong?.len} characters which is larger than the max, 64`;
+				if (error === null) {
+					dialog.message('Error is null', {
+						title: 'Error',
+						type: 'error'
+					});
+				} else if (typeof error === 'object' && 'Name' in error) {
+					if (error.Name === 'EmptyName') {
+						regionNameError = 'Region name cannot be empty';
+					} else if (typeof error.Name === 'object' && 'NameTooLong' in error.Name) {
+						const nameTooLong = error.Name['NameTooLong'];
+						regionNameError = `Region name is ${nameTooLong?.len} characters which is larger than the max, 64`;
+					} else {
+						dialog.message(JSON.stringify(e), {
+							title: 'Error',
+							type: 'error'
+						});
+					}
 				} else {
 					// unknown validation error!
 					dialog.message(JSON.stringify(e), {

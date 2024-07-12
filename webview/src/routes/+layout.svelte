@@ -144,10 +144,15 @@
 		}
 	}
 
+	let popupCard: HTMLDivElement;
+
 	const avatarClick = {
 		event: 'click',
 		target: 'avatarClick',
-		placement: 'bottom'
+		placement: 'bottom',
+		state(event) {
+			if (event.state) popupCard.style.zIndex = '100000';
+		}
 	} satisfies PopupSettings;
 </script>
 
@@ -173,6 +178,17 @@
 		{/await}
 	</svelte:fragment>
 	<svelte:fragment slot="header">
+		<!--
+			We need to create a unique stacking context for the z-index in the popups to work.
+			One way to create a stacking context is by specifying a z-index on a parent element.
+			We need to select the header inserted by the `AppShell` as this is the first level
+			we can create a rival stacking context.
+		-->
+		<style>
+			header#shell-header {
+				z-index: 500;
+			}
+		</style>
 		<AppBar>
 			<svelte:fragment slot="lead">
 				<LightSwitch />
@@ -196,7 +212,7 @@
 
 			<svelte:fragment slot="trail">
 				{#if $authStore.user !== undefined}
-					<div use:popup={avatarClick}>
+					<div use:popup={avatarClick} class="z-[500]">
 						{#if $authStore.user.photoURL}
 							<Avatar
 								cursor="cursor-pointer"
@@ -221,7 +237,11 @@
 						{/if}
 					</div>
 
-					<div class="card variant-filled-primary w-96 p-4" data-popup="avatarClick">
+					<div
+						class="card variant-filled-primary z-[500] w-96 p-4"
+						data-popup="avatarClick"
+						bind:this={popupCard}
+					>
 						<p>
 							Hi, {$authStore.user.displayName ?? 'Guest'}.
 						</p>
