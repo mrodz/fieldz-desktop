@@ -12,13 +12,15 @@
 <main id="fieldz-home" in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }}>
 	<h1 class="h1 m-8">Home</h1>
 
-	<section class="card sticky top-0 my-4 rounded-none border-none px-8 py-4 shadow-none ring-0 z-20">
+	<section
+		class="card sticky top-0 z-20 my-4 rounded-none border-none px-8 py-4 shadow-none ring-0"
+	>
 		<header class="h4 mb-2">Jump To</header>
 		<div class="flex flex-row gap-4">
-			<a href="#groups" class="chip variant-filled-primary">Groups</a>
-			<a href="#sizes" class="chip variant-filled-primary">Field Sizes</a>
-			<a href="#regions" class="chip variant-filled-primary">Regions</a>
-			<a href="#schedules" class="chip variant-filled-primary">Schedules</a>
+			<a href="#groups" class="variant-filled-primary chip">Groups</a>
+			<a href="#sizes" class="variant-filled-primary chip">Field Sizes</a>
+			<a href="#regions" class="variant-filled-primary chip">Regions</a>
+			<a href="#schedules" class="variant-filled-primary chip">Schedules</a>
 		</div>
 	</section>
 

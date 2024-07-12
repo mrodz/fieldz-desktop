@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { dialog, invoke } from "@tauri-apps/api";
-	import { default as ReservationTypeComponent } from "./ReservationType.svelte";
-	import { onMount } from "svelte";
-	import { randomCalendarColor, type CreateReservationTypeInput, type ReservationType } from "$lib";
-	import { ProgressRadial } from "@skeletonlabs/skeleton";
+	import { dialog, invoke } from '@tauri-apps/api';
+	import { default as ReservationTypeComponent } from './ReservationType.svelte';
+	import { onMount } from 'svelte';
+	import { randomCalendarColor, type CreateReservationTypeInput, type ReservationType } from '$lib';
+	import { ProgressRadial } from '@skeletonlabs/skeleton';
 
 	let reservations: ReservationType[] | undefined;
 
@@ -94,7 +94,7 @@
 	{#if reservations === undefined}
 		<ProgressRadial />
 	{:else if reservations.length !== 0}
-		<div class="w-full xl:w-4/5 grid grid-cols-1 gap-10 lg:grid-cols-2 mb-4">
+		<div class="mb-4 grid w-full grid-cols-1 gap-10 lg:grid-cols-2 xl:w-4/5">
 			{#each reservations as reservation, i}
 				<ReservationTypeComponent
 					{reservation}
@@ -104,11 +104,15 @@
 			{/each}
 		</div>
 
-		<button class="variant-filled btn mx-auto" on:click={() => newType()}>Create Reservation Type</button>
+		<button class="variant-filled btn mx-auto" on:click={() => newType()}
+			>Create Reservation Type</button
+		>
 	{:else}
 		<div class="card m-4 p-4 text-center">
 			<i class="my-4 block">You haven't created any reservation types yet</i>
-			<button class="variant-filled btn mx-auto" on:click={() => newType()}>Create Reservation Type</button>
+			<button class="variant-filled btn mx-auto" on:click={() => newType()}
+				>Create Reservation Type</button
+			>
 		</div>
 	{/if}
 </section>
