@@ -574,7 +574,10 @@ where
         }
 
         for coach_conflict in self.coach_conflicts() {
-            result.add_team_collisions(coach_conflict.teams(), Some(&team_index_to_playable_group_index))
+            result.add_team_collisions(
+                coach_conflict.teams(),
+                Some(&team_index_to_playable_group_index),
+            )
         }
 
         Ok(StateTransformer {
