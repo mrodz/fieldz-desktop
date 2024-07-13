@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.8"
+version = "0.1.9"
 description = "An advanced field scheduling and logistics app"
 authors = ["Mateo Rodriguez"]
 license = ""
