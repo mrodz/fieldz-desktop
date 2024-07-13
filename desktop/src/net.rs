@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{borrow::Cow, fmt::Debug};
 
 use backend::{CoachConflictLike, FieldLike, PlayableTeamCollection, ScheduledInput, TeamLike};
 use db::{errors::SaveScheduleError, CompiledSchedule};
@@ -108,7 +108,7 @@ where
         )
         .collect::<Vec<_>>();
 
-    let mut client = grpc_server::client::SchedulerClient::connect(scheduler_endpoint)
+    let mut client = grpc_server::client::SchedulerClient::connect(scheduler_endpoint.into_owned())
         .await
         .map_err(|e| {
             ScheduleRequestError::RPCError(format!(
@@ -164,12 +164,16 @@ pub enum HealthProbeError {
     BadChannel(String),
     #[error("could not probe: service not found or unavailable: {0}")]
     ProbeFail(String),
+    #[error("Missing environment variable: {0}")]
+    BadEnvironment(String),
 }
 
 pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
-    let scheduler_endpoint = get_scheduler_url();
+    let scheduler_endpoint = try_get_scheduler_url().map_err(|msg| {
+        HealthProbeError::BadEnvironment(format!("environment:scheduler_url {msg}"))
+    })?;
 
-    let channel = grpc_server::Channel::from_shared(scheduler_endpoint)
+    let channel = grpc_server::Channel::from_shared(scheduler_endpoint.into_owned())
         .expect("invalid URI")
         .connect()
         .await
@@ -194,23 +198,24 @@ pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
     })
 }
 
-pub(crate) fn try_get_scheduler_url() -> Result<String, std::env::VarError> {
-    std::env::var("SCHEDULER_SERVER_URL")
+pub(crate) fn try_get_scheduler_url() -> Result<Cow<'static, str>, std::env::VarError> {
+    if let Some(var) = option_env!("SCHEDULER_SERVER_URL").map(Cow::Borrowed) {
+        return Ok(var);
+    }
+
+    println!("Warning: using runtime environment variable: SCHEDULER_SERVER_URL");
+
+    std::env::var("SCHEDULER_SERVER_URL").map(Cow::Owned)
 }
 
-pub(crate) fn get_scheduler_url() -> String {
-    try_get_scheduler_url()
-        .expect("this app was not built with the correct setup to talk to the scheduler server")
-}
+pub(crate) fn try_get_auth_url() -> Result<Cow<'static, str>, std::env::VarError> {
+    if let Some(var) = option_env!("AUTH_SERVER_URL").map(Cow::Borrowed) {
+        return Ok(var);
+    }
 
-pub(crate) fn try_get_auth_url() -> Result<String, std::env::VarError> {
-    std::env::var("AUTH_SERVER_URL")
-}
+    println!("Warning: using runtime environment variables: AUTH_SERVER_URL");
 
-#[allow(unused)]
-pub(crate) fn get_auth_url() -> String {
-    try_get_auth_url()
-        .expect("this app was not built with the correct setup to talk to the auth server")
+    std::env::var("AUTH_SERVER_URL").map(Cow::Owned)
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -224,7 +229,7 @@ pub async fn get_github_access_token(
     let client = reqwest::Client::new();
 
     let response = client
-        .get(try_get_auth_url()?)
+        .get(try_get_auth_url()?.as_ref())
         .query(&[
             ("platform", "github"),
             ("code", urlencoding::encode(&code).as_ref()),

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use backend::ScheduledInput;
 use base64::Engine;
 use db::{errors::*, CoachConflictTeamInput, CreateCoachConflictInput, RegionMetadata};
@@ -768,8 +770,11 @@ pub(crate) async fn get_team(app: AppHandle, id: i32) -> Result<TeamExtension, L
 }
 
 #[tauri::command]
-pub(crate) fn get_scheduler_url() -> String {
-    net::get_scheduler_url()
+pub(crate) fn get_scheduler_url() -> Option<String> {
+    net::try_get_scheduler_url()
+        .inspect_err(|e| eprintln!("COMMAND(get_scheduler_url) {e} {}:{}", line!(), column!()))
+        .ok()
+        .map(Cow::into_owned)
 }
 
 #[tauri::command]
