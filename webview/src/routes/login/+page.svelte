@@ -97,11 +97,26 @@
 	async function twitter() {
 		try {
 			await twitterLogin(async (credential) => {
+				console.log(credential);
 				goto(next);
 			});
 		} catch (e) {
-			console.warn(e);
-			duplicatedMessage(e);
+			if (
+				e !== null &&
+				typeof e === 'object' &&
+				'message' in e &&
+				typeof e.message === 'string' &&
+				e.message.includes('(os error 10048)')
+			) {
+				console.warn(e);
+				toastStore.trigger({
+					message: `Could not open another TCP server because you've already opened 9! Please close Fieldz and reopen the application to sign in again.`,
+					background: 'variant-filled-error'
+				});
+			} else {
+				console.error(e);
+				duplicatedMessage(e);
+			}
 		}
 	}
 
@@ -149,7 +164,7 @@
 			<GoogleIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button disabled class="logo-item cursor-not-allowed bg-gray-400" on:click={twitter}>
+		<button class="logo-item card-hover" on:click={twitter}>
 			<TwitterIcon class="mr-4 w-12" />
 			Sign In
 		</button>

@@ -221,6 +221,7 @@ pub(crate) fn try_get_auth_url() -> Result<Cow<'static, str>, std::env::VarError
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct OAuthAccessTokenExchange {
     access_token: String,
+    refresh_token: Option<String>,
 }
 
 pub async fn get_github_access_token(
@@ -234,6 +235,53 @@ pub async fn get_github_access_token(
             ("platform", "github"),
             ("code", urlencoding::encode(&code).as_ref()),
         ])
+        .send()
+        .await
+        .inspect_err(|e| eprintln!("{e}"))?;
+
+    let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
+
+    Ok(serde_json::from_str(&response_text)?)
+}
+
+// pub fn twitter_authorization_header(
+//     oauth_callback: impl AsRef<str>,
+//     oauth_consumer_key: impl AsRef<str>,
+//     oauth_nonce: impl AsRef<str>,
+//     oauth_signature: impl AsRef<str>,
+// ) -> String {
+//     // "OAuth ".to_owned()
+//     //     + "oauth_callback="
+//     //     + urlencoding::encode(oauth_callback.as_ref()).as_ref()
+//     //     + ",oauth_consumer_key="
+//     //     + urlencoding::encode(oauth_consumer_key.as_ref()).as_ref()
+//     //     + ",oauth_nonce="
+//     //     + urlencoding::encode(oauth_nonce.as_ref()).as_ref()
+//     //     + ",oauth_signature="
+//     //     + urlencoding
+// }
+
+pub async fn get_twitter_access_token(
+    client_id: String,
+    code: String,
+    code_challenge: String,
+    port: u32,
+) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
+    let client = reqwest::Client::new();
+
+    let redirect_uri = format!("http://127.0.0.1:{port}");
+
+    let headers = &[
+        ("code", urlencoding::encode(&code)),
+        ("client_id", urlencoding::encode(&client_id)),
+        ("grant_type", Cow::Borrowed("authorization_code")),
+        ("code_verifier", urlencoding::encode(&code_challenge)),
+        ("redirect_uri", Cow::Owned(redirect_uri)),
+    ];
+
+    let response = client
+        .post(format!("https://api.twitter.com/2/oauth2/token"))
+        .form(&headers)
         .send()
         .await
         .inspect_err(|e| eprintln!("{e}"))?;

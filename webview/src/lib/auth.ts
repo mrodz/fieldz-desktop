@@ -6,9 +6,10 @@ import {
 	GithubAuthProvider,
 	GoogleAuthProvider,
 	signInWithCredential,
+	TwitterAuthProvider,
 	type UserCredential
 } from 'firebase/auth';
-import type { GithubOAuthAccessTokenExchange } from '$lib';
+import type { OAuthAccessTokenExchange } from '$lib';
 import { env } from '$env/dynamic/public';
 
 async function googleSignIn(payload: string): Promise<UserCredential> {
@@ -36,7 +37,7 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 	}
 
 	try {
-		const exchange = await invoke<GithubOAuthAccessTokenExchange>('get_github_access_token', {
+		const exchange = await invoke<OAuthAccessTokenExchange>('get_github_access_token', {
 			code
 		});
 		const auth = getAuth();
@@ -48,18 +49,42 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 	}
 }
 
-async function twitterSignIn(payload: string): Promise<UserCredential> {
-	return void 0 as any;
+async function twitterSignIn(payload: string, codeChallenge: string, port: number): Promise<UserCredential> {
+	const url = new URL(payload);
+
+	const maybeError = url.searchParams.get('error');
+	if (maybeError) {
+		return Promise.reject(maybeError ?? 'unknown error');
+	}
+
+	const code = url.searchParams.get('code');
+	if (!code) {
+		return Promise.reject('Missing `code`');
+	}
+
+	try {
+		const exchange = await invoke<OAuthAccessTokenExchange>('get_twitter_access_token', {
+			clientId: env.PUBLIC_TWITTER_CLIENT_ID,
+			code,
+			codeChallenge,
+			port,
+		})
+		const credential = TwitterAuthProvider.credential(exchange.access_token,)
+		return signInWithCredential(auth, credential);
+	} catch (e) {
+		console.error(e);
+		return Promise.reject(e);
+	}
 }
 
 function openGoogleSignIn(port: string): Promise<void> {
 	return open(
 		'https://accounts.google.com/o/oauth2/auth?' +
-			'response_type=token&' +
-			`client_id=${env.PUBLIC_FIREBASE_CLIENT_ID}&` +
-			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-			'scope=email%20profile&' +
-			'prompt=consent'
+		'response_type=token&' +
+		`client_id=${env.PUBLIC_FIREBASE_CLIENT_ID}&` +
+		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+		'scope=email%20profile&' +
+		'prompt=consent'
 	);
 }
 
@@ -69,33 +94,40 @@ function openGoogleSignIn(port: string): Promise<void> {
 function openGithubSignIn(port: string): Promise<void> {
 	return open(
 		'https://github.com/login/oauth/authorize?' +
-			`client_id=${env.PUBLIC_GITHUB_CLIENT_ID}&` +
-			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-			'scope=read:user%20user:email'
+		`client_id=${env.PUBLIC_GITHUB_CLIENT_ID}&` +
+		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+		'scope=read:user%20user:email'
 	);
 }
 
-async function openTwitterSignIn(port: string): Promise<void> {
+async function openTwitterSignIn(port: string): Promise<{ codeChallenge: string }> {
 	const [codeChallenge, _SHA256] = await invoke<[string, string]>('generate_code_challenge');
 
 	/**
 	 * Guess what? Twitter's `code_challenge` field DIFFERS from the OAuth standard.
-	 * Instead of the respected 128 characted max length present for EVERY OTHER
+	 * Instead of the respected 128 character max length present for EVERY OTHER
 	 * PROVIDER, Twitter decided that 100 characters is the longest this field can be.
 	 * And did I mention that there are no error messages to debug this?
 	 */
 	const codeChallengeShortened = codeChallenge.substring(0, 100);
 
-	return open(
-		'https://twitter.com/i/oauth2/authorize?' +
-			'response_type=code&' +
-			`client_id=${env.PUBLIC_TWITTER_CLIENT_ID}&` +
-			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-			`code_challenge=${codeChallengeShortened}&` +
-			'code_challenge_method=plain&' +
-			'state=state&' + // the only initiator is the desktop client
-			'scope=users.read'
-	);
+	// open(
+	// 	'https://twitter.com/i/oauth2/authorize?' +
+	// 	'response_type=code&' +
+	// 	`client_id=${env.PUBLIC_TWITTER_CLIENT_ID}&` +
+	// 	`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+	// 	`code_challenge=${codeChallengeShortened}&` +
+	// 	'code_challenge_method=plain&' +
+	// 	'state=state&' + // the only initiator is the desktop client
+	// 	'scope=users.read%20offline.access'
+	// );
+	open(
+		''
+	)
+
+	return {
+		codeChallenge: codeChallengeShortened,
+	}
 }
 
 export async function googleLogin(
@@ -147,18 +179,31 @@ export async function githubLogin(
 }
 
 export async function twitterLogin(onSuccess: (userCredential: UserCredential) => Promise<void>) {
+	let codeChallenge: string | undefined = undefined;
+
+	let port: number | undefined;
+
 	listen('oauth://url', async (data) => {
-		const credential = await twitterSignIn(data.payload as string);
+		if (codeChallenge === undefined || port === undefined) return Promise.reject("The code challenge or port was not returned");
+
+		const credential = await twitterSignIn(data.payload as string, codeChallenge, port);
 		await onSuccess(credential);
 	});
 
-	const port: number = await invoke('plugin:oauth|start', {
+	port = await invoke('plugin:oauth|start', {
 		config: {
-			ports: [4321]
+			ports: [
+				7702,
+				9776,
+				8822,
+				20166,
+				20199,
+				38978,
+				50297,
+				19684,
+			]
 		}
 	});
 
-	alert(port);
-
-	await openTwitterSignIn(String(port));
+	({ codeChallenge } = await openTwitterSignIn(String(port)));
 }

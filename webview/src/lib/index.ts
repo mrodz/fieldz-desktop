@@ -382,10 +382,9 @@ export interface ScheduleGame {
 	team_two?: number;
 }
 
-export interface GithubOAuthAccessTokenExchange {
+export interface OAuthAccessTokenExchange {
 	access_token: string;
-	scope: string;
-	token_type: string;
+	refresh_token?: string,
 }
 
 export interface CoachingConflict {

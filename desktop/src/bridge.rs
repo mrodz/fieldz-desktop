@@ -921,3 +921,15 @@ pub(crate) async fn get_region_metadata(
 
     client.get_region_metadata(region_id).await
 }
+
+#[tauri::command]
+pub(crate) async fn get_twitter_access_token(
+    client_id: String,
+    code: String,
+    code_challenge: String,
+    port: u32,
+) -> Result<OAuthAccessTokenExchange, String> {
+    net::get_twitter_access_token(client_id, code, code_challenge, port)
+        .await
+        .map_err(|e| e.to_string())
+}

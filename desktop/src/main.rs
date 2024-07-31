@@ -4,6 +4,7 @@
 mod auth;
 mod bridge;
 mod net;
+mod twitter;
 
 use anyhow::{bail, Context, Result};
 use bridge::*;
@@ -137,6 +138,7 @@ fn main() -> Result<()> {
                 coaching_conflict_rename,
                 get_coach_conflicts,
                 get_region_metadata,
+                get_twitter_access_token,
             ])
             .run(tauri::generate_context!())
             .context("error while running tauri application")
