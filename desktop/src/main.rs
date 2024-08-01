@@ -19,6 +19,7 @@ struct SafeAppState(Arc<Mutex<State>>);
 #[derive(Debug, Default)]
 struct State {
     database: Option<Client>,
+    connection_pool: Option<reqwest::Client>,
 }
 
 fn main() -> Result<()> {
@@ -70,6 +71,7 @@ fn main() -> Result<()> {
                     handle.block_on(async {
                         let mut guard = state.0.lock().await;
                         guard.database = Some(Client::new(&db_config).await?);
+                        guard.connection_pool = Some(reqwest::Client::new());
                         Result::<()>::Ok(())
                     })?;
                 }
@@ -139,6 +141,7 @@ fn main() -> Result<()> {
                 get_coach_conflicts,
                 get_region_metadata,
                 get_twitter_access_token,
+                begin_twitter_oauth_transaction,
             ])
             .run(tauri::generate_context!())
             .context("error while running tauri application")

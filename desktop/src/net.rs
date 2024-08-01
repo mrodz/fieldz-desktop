@@ -5,6 +5,9 @@ use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use url::Url;
+
+use crate::twitter::{TwitterOAuthFlow, TwitterOAuthFlowStageOne};
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ScheduleRequestError {
@@ -218,6 +221,16 @@ pub(crate) fn try_get_auth_url() -> Result<Cow<'static, str>, std::env::VarError
     std::env::var("AUTH_SERVER_URL").map(Cow::Owned)
 }
 
+pub(crate) fn try_get_twitter_signing_url() -> Result<Cow<'static, str>, std::env::VarError> {
+    if let Some(var) = option_env!("TWITTER_SIGNING_URL").map(Cow::Borrowed) {
+        return Ok(var);
+    }
+
+    println!("Warning: using runtime environment variables: TWITTER_SIGNING_URL");
+
+    std::env::var("TWITTER_SIGNING_URL").map(Cow::Owned)
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct OAuthAccessTokenExchange {
     access_token: String,
@@ -226,9 +239,8 @@ pub struct OAuthAccessTokenExchange {
 
 pub async fn get_github_access_token(
     code: String,
+    client: &reqwest::Client,
 ) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
-    let client = reqwest::Client::new();
-
     let response = client
         .get(try_get_auth_url()?.as_ref())
         .query(&[
@@ -266,9 +278,8 @@ pub async fn get_twitter_access_token(
     code: String,
     code_challenge: String,
     port: u32,
+    client: &reqwest::Client,
 ) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
-    let client = reqwest::Client::new();
-
     let redirect_uri = format!("http://127.0.0.1:{port}");
 
     let headers = &[
@@ -289,4 +300,19 @@ pub async fn get_twitter_access_token(
     let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
 
     Ok(serde_json::from_str(&response_text)?)
+}
+
+pub async fn begin_twitter_oauth_transaction(
+    port: u32,
+    client: &reqwest::Client,
+) -> Result<TwitterOAuthFlowStageOne, anyhow::Error> {
+    let signing_endpoint = Url::parse(&try_get_twitter_signing_url()?)?;
+
+    let auth_flow = TwitterOAuthFlow::new("oauth_consumer_key" /* TODO */, signing_endpoint);
+
+    let redirect_uri = format!("http://127.0.0.1:{port}");
+
+    Ok(auth_flow
+        .get_request_token(Url::parse(&redirect_uri)?, client)
+        .await?)
 }

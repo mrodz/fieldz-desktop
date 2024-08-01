@@ -21,6 +21,7 @@ use crate::net::{
     self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange,
     ScheduleRequestError, ServerHealth,
 };
+use crate::twitter::{TwitterOAuthFlow, TwitterOAuthFlowStageOne};
 use crate::SafeAppState;
 
 #[tauri::command]
@@ -797,9 +798,17 @@ pub(crate) fn generate_code_challenge() -> (String, String) {
 
 #[tauri::command]
 pub(crate) async fn get_github_access_token(
+    app: AppHandle,
     code: String,
 ) -> Result<OAuthAccessTokenExchange, String> {
-    net::get_github_access_token(code)
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let net_client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::get_github_access_token(code, net_client)
         .await
         .map_err(|e| e.to_string())
 }
@@ -923,13 +932,39 @@ pub(crate) async fn get_region_metadata(
 }
 
 #[tauri::command]
+#[deprecated]
 pub(crate) async fn get_twitter_access_token(
+    app: AppHandle,
     client_id: String,
     code: String,
     code_challenge: String,
     port: u32,
 ) -> Result<OAuthAccessTokenExchange, String> {
-    net::get_twitter_access_token(client_id, code, code_challenge, port)
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::get_twitter_access_token(client_id, code, code_challenge, port, &client)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("{e} {}:{}", line!(), column!()))
+}
+
+#[tauri::command]
+pub(crate) async fn begin_twitter_oauth_transaction(
+    app: AppHandle,
+    port: u32,
+) -> Result<TwitterOAuthFlowStageOne, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::begin_twitter_oauth_transaction(port, client)
+        .await
+        .map_err(|e| format!("{e} {}:{}", line!(), column!()))
 }
