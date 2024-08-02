@@ -19,7 +19,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::net::{
     self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange,
-    ScheduleRequestError, ServerHealth,
+    ScheduleRequestError, ServerHealth, TwitterOAuthFlowStageOne, TwitterOAuthFlowStageTwo,
 };
 use crate::SafeAppState;
 
@@ -797,9 +797,17 @@ pub(crate) fn generate_code_challenge() -> (String, String) {
 
 #[tauri::command]
 pub(crate) async fn get_github_access_token(
+    app: AppHandle,
     code: String,
 ) -> Result<OAuthAccessTokenExchange, String> {
-    net::get_github_access_token(code)
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let net_client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::get_github_access_token(code, net_client)
         .await
         .map_err(|e| e.to_string())
 }
@@ -920,4 +928,40 @@ pub(crate) async fn get_region_metadata(
     let client = lock.database.as_ref().ok_or(LoadRegionError::NoDatabase)?;
 
     client.get_region_metadata(region_id).await
+}
+
+#[tauri::command]
+pub(crate) async fn begin_twitter_oauth_transaction(
+    app: AppHandle,
+    port: u32,
+) -> Result<TwitterOAuthFlowStageOne, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::begin_twitter_oauth_transaction(port, client)
+        .await
+        .map_err(|e| format!("{e} {}:{}", line!(), column!()))
+}
+
+#[tauri::command]
+pub(crate) async fn finish_twitter_oauth_transaction(
+    app: AppHandle,
+    oauth_token: String,
+    oauth_token_secret: String,
+    oauth_verifier: String,
+) -> Result<TwitterOAuthFlowStageTwo, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::finish_twitter_oauth_transaction(oauth_token, oauth_token_secret, oauth_verifier, client)
+        .await
+        .map_err(|e| format!("{e} {}:{}", line!(), column!()))
 }

@@ -2,13 +2,15 @@ import { invoke } from '@tauri-apps/api';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/shell';
 import {
+	FacebookAuthProvider,
 	getAuth,
 	GithubAuthProvider,
 	GoogleAuthProvider,
 	signInWithCredential,
+	TwitterAuthProvider,
 	type UserCredential
 } from 'firebase/auth';
-import type { GithubOAuthAccessTokenExchange } from '$lib';
+import type { OAuthAccessTokenExchange } from '$lib';
 import { env } from '$env/dynamic/public';
 
 async function googleSignIn(payload: string): Promise<UserCredential> {
@@ -36,7 +38,7 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 	}
 
 	try {
-		const exchange = await invoke<GithubOAuthAccessTokenExchange>('get_github_access_token', {
+		const exchange = await invoke<OAuthAccessTokenExchange>('get_github_access_token', {
 			code
 		});
 		const auth = getAuth();
@@ -48,8 +50,48 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 	}
 }
 
-async function twitterSignIn(payload: string): Promise<UserCredential> {
-	return void 0 as any;
+async function twitterSignIn(
+	payload: string,
+	prefetch: TwitterOAuthFlowStageOne
+): Promise<UserCredential> {
+	const url = new URL(payload);
+
+	const maybeError = url.searchParams.get('error') ?? url.searchParams.get('denied');
+	if (maybeError) {
+		return Promise.reject(maybeError ?? 'unknown error');
+	}
+
+	const oauth_token = url.searchParams.get('oauth_token');
+	if (!oauth_token) {
+		return Promise.reject('Missing `oauth_token`');
+	}
+
+	const oauth_verifier = url.searchParams.get('oauth_verifier');
+	if (!oauth_verifier) {
+		return Promise.reject('Missing `oauth_verifier`');
+	}
+
+	try {
+		const result = await invoke<TwitterOAuthFlowStageTwo>('finish_twitter_oauth_transaction', {
+			oauthToken: oauth_token,
+			oauthTokenSecret: prefetch.data?.oauth_token_secret,
+			oauthVerifier: oauth_verifier
+		});
+
+		if (!!result.error) {
+			return Promise.reject(result.error);
+		}
+
+		const auth = getAuth();
+		const credential = TwitterAuthProvider.credential(
+			result.data!.oauth_token,
+			result.data!.oauth_token_secret
+		);
+		return signInWithCredential(auth, credential);
+	} catch (e) {
+		console.error(e);
+		return Promise.reject(e);
+	}
 }
 
 function openGoogleSignIn(port: string): Promise<void> {
@@ -75,27 +117,36 @@ function openGithubSignIn(port: string): Promise<void> {
 	);
 }
 
-async function openTwitterSignIn(port: string): Promise<void> {
-	const [codeChallenge, _SHA256] = await invoke<[string, string]>('generate_code_challenge');
+interface TwitterOAuthFlowStageOne {
+	data?: {
+		oauth_token: string;
+		oauth_token_secret: string;
+		authorization_url: string;
+	};
+	error?: string;
+}
 
-	/**
-	 * Guess what? Twitter's `code_challenge` field DIFFERS from the OAuth standard.
-	 * Instead of the respected 128 characted max length present for EVERY OTHER
-	 * PROVIDER, Twitter decided that 100 characters is the longest this field can be.
-	 * And did I mention that there are no error messages to debug this?
-	 */
-	const codeChallengeShortened = codeChallenge.substring(0, 100);
+interface TwitterOAuthFlowStageTwo {
+	data?: {
+		oauth_token: string;
+		oauth_token_secret: string;
+	};
+	error?: string;
+}
 
-	return open(
-		'https://twitter.com/i/oauth2/authorize?' +
-			'response_type=code&' +
-			`client_id=${env.PUBLIC_TWITTER_CLIENT_ID}&` +
-			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-			`code_challenge=${codeChallengeShortened}&` +
-			'code_challenge_method=plain&' +
-			'state=state&' + // the only initiator is the desktop client
-			'scope=users.read'
-	);
+async function openTwitterSignIn(port: string): Promise<TwitterOAuthFlowStageOne> {
+	const payload = await invoke<TwitterOAuthFlowStageOne>('begin_twitter_oauth_transaction', {
+		port: Number(port)
+	});
+
+	if (!!payload.error) {
+		console.trace(payload.error);
+		return Promise.reject(payload.error);
+	}
+
+	open(payload.data!.authorization_url);
+
+	return payload;
 }
 
 export async function googleLogin(
@@ -146,19 +197,37 @@ export async function githubLogin(
 	};
 }
 
-export async function twitterLogin(onSuccess: (userCredential: UserCredential) => Promise<void>) {
-	listen('oauth://url', async (data) => {
-		const credential = await twitterSignIn(data.payload as string);
-		await onSuccess(credential);
-	});
+export async function twitterLogin(
+	onSuccess: (userCredential: UserCredential) => Promise<void>,
+	onRejection?: (error: any) => void
+): Promise<() => Promise<void>> {
+	let prefetch: TwitterOAuthFlowStageOne | undefined;
 
-	const port: number = await invoke('plugin:oauth|start', {
-		config: {
-			ports: [4321]
+	let cancel = listen('oauth://url', async (data) => {
+		if (prefetch === undefined)
+			return Promise.reject('The code challenge or port was not returned');
+
+		try {
+			const credential = await twitterSignIn(data.payload as string, prefetch);
+			await onSuccess(credential);
+		} catch (e) {
+			onRejection?.(e);
+		} finally {
+			(await cancel)();
 		}
 	});
 
-	alert(port);
+	const port = await invoke('plugin:oauth|start', {
+		config: {
+			ports: [7702, 9776, 8822, 20166, 20199, 38978, 50297, 19684]
+		}
+	});
 
-	await openTwitterSignIn(String(port));
+	openTwitterSignIn(String(port))
+		.then((data) => (prefetch = data))
+		.catch(onRejection);
+
+	return async () => {
+		await invoke('plugin:oauth|cancel', { port });
+	};
 }

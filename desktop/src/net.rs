@@ -6,6 +6,8 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// use crate::twitter::{TwitterOAuthFlow, TwitterOAuthFlowStageOne};
+
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ScheduleRequestError {
     #[error("database was not initialized")]
@@ -198,36 +200,38 @@ pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
     })
 }
 
-pub(crate) fn try_get_scheduler_url() -> Result<Cow<'static, str>, std::env::VarError> {
-    if let Some(var) = option_env!("SCHEDULER_SERVER_URL").map(Cow::Borrowed) {
-        return Ok(var);
-    }
+macro_rules! env_function {
+    ($name:ident, $var:literal) => {
+        pub(crate) fn $name() -> Result<Cow<'static, str>, std::env::VarError> {
+            if let Some(var) = option_env!($var).map(Cow::Borrowed) {
+                return Ok(var);
+            }
 
-    println!("Warning: using runtime environment variable: SCHEDULER_SERVER_URL");
+            println!(
+                "Warning: using runtime environment variable: {}",
+                stringify!($var)
+            );
 
-    std::env::var("SCHEDULER_SERVER_URL").map(Cow::Owned)
+            std::env::var($var).map(Cow::Owned)
+        }
+    };
 }
 
-pub(crate) fn try_get_auth_url() -> Result<Cow<'static, str>, std::env::VarError> {
-    if let Some(var) = option_env!("AUTH_SERVER_URL").map(Cow::Borrowed) {
-        return Ok(var);
-    }
-
-    println!("Warning: using runtime environment variables: AUTH_SERVER_URL");
-
-    std::env::var("AUTH_SERVER_URL").map(Cow::Owned)
-}
+env_function! { try_get_scheduler_url, "SCHEDULER_SERVER_URL" }
+env_function! { try_get_auth_url, "AUTH_SERVER_URL" }
+env_function! { try_get_twitter_request_token_url, "TWITTER_REQUEST_TOKEN_URL" }
+env_function! { try_get_twitter_oauth_credential_url, "TWITTER_OAUTH_CREDENTIAL_URL" }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct OAuthAccessTokenExchange {
     access_token: String,
+    refresh_token: Option<String>,
 }
 
 pub async fn get_github_access_token(
     code: String,
+    client: &reqwest::Client,
 ) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
-    let client = reqwest::Client::new();
-
     let response = client
         .get(try_get_auth_url()?.as_ref())
         .query(&[
@@ -241,4 +245,61 @@ pub async fn get_github_access_token(
     let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
 
     Ok(serde_json::from_str(&response_text)?)
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+struct TwitterOAuthFlowStageOneSuccess {
+    oauth_token: String,
+    oauth_token_secret: String,
+    authorization_url: String,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+pub struct TwitterOAuthFlowStageOne {
+    data: Option<TwitterOAuthFlowStageOneSuccess>,
+    error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+struct TwitterOAuthFlowStageTwoSuccess {
+    oauth_token: String,
+    oauth_token_secret: String,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+pub struct TwitterOAuthFlowStageTwo {
+    data: Option<TwitterOAuthFlowStageTwoSuccess>,
+    error: Option<String>,
+}
+
+pub async fn begin_twitter_oauth_transaction(
+    port: u32,
+    client: &reqwest::Client,
+) -> Result<TwitterOAuthFlowStageOne, anyhow::Error> {
+    let response = client
+        .get(try_get_twitter_request_token_url()?.as_ref())
+        .query(&[("port", port)])
+        .send()
+        .await?;
+
+    Ok(response.json::<TwitterOAuthFlowStageOne>().await?)
+}
+
+pub async fn finish_twitter_oauth_transaction(
+    oauth_token: String,
+    oauth_token_secret: String,
+    oauth_verifier: String,
+    client: &reqwest::Client,
+) -> Result<TwitterOAuthFlowStageTwo, anyhow::Error> {
+    let response = client
+        .get(try_get_twitter_oauth_credential_url()?.as_ref())
+        .query(&[
+            ("oauth_token", oauth_token),
+            ("oauth_token_secret", oauth_token_secret),
+            ("oauth_verifier", oauth_verifier),
+        ])
+        .send()
+        .await?;
+
+    Ok(response.json::<TwitterOAuthFlowStageTwo>().await?)
 }
