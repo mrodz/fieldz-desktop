@@ -5,9 +5,8 @@ use db::{errors::SaveScheduleError, CompiledSchedule};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use url::Url;
 
-use crate::twitter::{TwitterOAuthFlow, TwitterOAuthFlowStageOne};
+// use crate::twitter::{TwitterOAuthFlow, TwitterOAuthFlowStageOne};
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ScheduleRequestError {
@@ -201,35 +200,24 @@ pub async fn health_probe() -> Result<ServerHealth, HealthProbeError> {
     })
 }
 
-pub(crate) fn try_get_scheduler_url() -> Result<Cow<'static, str>, std::env::VarError> {
-    if let Some(var) = option_env!("SCHEDULER_SERVER_URL").map(Cow::Borrowed) {
-        return Ok(var);
-    }
-
-    println!("Warning: using runtime environment variable: SCHEDULER_SERVER_URL");
-
-    std::env::var("SCHEDULER_SERVER_URL").map(Cow::Owned)
+macro_rules! env_function {
+    ($name:ident, $var:literal) => {
+        pub(crate) fn $name() -> Result<Cow<'static, str>, std::env::VarError> {
+            if let Some(var) = option_env!($var).map(Cow::Borrowed) {
+                return Ok(var);
+            }
+        
+            println!("Warning: using runtime environment variable: {}", stringify!($var));
+        
+            std::env::var($var).map(Cow::Owned)
+        }
+    };
 }
 
-pub(crate) fn try_get_auth_url() -> Result<Cow<'static, str>, std::env::VarError> {
-    if let Some(var) = option_env!("AUTH_SERVER_URL").map(Cow::Borrowed) {
-        return Ok(var);
-    }
-
-    println!("Warning: using runtime environment variables: AUTH_SERVER_URL");
-
-    std::env::var("AUTH_SERVER_URL").map(Cow::Owned)
-}
-
-pub(crate) fn try_get_twitter_signing_url() -> Result<Cow<'static, str>, std::env::VarError> {
-    if let Some(var) = option_env!("TWITTER_SIGNING_URL").map(Cow::Borrowed) {
-        return Ok(var);
-    }
-
-    println!("Warning: using runtime environment variables: TWITTER_SIGNING_URL");
-
-    std::env::var("TWITTER_SIGNING_URL").map(Cow::Owned)
-}
+env_function! { try_get_scheduler_url, "SCHEDULER_SERVER_URL" }
+env_function! { try_get_auth_url, "AUTH_SERVER_URL" }
+env_function! { try_get_twitter_request_token_url, "TWITTER_REQUEST_TOKEN_URL" }
+env_function! { try_get_twitter_oauth_credential_url, "TWITTER_OAUTH_CREDENTIAL_URL" }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct OAuthAccessTokenExchange {
@@ -256,63 +244,59 @@ pub async fn get_github_access_token(
     Ok(serde_json::from_str(&response_text)?)
 }
 
-// pub fn twitter_authorization_header(
-//     oauth_callback: impl AsRef<str>,
-//     oauth_consumer_key: impl AsRef<str>,
-//     oauth_nonce: impl AsRef<str>,
-//     oauth_signature: impl AsRef<str>,
-// ) -> String {
-//     // "OAuth ".to_owned()
-//     //     + "oauth_callback="
-//     //     + urlencoding::encode(oauth_callback.as_ref()).as_ref()
-//     //     + ",oauth_consumer_key="
-//     //     + urlencoding::encode(oauth_consumer_key.as_ref()).as_ref()
-//     //     + ",oauth_nonce="
-//     //     + urlencoding::encode(oauth_nonce.as_ref()).as_ref()
-//     //     + ",oauth_signature="
-//     //     + urlencoding
-// }
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+struct TwitterOAuthFlowStageOneSuccess {
+    oauth_token: String,
+    oauth_token_secret: String,
+    authorization_url: String,
+}
 
-pub async fn get_twitter_access_token(
-    client_id: String,
-    code: String,
-    code_challenge: String,
-    port: u32,
-    client: &reqwest::Client,
-) -> Result<OAuthAccessTokenExchange, anyhow::Error> {
-    let redirect_uri = format!("http://127.0.0.1:{port}");
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+pub struct TwitterOAuthFlowStageOne {
+    data: Option<TwitterOAuthFlowStageOneSuccess>,
+    error: Option<String>,
+}
 
-    let headers = &[
-        ("code", urlencoding::encode(&code)),
-        ("client_id", urlencoding::encode(&client_id)),
-        ("grant_type", Cow::Borrowed("authorization_code")),
-        ("code_verifier", urlencoding::encode(&code_challenge)),
-        ("redirect_uri", Cow::Owned(redirect_uri)),
-    ];
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+struct TwitterOAuthFlowStageTwoSuccess {
+    oauth_token: String,
+    oauth_token_secret: String,
+}
 
-    let response = client
-        .post(format!("https://api.twitter.com/2/oauth2/token"))
-        .form(&headers)
-        .send()
-        .await
-        .inspect_err(|e| eprintln!("{e}"))?;
-
-    let response_text = response.text().await.inspect_err(|e| eprintln!("{e}"))?;
-
-    Ok(serde_json::from_str(&response_text)?)
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+pub struct TwitterOAuthFlowStageTwo {
+    data: Option<TwitterOAuthFlowStageTwoSuccess>,
+    error: Option<String>,
 }
 
 pub async fn begin_twitter_oauth_transaction(
     port: u32,
     client: &reqwest::Client,
 ) -> Result<TwitterOAuthFlowStageOne, anyhow::Error> {
-    let signing_endpoint = Url::parse(&try_get_twitter_signing_url()?)?;
+    let response = client
+        .get(try_get_twitter_request_token_url()?.as_ref())
+        .query(&[("port", port)])
+        .send()
+        .await?;
 
-    let auth_flow = TwitterOAuthFlow::new("oauth_consumer_key" /* TODO */, signing_endpoint);
+    Ok(response.json::<TwitterOAuthFlowStageOne>().await?)
+}
 
-    let redirect_uri = format!("http://127.0.0.1:{port}");
+pub async fn finish_twitter_oauth_transaction(
+    oauth_token: String,
+    oauth_token_secret: String,
+    oauth_verifier: String,
+    client: &reqwest::Client,
+) -> Result<TwitterOAuthFlowStageTwo, anyhow::Error> {
+    let response = client
+        .get(try_get_twitter_oauth_credential_url()?.as_ref())
+        .query(&[
+            ("oauth_token", oauth_token),
+            ("oauth_token_secret", oauth_token_secret),
+            ("oauth_verifier", oauth_verifier),
+        ])
+        .send()
+        .await?;
 
-    Ok(auth_flow
-        .get_request_token(Url::parse(&redirect_uri)?, client)
-        .await?)
+    Ok(response.json::<TwitterOAuthFlowStageTwo>().await?)
 }

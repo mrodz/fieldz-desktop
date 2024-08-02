@@ -38,6 +38,7 @@
 
 	function duplicatedMessage(error: any) {
 		if (
+			error !== null &&
 			typeof error === 'object' &&
 			'code' in error &&
 			error.code === 'auth/account-exists-with-different-credential'
@@ -96,9 +97,13 @@
 
 	async function twitter() {
 		try {
-			await twitterLogin(async (credential) => {
-				console.log(credential);
-				goto(next);
+			const kill = await twitterLogin(credentialFunction, authRejection);
+			modalStore.trigger({
+				type: 'alert',
+				title: 'Please wait, you are being authenticated',
+				body: 'Visit the tab that just opened and follow their instructions to log in',
+				meta: 'FIELDZ_AUTH_POPUP',
+				response: userCancellation(kill)
 			});
 		} catch (e) {
 			if (

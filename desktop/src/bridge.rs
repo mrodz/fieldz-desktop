@@ -19,9 +19,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::net::{
     self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange,
-    ScheduleRequestError, ServerHealth,
+    ScheduleRequestError, ServerHealth, TwitterOAuthFlowStageOne, TwitterOAuthFlowStageTwo,
 };
-use crate::twitter::{TwitterOAuthFlow, TwitterOAuthFlowStageOne};
 use crate::SafeAppState;
 
 #[tauri::command]
@@ -932,27 +931,6 @@ pub(crate) async fn get_region_metadata(
 }
 
 #[tauri::command]
-#[deprecated]
-pub(crate) async fn get_twitter_access_token(
-    app: AppHandle,
-    client_id: String,
-    code: String,
-    code_challenge: String,
-    port: u32,
-) -> Result<OAuthAccessTokenExchange, String> {
-    let state = app.state::<SafeAppState>();
-    let lock = state.0.lock().await;
-    let client = lock
-        .connection_pool
-        .as_ref()
-        .ok_or("network client was not initialized".to_owned())?;
-
-    net::get_twitter_access_token(client_id, code, code_challenge, port, &client)
-        .await
-        .map_err(|e| format!("{e} {}:{}", line!(), column!()))
-}
-
-#[tauri::command]
 pub(crate) async fn begin_twitter_oauth_transaction(
     app: AppHandle,
     port: u32,
@@ -965,6 +943,25 @@ pub(crate) async fn begin_twitter_oauth_transaction(
         .ok_or("network client was not initialized".to_owned())?;
 
     net::begin_twitter_oauth_transaction(port, client)
+        .await
+        .map_err(|e| format!("{e} {}:{}", line!(), column!()))
+}
+
+#[tauri::command]
+pub(crate) async fn finish_twitter_oauth_transaction(
+    app: AppHandle,
+    oauth_token: String,
+    oauth_token_secret: String,
+    oauth_verifier: String,
+) -> Result<TwitterOAuthFlowStageTwo, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .connection_pool
+        .as_ref()
+        .ok_or("network client was not initialized".to_owned())?;
+
+    net::finish_twitter_oauth_transaction(oauth_token, oauth_token_secret, oauth_verifier, client)
         .await
         .map_err(|e| format!("{e} {}:{}", line!(), column!()))
 }

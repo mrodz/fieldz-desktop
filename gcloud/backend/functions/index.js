@@ -3,6 +3,8 @@ const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const logger = require("firebase-functions/logger");
+const OAuth = require("oauth-1.0a");
+const crypto = require("crypto");
 
 setGlobalOptions({
   cpu: 1,
@@ -116,5 +118,141 @@ exports.getAuthToken = https.onRequest(
         error,
       });
     }
+  }
+);
+
+const TWITTER_CONSUMER_KEY = defineSecret("TWITTER_CONSUMER_KEY");
+const TWITTER_CONSUMER_SECRET = defineSecret("TWITTER_CONSUMER_SECRET");
+
+exports.getTwitterRequestToken = https.onRequest(
+  {
+    secrets: ["TWITTER_CONSUMER_KEY", "TWITTER_CONSUMER_SECRET"],
+  },
+  async (req, res) => {
+    if (!("port" in req.query && Number.isInteger(Number(req.query.port)))) {
+      return res.status(400).json({
+        error: "Missing parameter: port(int)",
+      });
+    }
+
+    const request_data = {
+      url: "https://api.twitter.com/oauth/request_token",
+      method: "POST",
+      data: {
+        oauth_callback: `http://127.0.0.1:${req.query.port}`,
+      },
+    };
+
+    const oauth = OAuth({
+      consumer: {
+        key: TWITTER_CONSUMER_KEY.value(),
+        secret: TWITTER_CONSUMER_SECRET.value(),
+      },
+      signature_method: "HMAC-SHA1",
+      hash_function(base_string, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(base_string)
+          .digest("base64");
+      },
+    });
+
+    const response = await fetch(request_data.url, {
+      method: request_data.method,
+      headers: oauth.toHeader(oauth.authorize(request_data)),
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "The backend could not communicate with the twitter API",
+      });
+    }
+
+    const text = await response.text();
+
+    const responseParams = new URLSearchParams(text);
+    const requestToken = responseParams.get("oauth_token");
+    const requestTokenSecret = responseParams.get("oauth_token_secret");
+
+    res.json({
+      data: {
+        oauth_token: requestToken,
+        oauth_token_secret: requestTokenSecret,
+        authorization_url: `https://api.twitter.com/oauth/authorize?oauth_token=${requestToken}`,
+      },
+    });
+  }
+);
+
+exports.getTwitterOAuthCredentials = https.onRequest(
+  {
+    secrets: ["TWITTER_CONSUMER_KEY", "TWITTER_CONSUMER_SECRET"],
+  },
+  async (req, res) => {
+    if (
+      !(
+        "oauth_token" in req.query &&
+        "oauth_token_secret" in req.query &&
+        "oauth_verifier" in req.query
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Missing parameters: oauth_token(str), oauth_token_secret(str), oauth_verifier(str)",
+      });
+    }
+
+    const { oauth_token, oauth_token_secret, oauth_verifier } = req.query;
+
+    const access_token_request_data = {
+      url: "https://api.twitter.com/oauth/access_token",
+      method: "POST",
+      data: {
+        oauth_verifier,
+      },
+    };
+
+    const oauth = OAuth({
+      consumer: {
+        key: TWITTER_CONSUMER_KEY.value(),
+        secret: TWITTER_CONSUMER_SECRET.value(),
+      },
+      signature_method: "HMAC-SHA1",
+      hash_function(base_string, key) {
+        return crypto
+          .createHmac("sha1", key)
+          .update(base_string)
+          .digest("base64");
+      },
+    });
+
+    const authorizedData = oauth.authorize(access_token_request_data, {
+      key: oauth_token,
+      secret: oauth_token_secret,
+    }); 
+
+    const response = await fetch(access_token_request_data.url, {
+      method: access_token_request_data.method,
+      headers: oauth.toHeader(authorizedData),
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "The backend could not communicate with the twitter API",
+      });
+    }
+
+    const text = await response.text();
+
+    const responseParams = new URLSearchParams(text);
+    const oauthToken = responseParams.get("oauth_token");
+    const oauthTokenSecret = responseParams.get("oauth_token_secret");
+
+    res.json({
+      data: {
+        oauth_token: oauthToken,
+        oauth_token_secret: oauthTokenSecret,
+      },
+    });
   }
 );

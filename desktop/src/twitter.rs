@@ -1,3 +1,4 @@
+#![cfg(not)]
 use core::str;
 use std::{
     borrow::Cow,
@@ -151,7 +152,7 @@ pub struct TwitterOAuthFlow {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TwitterOAuthFlowStageOne {
-    oauth_token: String,
+    request_token: String,
     oauth_token_secret: String,
     oauth_callback_confirmed: String,
 }
