@@ -4,6 +4,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
+    fmt::Display,
     num::NonZeroU8,
     ops::AddAssign,
 };
@@ -28,8 +29,31 @@ pub enum RegionalUnionU64 {
     Regional(Vec<(i32, u64)>),
 }
 
+impl Display for RegionalUnionU64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Interregional(matches) => write!(f, "{matches} matches"),
+            Self::Regional(region_based_matches) => {
+                let mut iter = region_based_matches.iter();
+
+                let Some((first_region_id, first_match)) = iter.next() else {
+                    return Ok(());
+                };
+
+                write!(f, "region {first_region_id}: {first_match}")?;
+
+                for (region_id, matches) in iter {
+                    write!(f, ", region {region_id}: {matches}")?;
+                }
+
+                Ok(())
+            }
+        }
+    }
+}
+
 impl RegionalUnionU64 {
-    pub fn default(interregional: bool) -> Self {
+    pub const fn default(interregional: bool) -> Self {
         if interregional {
             Self::Interregional(0)
         } else {
@@ -64,6 +88,67 @@ impl RegionalUnionU64 {
         match self {
             Self::Interregional(c) => *c *= rhs,
             Self::Regional(many_c) => many_c.iter_mut().for_each(|c| c.1 *= rhs),
+        }
+    }
+
+    pub fn satisfies(&self, predicate: &Self) -> bool {
+        match (self, predicate) {
+            (Self::Regional(lhs), Self::Regional(predicate)) => {
+                'outer: for predicate_item in predicate {
+                    for lhs_item in lhs {
+                        if lhs_item.0 == predicate_item.0 {
+                            if lhs_item.1 < predicate_item.1 {
+                                return false;
+                            }
+                            continue 'outer;
+                        }
+                    }
+                }
+                true
+            }
+            (Self::Interregional(lhs), Self::Interregional(predicate)) => lhs >= predicate,
+            (lhs, rhs) => panic!("type mismatch: comparing {lhs:?} to {rhs:?}"),
+        }
+    }
+
+    pub fn reduce_by_and_ret_overflow(&mut self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Regional(lhs), Self::Regional(other)) => {
+                let mut result = Self::Regional(vec![]);
+
+                let mut did_overflow = false;
+
+                'outer: for other_item in other {
+                    for lhs_item in lhs.iter_mut() {
+                        if lhs_item.0 == other_item.0 {
+                            if let Some(new_lhs) = lhs_item.1.checked_sub(other_item.1) {
+                                lhs_item.1 = new_lhs;
+                            } else {
+                                did_overflow = true;
+                                result +=
+                                    Self::Regional(vec![(lhs_item.0, other_item.1 - lhs_item.1)])
+                            }
+
+                            continue 'outer;
+                        }
+                    }
+                }
+
+                if did_overflow {
+                    Some(result)
+                } else {
+                    None
+                }
+            }
+            (Self::Interregional(lhs), Self::Interregional(other)) => {
+                if let Some(new_lhs) = lhs.checked_sub(*other) {
+                    *lhs = new_lhs;
+                    None
+                } else {
+                    Some(Self::Interregional(*other - *lhs))
+                }
+            }
+            (lhs, rhs) => panic!("type mismatch: reducing {lhs:?} by {rhs:?}"),
         }
     }
 }
@@ -147,6 +232,14 @@ pub struct PreScheduleReportInput {
 }
 
 impl PreScheduleReport {
+    /// Build a PreScheduleReport from its components
+    /// 
+    /// # Parameters
+    /// - `target_duplicates`: A list of bundled team & group data to guide the processor
+    /// - `all_targets`: A list of all targets and extended data
+    /// - `all_time_slots`: A list of all time slots and extended data
+    /// - `region_id_from_field_id`: Dependency injection to delegate region lookup responsibility to the caller
+    /// - `input`: The input payload given by the client  
     pub fn new(
         target_duplicates: Vec<DuplicateEntry>,
         all_targets: &[TargetExtension],
@@ -161,42 +254,35 @@ impl PreScheduleReport {
             .map(|target| target.target.id.try_into().unwrap())
             .collect();
 
+        // match tally required for a schedule to populate
         let mut target_required_matches: BTreeMap<&TargetExtension, RegionalUnionU64> =
             BTreeMap::new();
 
-        let mut target_supplied_matches: BTreeMap<&TargetExtension, RegionalUnionU64> =
-            BTreeMap::new();
+        // match tally to keep track of the space available per field size/type
+        let mut field_size_supplied_matches: BTreeMap<i32, RegionalUnionU64> = BTreeMap::new();
 
-        let mut total_matches_required = 0;
-
-        let total_matches_supplied = input.total_matches_supplied.unwrap();
-
+        // upsert the matches of the time slot to be indexed by the id of the field size
         for time_slot_ext in all_time_slots {
-            for target_ext in all_targets {
-                let maybe_type = target_ext.target.maybe_reservation_type;
+            let matches_for_this_reservation_type = field_size_supplied_matches
+                .entry(time_slot_ext.reservation_type.id)
+                .or_insert(RegionalUnionU64::default(input.interregional));
 
-                if maybe_type.is_none()
-                    || maybe_type.is_some_and(|target_reservation_id| {
-                        target_reservation_id == time_slot_ext.reservation_type.id
-                    })
-                {
-                    let matches_played = u64::try_from(time_slot_ext.matches_played()).unwrap();
-                    let entry = target_supplied_matches
-                        .entry(target_ext)
-                        .or_insert(RegionalUnionU64::default(input.interregional));
+            let this_raw_matches = time_slot_ext.matches_played().try_into().unwrap();
 
-                    *entry += if input.interregional {
-                        RegionalUnionU64::Interregional(matches_played)
-                    } else {
-                        let region_id = region_id_from_field_id(time_slot_ext.time_slot.field_id);
-                        RegionalUnionU64::Regional(vec![(region_id, matches_played)])
-                    };
-
-                    break;
-                }
-            }
+            *matches_for_this_reservation_type += if input.interregional {
+                RegionalUnionU64::Interregional(this_raw_matches)
+            } else {
+                RegionalUnionU64::Regional(vec![(
+                    region_id_from_field_id(time_slot_ext.time_slot.field_id),
+                    this_raw_matches,
+                )])
+            };
         }
 
+        // for metadata
+        let mut total_matches_required = 0;
+
+        // calculate the number of matches needed to be played with some `n` teams via the choice formula
         for entry in &target_duplicates {
             let choices = match &entry.teams_with_group_set {
                 RegionalUnionU64::Interregional(teams_with_group_set) => {
@@ -221,11 +307,64 @@ impl PreScheduleReport {
             }
         }
 
+        // multiply the data collected above (play out of one game tops per combination) by the number of games desired for each combination
         for m in &mut target_required_matches {
             m.1.spread_mul(input.matches_to_play.get() as u64);
         }
 
+        let mut target_supplied_matches: BTreeMap<&TargetExtension, RegionalUnionU64> =
+            BTreeMap::new();
+
+        let total_matches_supplied = input.total_matches_supplied.unwrap();
+
+        // populate the amount of matches supplied by the time slots
+        for time_slot_ext in all_time_slots {
+            for target_ext in all_targets {
+                let maybe_type = target_ext.target.maybe_reservation_type;
+                let matches_played = u64::try_from(time_slot_ext.matches_played()).unwrap();
+
+                // proceed if the target's and time slot's reservation type match, or no reservation type was specified
+                if maybe_type.is_some_and(|id| id != time_slot_ext.reservation_type.id) {
+                    continue;
+                }
+
+                let will_be_added = if input.interregional {
+                    RegionalUnionU64::Interregional(matches_played)
+                } else {
+                    let region_id = region_id_from_field_id(time_slot_ext.time_slot.field_id);
+                    RegionalUnionU64::Regional(vec![(region_id, matches_played)])
+                };
+
+                let Some(required_for_this_reservation_type) =
+                    field_size_supplied_matches.get_mut(&time_slot_ext.reservation_type.id)
+                else {
+                    unreachable!("this should have been inserted earlier")
+                };
+
+                /*
+                 * Keep in mind that targets overlap: `boys u8` and `girls u8` will both play on
+                 * the same field size, which must be taken into account. This is done by
+                 * decreasing the "availability" of matches indexed by field type below.
+                 */
+                if let Some(_overflow_data) =
+                    required_for_this_reservation_type.reduce_by_and_ret_overflow(&will_be_added)
+                {
+                    continue;
+                }
+
+                let entry = target_supplied_matches
+                    .entry(target_ext)
+                    .or_insert(RegionalUnionU64::default(input.interregional));
+
+                *entry += will_be_added;
+            }
+        }
+
         let mut target_match_count = Vec::with_capacity(target_required_matches.len());
+
+        /*
+         * Compute missing parameters and package errors
+         */
 
         let supplied_keys = BTreeSet::from_iter(target_supplied_matches.keys().cloned());
         let required_keys = BTreeSet::from_iter(target_required_matches.keys().cloned());
@@ -255,10 +394,17 @@ impl PreScheduleReport {
             target_required_matches.insert(missing_target, union);
         }
 
-        for (required, supplied) in target_required_matches
+        /*
+         * Package results
+         */
+
+        // zip works because we can assume the maps share the same `&TargetExtension` as keys and the
+        // values have equal cardinality and sort because they are `BTreeMaps`
+        let result_iterator = target_required_matches
             .into_iter()
-            .zip(target_supplied_matches.into_iter())
-        {
+            .zip(target_supplied_matches.into_iter());
+
+        for (required, supplied) in result_iterator {
             if required.0.target.id != supplied.0.target.id {
                 panic!("{required:?} does not have the same target as {supplied:?}");
             }
@@ -280,6 +426,10 @@ impl PreScheduleReport {
         }
     }
 
+    /// Build a PreScheduleReport from a dynamic data source
+    /// # Performance
+    /// This function is computationally expensive and may take significant time to execute.
+    /// It is recommended to avoid calling this function frequently in performance-critical code paths.
     pub async fn create<C>(
         connection: &C,
         mut input: PreScheduleReportInput,
@@ -394,17 +544,6 @@ impl PreScheduleReport {
                 })?
                 .into_iter(),
         );
-
-        // let target_supplied_matches =
-        //     BTreeMap::from_iter(all_time_slots.into_iter().map(|time_slot| {
-        //         (
-        //             field_to_region
-        //                 .get(&time_slot.time_slot.field_id)
-        //                 .cloned()
-        //                 .unwrap(),
-        //             time_slot,
-        //         )
-        //     }));
 
         Ok(Self::new(
             target_duplicates,
