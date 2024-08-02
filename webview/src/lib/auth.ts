@@ -50,7 +50,10 @@ async function githubSignIn(payload: string): Promise<UserCredential> {
 	}
 }
 
-async function twitterSignIn(payload: string, prefetch: TwitterOAuthFlowStageOne): Promise<UserCredential> {
+async function twitterSignIn(
+	payload: string,
+	prefetch: TwitterOAuthFlowStageOne
+): Promise<UserCredential> {
 	const url = new URL(payload);
 
 	const maybeError = url.searchParams.get('error') ?? url.searchParams.get('denied');
@@ -72,15 +75,18 @@ async function twitterSignIn(payload: string, prefetch: TwitterOAuthFlowStageOne
 		const result = await invoke<TwitterOAuthFlowStageTwo>('finish_twitter_oauth_transaction', {
 			oauthToken: oauth_token,
 			oauthTokenSecret: prefetch.data?.oauth_token_secret,
-			oauthVerifier: oauth_verifier,
-		})
+			oauthVerifier: oauth_verifier
+		});
 
 		if (!!result.error) {
 			return Promise.reject(result.error);
 		}
 
 		const auth = getAuth();
-		const credential = TwitterAuthProvider.credential(result.data!.oauth_token, result.data!.oauth_token_secret)
+		const credential = TwitterAuthProvider.credential(
+			result.data!.oauth_token,
+			result.data!.oauth_token_secret
+		);
 		return signInWithCredential(auth, credential);
 	} catch (e) {
 		console.error(e);
@@ -91,11 +97,11 @@ async function twitterSignIn(payload: string, prefetch: TwitterOAuthFlowStageOne
 function openGoogleSignIn(port: string): Promise<void> {
 	return open(
 		'https://accounts.google.com/o/oauth2/auth?' +
-		'response_type=token&' +
-		`client_id=${env.PUBLIC_FIREBASE_CLIENT_ID}&` +
-		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-		'scope=email%20profile&' +
-		'prompt=consent'
+			'response_type=token&' +
+			`client_id=${env.PUBLIC_FIREBASE_CLIENT_ID}&` +
+			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+			'scope=email%20profile&' +
+			'prompt=consent'
 	);
 }
 
@@ -105,9 +111,9 @@ function openGoogleSignIn(port: string): Promise<void> {
 function openGithubSignIn(port: string): Promise<void> {
 	return open(
 		'https://github.com/login/oauth/authorize?' +
-		`client_id=${env.PUBLIC_GITHUB_CLIENT_ID}&` +
-		`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
-		'scope=read:user%20user:email'
+			`client_id=${env.PUBLIC_GITHUB_CLIENT_ID}&` +
+			`redirect_uri=http%3A//127.0.0.1%3A${port}&` +
+			'scope=read:user%20user:email'
 	);
 }
 
@@ -116,7 +122,7 @@ interface TwitterOAuthFlowStageOne {
 		oauth_token: string;
 		oauth_token_secret: string;
 		authorization_url: string;
-	}
+	};
 	error?: string;
 }
 
@@ -124,17 +130,17 @@ interface TwitterOAuthFlowStageTwo {
 	data?: {
 		oauth_token: string;
 		oauth_token_secret: string;
-	}
+	};
 	error?: string;
 }
 
 async function openTwitterSignIn(port: string): Promise<TwitterOAuthFlowStageOne> {
 	const payload = await invoke<TwitterOAuthFlowStageOne>('begin_twitter_oauth_transaction', {
-		port: Number(port),
+		port: Number(port)
 	});
 
 	if (!!payload.error) {
-		console.trace(payload.error)
+		console.trace(payload.error);
 		return Promise.reject(payload.error);
 	}
 
@@ -198,7 +204,8 @@ export async function twitterLogin(
 	let prefetch: TwitterOAuthFlowStageOne | undefined;
 
 	let cancel = listen('oauth://url', async (data) => {
-		if (prefetch === undefined) return Promise.reject("The code challenge or port was not returned");
+		if (prefetch === undefined)
+			return Promise.reject('The code challenge or port was not returned');
 
 		try {
 			const credential = await twitterSignIn(data.payload as string, prefetch);
@@ -212,20 +219,13 @@ export async function twitterLogin(
 
 	const port = await invoke('plugin:oauth|start', {
 		config: {
-			ports: [
-				7702,
-				9776,
-				8822,
-				20166,
-				20199,
-				38978,
-				50297,
-				19684,
-			]
+			ports: [7702, 9776, 8822, 20166, 20199, 38978, 50297, 19684]
 		}
 	});
 
-	openTwitterSignIn(String(port)).then(data => prefetch = data).catch(onRejection);
+	openTwitterSignIn(String(port))
+		.then((data) => (prefetch = data))
+		.catch(onRejection);
 
 	return async () => {
 		await invoke('plugin:oauth|cancel', { port });

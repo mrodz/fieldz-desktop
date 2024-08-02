@@ -206,9 +206,12 @@ macro_rules! env_function {
             if let Some(var) = option_env!($var).map(Cow::Borrowed) {
                 return Ok(var);
             }
-        
-            println!("Warning: using runtime environment variable: {}", stringify!($var));
-        
+
+            println!(
+                "Warning: using runtime environment variable: {}",
+                stringify!($var)
+            );
+
             std::env::var($var).map(Cow::Owned)
         }
     };
