@@ -319,7 +319,7 @@ impl PreScheduleReport {
 
         // populate the amount of matches supplied by the time slots
         for time_slot_ext in all_time_slots {
-            for target_ext in dbg!(all_targets) {
+            for target_ext in all_targets {
                 let maybe_type = target_ext.target.maybe_reservation_type;
                 let matches_played = u64::try_from(time_slot_ext.matches_played()).unwrap();
 
