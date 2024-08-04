@@ -1,8 +1,9 @@
 use std::borrow::Cow;
+use std::path::Path;
 
 use backend::ScheduledInput;
 use base64::Engine;
-use db::{errors::*, CoachConflictTeamInput, CreateCoachConflictInput, RegionMetadata};
+use db::{errors::*, CoachConflictTeamInput, CreateCoachConflictInput, NameMax64, RegionMetadata};
 use db::{
     CoachConflict, CopyTimeSlotsInput, CreateFieldInput, CreateRegionInput,
     CreateReservationTypeInput, CreateTeamInput, CreateTimeSlotInput, EditRegionInput,
@@ -14,14 +15,16 @@ use db::{
 };
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
+use thiserror::Error;
 
 use crate::net::{
     self, send_grpc_schedule_request, HealthProbeError, OAuthAccessTokenExchange,
     ScheduleRequestError, ServerHealth, TwitterOAuthFlowStageOne, TwitterOAuthFlowStageTwo,
 };
-use crate::SafeAppState;
+use crate::{SafeAppState, ACTIVE_PROFILE_BIN_KEY};
 
 #[tauri::command]
 pub(crate) async fn get_regions(app: AppHandle) -> Result<Vec<db::region::Model>, String> {
@@ -964,4 +967,166 @@ pub(crate) async fn finish_twitter_oauth_transaction(
     net::finish_twitter_oauth_transaction(oauth_token, oauth_token_secret, oauth_verifier, client)
         .await
         .map_err(|e| format!("{e} {}:{}", line!(), column!()))
+}
+
+fn list_profiles_impl(profiles_directory: &Path) -> Result<Vec<String>, String> {
+    let paths = std::fs::read_dir(profiles_directory)
+        .map_err(|e| format!("{e} {}:{}", line!(), column!()))?;
+
+    let mut profiles = vec![];
+
+    for path in paths {
+        let path = path
+            .map_err(|e| format!("{e} {}:{}", line!(), column!()))?
+            .path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+
+        profiles.push(name.to_string_lossy().into_owned())
+    }
+
+    Ok(profiles)
+}
+
+#[tauri::command]
+pub(crate) fn list_profiles(app: AppHandle) -> Result<Vec<String>, String> {
+    let profiles_directory = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or("could not access app data directory".to_owned())?
+        .join("profiles");
+
+    list_profiles_impl(&profiles_directory)
+}
+
+#[tauri::command]
+pub(crate) async fn get_active_profile(app: AppHandle) -> Result<Option<String>, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let store = lock
+        .metadata_store
+        .as_ref()
+        .ok_or("metadata was not initialized".to_owned())?;
+
+    let Some(js_value) = store.get(ACTIVE_PROFILE_BIN_KEY) else {
+        return Ok(None);
+    };
+
+    js_value
+        .as_str()
+        .ok_or("active profile was not a string".to_owned())
+        .map(|str| Some(str.to_owned()))
+}
+
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum SelectProfileError {
+    #[error("metadata was not initialized")]
+    NoStore,
+    #[error("could not access app data directory")]
+    MissingAppData,
+    #[error("there are no profiles with the name {0}")]
+    MissingProfile(String),
+    #[error("could not operate on store: {0}")]
+    StoreError(String),
+}
+
+#[tauri::command]
+pub(crate) async fn set_active_profile(
+    app: AppHandle,
+    name: String,
+) -> Result<String, SelectProfileError> {
+    let state = app.state::<SafeAppState>();
+    let mut lock = state.0.lock().await;
+    let store = lock
+        .metadata_store
+        .as_mut()
+        .ok_or(SelectProfileError::NoStore)?;
+
+    let profiles_directory = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or(SelectProfileError::MissingAppData)?
+        .join("profiles");
+
+    let maybe_selected_profile_directory = profiles_directory.join(&name);
+
+    if !maybe_selected_profile_directory.exists() {
+        return Err(SelectProfileError::MissingProfile(name));
+    }
+
+    store
+        .insert(
+            ACTIVE_PROFILE_BIN_KEY.to_owned(),
+            serde_json::Value::String(name.clone()),
+        )
+        .map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
+
+    Ok(name)
+}
+
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum CreateProfileError {
+    #[error("could not access app data directory")]
+    MissingAppData,
+    #[error(transparent)]
+    NameTooLong(#[from] NameMax64ValidationError),
+    #[error("Profile names can only contain alphanumeric characters, '_', and '-'")]
+    IllegalCharacterError,
+    #[error("Could not list profiles: {0}")]
+    ListProfileError(String),
+    #[error("A profile already exists with this name")]
+    DuplicateNameError,
+    #[error("This name is reserved by the file system")]
+    IllegalNameError,
+    #[error("IO Operation failed: {0}")]
+    IOError(String),
+}
+
+#[tauri::command]
+pub(crate) async fn create_new_profile(
+    app: AppHandle,
+    name: NameMax64,
+) -> Result<String, CreateProfileError> {
+    name.validate()?;
+
+    // Reserved names in Windows
+    const RESERVED_NAMES: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    if RESERVED_NAMES.contains(&name.as_str()) {
+        return Err(CreateProfileError::IllegalNameError);
+    }
+
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(CreateProfileError::IllegalCharacterError);
+    }
+
+    let profiles_directory = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or(CreateProfileError::MissingAppData)?
+        .join("profiles");
+
+    let existing_profiles =
+        list_profiles_impl(&profiles_directory).map_err(CreateProfileError::ListProfileError)?;
+
+    if existing_profiles.contains(&*name) {
+        return Err(CreateProfileError::DuplicateNameError);
+    }
+
+    std::fs::create_dir(profiles_directory.join(name.as_str()))
+        .map_err(|e| CreateProfileError::IOError(e.to_string()))?;
+
+    Ok(<String as ToOwned>::to_owned(&*name))
 }

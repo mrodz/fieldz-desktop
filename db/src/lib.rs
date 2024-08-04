@@ -149,7 +149,14 @@ impl CreateFieldInput {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(transparent)]
-struct NameMax64(String);
+pub struct NameMax64(String);
+
+impl Deref for NameMax64 {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTeamInput {
