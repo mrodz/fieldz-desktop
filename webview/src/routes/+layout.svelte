@@ -12,7 +12,8 @@
 		Avatar,
 		getToastStore,
 		popup,
-		type PopupSettings
+		type PopupSettings,
+		getModalStore
 	} from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { getVersion } from '@tauri-apps/api/app';
@@ -31,7 +32,7 @@
 		Processing,
 		TeamSelector
 	} from '$lib/modals/index';
-	import { HAS_DB_RESET_BUTTON } from '$lib';
+	import { handleProfileCreationError, HAS_DB_RESET_BUTTON, isRouteSafeToPersist } from '$lib';
 	import authStore from '$lib/authStore';
 	import { initializeApp } from 'firebase/app';
 	import {
@@ -44,12 +45,23 @@
 	import { onMount } from 'svelte';
 	import Fa from 'svelte-fa';
 	import { faSignIn } from '@fortawesome/free-solid-svg-icons';
+	import profileStore from '$lib/profileStore';
+	import profileListStore from '$lib/profileListStore';
 
 	initializeStores();
 
 	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
 
 	const toastStore = getToastStore();
+	const modalStore = getModalStore();
+
+	let rootComponentKey = 0;
+
+	function forceApplicationRefresh() {
+		rootComponentKey = (rootComponentKey + 1) % 2;
+	}
+
+	let selectedProfile: string | null;
 
 	onMount(() => {
 		/*
@@ -90,6 +102,24 @@
 				firebaseControlled: true
 			});
 		});
+
+		profileStore.set({
+			name: invoke<string | null>('get_active_profile')
+				.then((profile) => {
+					selectedProfile = profile ?? null;
+					return profile;
+				})
+				.catch((e) => {
+					console.error(e);
+					dialog.message(JSON.stringify(e), {
+						title: 'Could not select profile',
+						type: 'error'
+					});
+					return null;
+				})
+		});
+
+		profileListStore.set(invoke('list_profiles'));
 	});
 
 	const modalRegistry: Record<string, ModalComponent> = {
@@ -154,6 +184,68 @@
 			if (event.state) popupCard.style.zIndex = '100000';
 		}
 	} satisfies PopupSettings;
+
+	async function createProfile() {
+		modalStore.trigger({
+			type: 'prompt',
+			title: 'Enter profile name',
+			body: 'You are creating a new profile. Any work done in a profile cannot be accessed or used by another profile. Give it a distinct name, with a max length of 64 characters, that uses letters, numbers, "_", "-", and spaces.',
+			async response(r: false | string | undefined) {
+				if (!r) return;
+
+				try {
+					const newProfile = await invoke<string>('create_new_profile', {
+						name: r
+					});
+
+					$profileListStore = $profileListStore.then((profiles) => {
+						profiles.push([newProfile, { size: 0 }]);
+						return profiles;
+					});
+
+					toastStore.trigger({
+						message: `Created new profile: "${newProfile}"`,
+						background: 'variant-filled-success'
+					});
+				} catch (e) {
+					handleProfileCreationError(e, toastStore, dialog.message);
+				}
+			}
+		});
+	}
+
+	function switchProfile() {
+		if (selectedProfile !== undefined) {
+			profileStore.set({
+				name: invoke<string | null>('set_active_profile', { name: selectedProfile })
+					.then((profile) => {
+						toastStore.trigger({
+							message: 'Switched profile contexts!',
+							background: 'variant-filled-success'
+						});
+
+						const result = profile ?? null;
+
+						if (isRouteSafeToPersist($page.url)) {
+							forceApplicationRefresh();
+							return result;
+						}
+
+						return goto('/').then(() => {
+							forceApplicationRefresh();
+							return result;
+						});
+					})
+					.catch((e) => {
+						dialog.message(JSON.stringify(e), {
+							title: 'Could not switch profiles',
+							type: 'error'
+						});
+						return null;
+					})
+			});
+		}
+	}
 </script>
 
 <Toast />
@@ -169,6 +261,7 @@
 				<li><a href="/field-types">Field Types</a></li>
 				<li><a href="/scheduler">Scheduler</a></li>
 				<li><a href="/schedules">Schedules</a></li>
+				<li class="border-surface-600 border-t-2 py-1"><a href="/settings">Settings</a></li>
 			</ul>
 		</nav>
 		{#await getVersion() then version}
@@ -211,63 +304,94 @@
 			</svelte:fragment>
 
 			<svelte:fragment slot="trail">
-				{#if $authStore.user !== undefined}
-					<div use:popup={avatarClick} class="z-[500]">
-						{#if $authStore.user.photoURL}
-							<Avatar
-								cursor="cursor-pointer"
-								border="border-4 border-surface-300-600-token hover:!border-primary-500"
-								width="w-16"
-								src={$authStore.user.photoURL}
-							/>
-						{:else if $authStore.user.displayName}
-							<Avatar
-								cursor="cursor-pointer"
-								border="border-4 border-surface-300-600-token hover:!border-primary-500"
-								width="w-16"
-								initials={$authStore.user.displayName}
-							/>
-						{:else}
-							<Avatar
-								cursor="cursor-pointer"
-								border="border-4 border-surface-300-600-token hover:!border-primary-500"
-								width="w-16"
-								initials="??"
-							/>
-						{/if}
-					</div>
-
+				<div class="flex items-center">
 					<div
-						class="card variant-filled-primary z-[500] w-96 p-4"
-						data-popup="avatarClick"
-						bind:this={popupCard}
+						class="border-surface-600 mr-8 grid grid-cols-[auto_1fr] items-center gap-4 border-r-2 p-1 pr-8"
 					>
-						<p>
-							Hi, {$authStore.user.displayName ?? 'Guest'}.
-						</p>
+						<label class="contents">
+							<select bind:value={selectedProfile} on:change={switchProfile} class="select">
+								{#if $profileListStore !== undefined}
+									{#await $profileListStore}
+										Loading...
+									{:then allProfiles}
+										{#each allProfiles as [profile, _metadata]}
+											<option value={profile}>{profile}</option>
+										{/each}
+										<option selected={selectedProfile === null} value={null}>
+											(Default Profile)
+										</option>
+									{/await}
+								{/if}
+							</select>
+						</label>
 
-						<p class="mt-2">
-							Thank you for signing in! You can generate schedules with this account.
-						</p>
-
-						{#if $authStore.user.email}
-							<p class="mt-2">
-								If we need to contact you, the email we have on file is
-								{$authStore.user.email}.
-							</p>
-						{/if}
-
-						<button class="variant-filled btn mt-2" on:click={signOut}>Sign Out</button>
+						<button class="btn btn-icon">
+							<button class="variant-ghost btn-icon block h-full" on:click={createProfile}>+</button
+							>
+						</button>
 					</div>
-				{:else}
-					<button class="btn" on:click={signIn}>
-						<span class="mr-2"> Sign In </span>
 
-						<Fa icon={faSignIn} />
-					</button>
-				{/if}
+					{#if $authStore.user !== undefined}
+						<div use:popup={avatarClick} class="z-[500]">
+							{#if $authStore.user.photoURL}
+								<Avatar
+									cursor="cursor-pointer"
+									border="border-4 border-surface-300-600-token hover:!border-primary-500"
+									width="w-16"
+									src={$authStore.user.photoURL}
+								/>
+							{:else if $authStore.user.displayName}
+								<Avatar
+									cursor="cursor-pointer"
+									border="border-4 border-surface-300-600-token hover:!border-primary-500"
+									width="w-16"
+									initials={$authStore.user.displayName}
+								/>
+							{:else}
+								<Avatar
+									cursor="cursor-pointer"
+									border="border-4 border-surface-300-600-token hover:!border-primary-500"
+									width="w-16"
+									initials="??"
+								/>
+							{/if}
+						</div>
+
+						<div
+							class="card variant-filled-primary z-[500] w-96 p-4"
+							data-popup="avatarClick"
+							bind:this={popupCard}
+						>
+							<p>
+								Hi, {$authStore.user.displayName ?? 'Guest'}.
+							</p>
+
+							<p class="mt-2">
+								Thank you for signing in! You can generate schedules with this account.
+							</p>
+
+							{#if $authStore.user.email}
+								<p class="mt-2">
+									If we need to contact you, the email we have on file is
+									{$authStore.user.email}.
+								</p>
+							{/if}
+
+							<button class="variant-filled btn mt-2" on:click={signOut}>Sign Out</button>
+						</div>
+					{:else}
+						<button class="btn" on:click={signIn}>
+							<span class="mr-2"> Sign In </span>
+
+							<Fa icon={faSignIn} />
+						</button>
+					{/if}
+				</div>
 			</svelte:fragment>
 		</AppBar>
 	</svelte:fragment>
-	<slot />
+
+	{#key rootComponentKey}
+		<slot />
+	{/key}
 </AppShell>
