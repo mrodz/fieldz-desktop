@@ -1018,6 +1018,10 @@ pub(crate) async fn get_active_profile(app: AppHandle) -> Result<Option<String>,
         return Ok(None);
     };
 
+    if js_value.is_null() {
+        return Ok(None);
+    }
+
     js_value
         .as_str()
         .ok_or("active profile was not a string".to_owned())
@@ -1034,13 +1038,15 @@ pub enum SelectProfileError {
     MissingProfile(String),
     #[error("could not operate on store: {0}")]
     StoreError(String),
+    #[error("could not swap data sources: {0}")]
+    DatabaseInitError(String),
 }
 
 #[tauri::command]
 pub(crate) async fn set_active_profile(
     app: AppHandle,
-    name: String,
-) -> Result<String, SelectProfileError> {
+    name: Option<String>,
+) -> Result<Option<String>, SelectProfileError> {
     let state = app.state::<SafeAppState>();
     let mut lock = state.0.lock().await;
     let store = lock
@@ -1051,21 +1057,45 @@ pub(crate) async fn set_active_profile(
     let profiles_directory = app
         .path_resolver()
         .app_data_dir()
-        .ok_or(SelectProfileError::MissingAppData)?
-        .join("profiles");
+        .ok_or(SelectProfileError::MissingAppData)?;
 
-    let maybe_selected_profile_directory = profiles_directory.join(&name);
-
-    if !maybe_selected_profile_directory.exists() {
-        return Err(SelectProfileError::MissingProfile(name));
-    }
+    let maybe_selected_profile_directory = if let Some(ref name) = name {
+        let path = profiles_directory.join("profiles").join(name);
+        if !path.exists() {
+            return Err(SelectProfileError::MissingProfile(name.clone()));
+        }
+        path
+    } else {
+        profiles_directory
+    };
 
     store
         .insert(
             ACTIVE_PROFILE_BIN_KEY.to_owned(),
-            serde_json::Value::String(name.clone()),
+            name
+                .clone()
+                .map(serde_json::Value::String)
+                .unwrap_or(serde_json::Value::Null),
         )
         .map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
+
+    store.save().map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
+
+    let db_path = format!(
+        "sqlite:{}?mode=rwc",
+        maybe_selected_profile_directory
+            .join("data.sqlite")
+            .to_string_lossy()
+    );
+
+    let db_config = db::Config::new(db_path);
+
+    lock.database = Some(db::Client::new(&db_config).await.map_err(|e| {
+        SelectProfileError::DatabaseInitError(format!("{e:?} {}:{}", line!(), column!()))
+    })?);
+
+    app.emit_all("profile-selection", &name)
+        .expect("could not emit event");
 
     Ok(name)
 }
@@ -1095,19 +1125,23 @@ pub(crate) async fn create_new_profile(
 ) -> Result<String, CreateProfileError> {
     name.validate()?;
 
+    let name = name
+        .trim_start_matches(char::is_whitespace)
+        .trim_end_matches(char::is_whitespace);
+
     // Reserved names in Windows
     const RESERVED_NAMES: [&str; 22] = [
         "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
         "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
 
-    if RESERVED_NAMES.contains(&name.as_str()) {
+    if RESERVED_NAMES.contains(&name) {
         return Err(CreateProfileError::IllegalNameError);
     }
 
     if !name
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
     {
         return Err(CreateProfileError::IllegalCharacterError);
     }
@@ -1121,12 +1155,15 @@ pub(crate) async fn create_new_profile(
     let existing_profiles =
         list_profiles_impl(&profiles_directory).map_err(CreateProfileError::ListProfileError)?;
 
-    if existing_profiles.contains(&*name) {
+    if existing_profiles
+        .iter()
+        .any(|profile_name| profile_name == name)
+    {
         return Err(CreateProfileError::DuplicateNameError);
     }
 
-    std::fs::create_dir(profiles_directory.join(name.as_str()))
+    std::fs::create_dir(profiles_directory.join(name))
         .map_err(|e| CreateProfileError::IOError(e.to_string()))?;
 
-    Ok(<String as ToOwned>::to_owned(&*name))
+    Ok(name.to_owned())
 }

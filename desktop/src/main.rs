@@ -62,7 +62,7 @@ fn main() -> Result<()> {
             let store = StoreBuilder::new(app.handle(), metadata_path).build();
 
             let db_path = match store.get(ACTIVE_PROFILE_BIN_KEY) {
-                None => db_path,
+                None | Some(serde_json::Value::Null) => db_path,
                 Some(name_of_dir) => {
                     let active_profile_directory = profiles_directory
                         .join(name_of_dir.as_str().context("`name_of_dir` is not a string")?);

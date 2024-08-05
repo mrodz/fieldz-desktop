@@ -12,10 +12,12 @@
 		Avatar,
 		getToastStore,
 		popup,
-		type PopupSettings
+		type PopupSettings,
+		getModalStore
 	} from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { getVersion } from '@tauri-apps/api/app';
+	import { listen } from '@tauri-apps/api/event';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
@@ -44,12 +46,24 @@
 	import { onMount } from 'svelte';
 	import Fa from 'svelte-fa';
 	import { faSignIn } from '@fortawesome/free-solid-svg-icons';
+	import profileStore from '$lib/profileStore';
 
 	initializeStores();
 
 	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
 
 	const toastStore = getToastStore();
+	const modalStore = getModalStore();
+
+	let allProfiles: Promise<string[]> | undefined;
+
+	let rootComponentKey = 0;
+
+	function forceApplicationRefresh() {
+		rootComponentKey = (rootComponentKey + 1) % 2;
+	}
+
+	let selectedProfile: string | null;
 
 	onMount(() => {
 		/*
@@ -90,6 +104,25 @@
 				firebaseControlled: true
 			});
 		});
+
+		profileStore.set({
+			name: invoke<string | null>('get_active_profile')
+				.then((profile) => {
+					console.log(profile);
+					selectedProfile = profile ?? null;
+					return profile;
+				})
+				.catch((e) => {
+					console.error(e);
+					dialog.message(JSON.stringify(e), {
+						title: 'Could not select profile',
+						type: 'error'
+					});
+					return null;
+				})
+		});
+
+		allProfiles = invoke('list_profiles');
 	});
 
 	const modalRegistry: Record<string, ModalComponent> = {
@@ -154,6 +187,94 @@
 			if (event.state) popupCard.style.zIndex = '100000';
 		}
 	} satisfies PopupSettings;
+
+	async function createProfile() {
+		modalStore.trigger({
+			type: 'prompt',
+			title: 'Enter profile name',
+			body: 'You are creating a new profile. Any work done in a profile cannot be accessed or used by another profile. Give it a distinct name, with a max length of 64 characters, that uses letters, numbers, "_", "-", and spaces.',
+			async response(r: false | string | undefined) {
+				if (!r) return;
+
+				try {
+					const newProfile = await invoke<string>('create_new_profile', {
+						name: r
+					});
+
+					allProfiles = allProfiles?.then((profiles) => {
+						profiles.push(newProfile);
+						return profiles;
+					});
+				} catch (e) {
+					console.error(e);
+					if (typeof e === 'string') {
+						if (e === 'IllegalCharacterError') {
+							toastStore.trigger({
+								message:
+									'Profiles can only contain the following letters: a-z, A-Z, _, -, and whitespace',
+								background: 'variant-filled-error',
+								autohide: false
+							});
+							return;
+						}
+					} else if (e !== null && typeof e === 'object') {
+						if ('NameTooLong' in e) {
+							if (e.NameTooLong === 'EmptyName') {
+								toastStore.trigger({
+									message: 'A profile name cannot be empty',
+									background: 'variant-filled-error',
+									autohide: false
+								});
+							} else {
+								let length: number | undefined = (<any>e.NameTooLong)?.NameTooLong?.len;
+								if (length === undefined) {
+									toastStore.trigger({
+										message: 'This name is too long',
+										background: 'variant-filled-error',
+										autohide: false
+									});
+								} else {
+									toastStore.trigger({
+										message: `This name is too long, with a length of ${length} characters. Please limit the length to 64 characters.`,
+										background: 'variant-filled-error',
+										autohide: false
+									});
+								}
+							}
+							return;
+						}
+					}
+					dialog.message(JSON.stringify(e), {
+						title: 'Could not create profile',
+						type: 'error'
+					});
+				}
+			}
+		});
+	}
+
+	function switchProfile() {
+		if (selectedProfile !== undefined) {
+			profileStore.set({
+				name: invoke<string | null>('set_active_profile', { name: selectedProfile })
+					.then((profile) => {
+						toastStore.trigger({
+							message: 'Switched profile contexts!',
+							background: 'variant-filled-success'
+						});
+						forceApplicationRefresh();
+						return profile ?? null;
+					})
+					.catch((e) => {
+						dialog.message(JSON.stringify(e), {
+							title: 'Could not switch profiles',
+							type: 'error'
+						});
+						return null;
+					})
+			});
+		}
+	}
 </script>
 
 <Toast />
@@ -211,63 +332,95 @@
 			</svelte:fragment>
 
 			<svelte:fragment slot="trail">
-				{#if $authStore.user !== undefined}
-					<div use:popup={avatarClick} class="z-[500]">
-						{#if $authStore.user.photoURL}
-							<Avatar
-								cursor="cursor-pointer"
-								border="border-4 border-surface-300-600-token hover:!border-primary-500"
-								width="w-16"
-								src={$authStore.user.photoURL}
-							/>
-						{:else if $authStore.user.displayName}
-							<Avatar
-								cursor="cursor-pointer"
-								border="border-4 border-surface-300-600-token hover:!border-primary-500"
-								width="w-16"
-								initials={$authStore.user.displayName}
-							/>
-						{:else}
-							<Avatar
-								cursor="cursor-pointer"
-								border="border-4 border-surface-300-600-token hover:!border-primary-500"
-								width="w-16"
-								initials="??"
-							/>
-						{/if}
-					</div>
-
+				<div class="flex items-center">
 					<div
-						class="card variant-filled-primary z-[500] w-96 p-4"
-						data-popup="avatarClick"
-						bind:this={popupCard}
+						class="border-surface-700 mr-8 grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-r-4 p-1 pr-8"
 					>
-						<p>
-							Hi, {$authStore.user.displayName ?? 'Guest'}.
-						</p>
+						<label class="contents">
+							<span>Using:</span>
+							<select bind:value={selectedProfile} on:change={switchProfile} class="select">
+								{#if allProfiles !== undefined}
+									{#await allProfiles}
+										Loading...
+									{:then allProfiles}
+										{#each allProfiles as profile}
+											<option value={profile}>{profile}</option>
+										{/each}
+										<option selected={selectedProfile === null} value={null}
+											>(Default Profile)</option
+										>
+									{/await}
+								{/if}
+							</select>
+						</label>
 
-						<p class="mt-2">
-							Thank you for signing in! You can generate schedules with this account.
-						</p>
-
-						{#if $authStore.user.email}
-							<p class="mt-2">
-								If we need to contact you, the email we have on file is
-								{$authStore.user.email}.
-							</p>
-						{/if}
-
-						<button class="variant-filled btn mt-2" on:click={signOut}>Sign Out</button>
+						<button class="btn btn-icon">
+							<button class="variant-ghost btn-icon block h-full" on:click={createProfile}>+</button
+							>
+						</button>
 					</div>
-				{:else}
-					<button class="btn" on:click={signIn}>
-						<span class="mr-2"> Sign In </span>
 
-						<Fa icon={faSignIn} />
-					</button>
-				{/if}
+					{#if $authStore.user !== undefined}
+						<div use:popup={avatarClick} class="z-[500]">
+							{#if $authStore.user.photoURL}
+								<Avatar
+									cursor="cursor-pointer"
+									border="border-4 border-surface-300-600-token hover:!border-primary-500"
+									width="w-16"
+									src={$authStore.user.photoURL}
+								/>
+							{:else if $authStore.user.displayName}
+								<Avatar
+									cursor="cursor-pointer"
+									border="border-4 border-surface-300-600-token hover:!border-primary-500"
+									width="w-16"
+									initials={$authStore.user.displayName}
+								/>
+							{:else}
+								<Avatar
+									cursor="cursor-pointer"
+									border="border-4 border-surface-300-600-token hover:!border-primary-500"
+									width="w-16"
+									initials="??"
+								/>
+							{/if}
+						</div>
+
+						<div
+							class="card variant-filled-primary z-[500] w-96 p-4"
+							data-popup="avatarClick"
+							bind:this={popupCard}
+						>
+							<p>
+								Hi, {$authStore.user.displayName ?? 'Guest'}.
+							</p>
+
+							<p class="mt-2">
+								Thank you for signing in! You can generate schedules with this account.
+							</p>
+
+							{#if $authStore.user.email}
+								<p class="mt-2">
+									If we need to contact you, the email we have on file is
+									{$authStore.user.email}.
+								</p>
+							{/if}
+
+							<button class="variant-filled btn mt-2" on:click={signOut}>Sign Out</button>
+						</div>
+					{:else}
+						<button class="btn" on:click={signIn}>
+							<span class="mr-2"> Sign In </span>
+
+							<Fa icon={faSignIn} />
+						</button>
+					{/if}
+				</div>
 			</svelte:fragment>
 		</AppBar>
 	</svelte:fragment>
-	<slot />
+
+	{#key rootComponentKey}
+		<slot />
+	{/key}
 </AppShell>

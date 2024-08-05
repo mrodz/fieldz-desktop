@@ -233,7 +233,7 @@ pub struct PreScheduleReportInput {
 
 impl PreScheduleReport {
     /// Build a PreScheduleReport from its components
-    /// 
+    ///
     /// # Parameters
     /// - `target_duplicates`: A list of bundled team & group data to guide the processor
     /// - `all_targets`: A list of all targets and extended data
