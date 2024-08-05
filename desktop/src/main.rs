@@ -59,9 +59,14 @@ fn main() -> Result<()> {
 
             let metadata_path = dir_part.join("metadata.bin");
 
-            let store = StoreBuilder::new(app.handle(), metadata_path).build();
+            let mut store = StoreBuilder::new(app.handle(), metadata_path).build();
+            store.load()?;
 
-            let db_path = match store.get(ACTIVE_PROFILE_BIN_KEY) {
+            let active_profile = store.get(ACTIVE_PROFILE_BIN_KEY);
+
+            println!("Last selected profile: {active_profile:?}");
+
+            let db_path = match active_profile {
                 None | Some(serde_json::Value::Null) => db_path,
                 Some(name_of_dir) => {
                     let active_profile_directory = profiles_directory
@@ -169,6 +174,8 @@ fn main() -> Result<()> {
             get_active_profile,
             set_active_profile,
             create_new_profile,
+            delete_profile,
+            rename_profile,
         ])
         .run(tauri::generate_context!())
         .inspect_err(|e| {

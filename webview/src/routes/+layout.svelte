@@ -17,7 +17,6 @@
 	} from '@skeletonlabs/skeleton';
 	import { invoke, dialog } from '@tauri-apps/api';
 	import { getVersion } from '@tauri-apps/api/app';
-	import { listen } from '@tauri-apps/api/event';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
@@ -33,7 +32,7 @@
 		Processing,
 		TeamSelector
 	} from '$lib/modals/index';
-	import { HAS_DB_RESET_BUTTON } from '$lib';
+	import { handleProfileCreationError, HAS_DB_RESET_BUTTON, isRouteSafeToPersist } from '$lib';
 	import authStore from '$lib/authStore';
 	import { initializeApp } from 'firebase/app';
 	import {
@@ -47,6 +46,7 @@
 	import Fa from 'svelte-fa';
 	import { faSignIn } from '@fortawesome/free-solid-svg-icons';
 	import profileStore from '$lib/profileStore';
+	import profileListStore from '$lib/profileListStore';
 
 	initializeStores();
 
@@ -54,8 +54,6 @@
 
 	const toastStore = getToastStore();
 	const modalStore = getModalStore();
-
-	let allProfiles: Promise<string[]> | undefined;
 
 	let rootComponentKey = 0;
 
@@ -108,7 +106,6 @@
 		profileStore.set({
 			name: invoke<string | null>('get_active_profile')
 				.then((profile) => {
-					console.log(profile);
 					selectedProfile = profile ?? null;
 					return profile;
 				})
@@ -122,7 +119,7 @@
 				})
 		});
 
-		allProfiles = invoke('list_profiles');
+		profileListStore.set(invoke('list_profiles'));
 	});
 
 	const modalRegistry: Record<string, ModalComponent> = {
@@ -201,53 +198,17 @@
 						name: r
 					});
 
-					allProfiles = allProfiles?.then((profiles) => {
-						profiles.push(newProfile);
+					$profileListStore = $profileListStore.then((profiles) => {
+						profiles.push([newProfile, { size: 0 }]);
 						return profiles;
 					});
-				} catch (e) {
-					console.error(e);
-					if (typeof e === 'string') {
-						if (e === 'IllegalCharacterError') {
-							toastStore.trigger({
-								message:
-									'Profiles can only contain the following letters: a-z, A-Z, _, -, and whitespace',
-								background: 'variant-filled-error',
-								autohide: false
-							});
-							return;
-						}
-					} else if (e !== null && typeof e === 'object') {
-						if ('NameTooLong' in e) {
-							if (e.NameTooLong === 'EmptyName') {
-								toastStore.trigger({
-									message: 'A profile name cannot be empty',
-									background: 'variant-filled-error',
-									autohide: false
-								});
-							} else {
-								let length: number | undefined = (<any>e.NameTooLong)?.NameTooLong?.len;
-								if (length === undefined) {
-									toastStore.trigger({
-										message: 'This name is too long',
-										background: 'variant-filled-error',
-										autohide: false
-									});
-								} else {
-									toastStore.trigger({
-										message: `This name is too long, with a length of ${length} characters. Please limit the length to 64 characters.`,
-										background: 'variant-filled-error',
-										autohide: false
-									});
-								}
-							}
-							return;
-						}
-					}
-					dialog.message(JSON.stringify(e), {
-						title: 'Could not create profile',
-						type: 'error'
+
+					toastStore.trigger({
+						message: `Created new profile: "${newProfile}"`,
+						background: 'variant-filled-success'
 					});
+				} catch (e) {
+					handleProfileCreationError(e, toastStore, dialog.message);
 				}
 			}
 		});
@@ -262,8 +223,18 @@
 							message: 'Switched profile contexts!',
 							background: 'variant-filled-success'
 						});
-						forceApplicationRefresh();
-						return profile ?? null;
+
+						const result = profile ?? null;
+
+						if (isRouteSafeToPersist($page.url)) {
+							forceApplicationRefresh();
+							return result;
+						}
+
+						return goto('/').then(() => {
+							forceApplicationRefresh();
+							return result;
+						});
 					})
 					.catch((e) => {
 						dialog.message(JSON.stringify(e), {
@@ -290,6 +261,7 @@
 				<li><a href="/field-types">Field Types</a></li>
 				<li><a href="/scheduler">Scheduler</a></li>
 				<li><a href="/schedules">Schedules</a></li>
+				<li class="border-surface-600 border-t-2 py-1"><a href="/settings">Settings</a></li>
 			</ul>
 		</nav>
 		{#await getVersion() then version}
@@ -334,21 +306,20 @@
 			<svelte:fragment slot="trail">
 				<div class="flex items-center">
 					<div
-						class="border-surface-700 mr-8 grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-r-4 p-1 pr-8"
+						class="border-surface-600 mr-8 grid grid-cols-[auto_1fr] items-center gap-4 border-r-2 p-1 pr-8"
 					>
 						<label class="contents">
-							<span>Using:</span>
 							<select bind:value={selectedProfile} on:change={switchProfile} class="select">
-								{#if allProfiles !== undefined}
-									{#await allProfiles}
+								{#if $profileListStore !== undefined}
+									{#await $profileListStore}
 										Loading...
 									{:then allProfiles}
-										{#each allProfiles as profile}
+										{#each allProfiles as [profile, _metadata]}
 											<option value={profile}>{profile}</option>
 										{/each}
-										<option selected={selectedProfile === null} value={null}
-											>(Default Profile)</option
-										>
+										<option selected={selectedProfile === null} value={null}>
+											(Default Profile)
+										</option>
 									{/await}
 								{/if}
 							</select>

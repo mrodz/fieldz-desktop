@@ -969,16 +969,21 @@ pub(crate) async fn finish_twitter_oauth_transaction(
         .map_err(|e| format!("{e} {}:{}", line!(), column!()))
 }
 
-fn list_profiles_impl(profiles_directory: &Path) -> Result<Vec<String>, String> {
+#[derive(Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct ProfileMetadata {
+    size: Option<u64>,
+}
+
+fn list_profiles_impl(profiles_directory: &Path) -> Result<Vec<(String, ProfileMetadata)>, String> {
     let paths = std::fs::read_dir(profiles_directory)
         .map_err(|e| format!("{e} {}:{}", line!(), column!()))?;
 
     let mut profiles = vec![];
 
-    for path in paths {
-        let path = path
-            .map_err(|e| format!("{e} {}:{}", line!(), column!()))?
-            .path();
+    for entry in paths {
+        let entry = entry.map_err(|e| format!("{e} {}:{}", line!(), column!()))?;
+
+        let path = entry.path();
 
         if !path.is_dir() {
             continue;
@@ -988,14 +993,21 @@ fn list_profiles_impl(profiles_directory: &Path) -> Result<Vec<String>, String> 
             continue;
         };
 
-        profiles.push(name.to_string_lossy().into_owned())
+        let meta = match path.join("data.sqlite").metadata() {
+            Ok(metadata) => ProfileMetadata {
+                size: Some(metadata.len()),
+            },
+            Err(_e) => ProfileMetadata::default(),
+        };
+
+        profiles.push((name.to_string_lossy().into_owned(), meta))
     }
 
     Ok(profiles)
 }
 
 #[tauri::command]
-pub(crate) fn list_profiles(app: AppHandle) -> Result<Vec<String>, String> {
+pub(crate) fn list_profiles(app: AppHandle) -> Result<Vec<(String, ProfileMetadata)>, String> {
     let profiles_directory = app
         .path_resolver()
         .app_data_dir()
@@ -1049,10 +1061,6 @@ pub(crate) async fn set_active_profile(
 ) -> Result<Option<String>, SelectProfileError> {
     let state = app.state::<SafeAppState>();
     let mut lock = state.0.lock().await;
-    let store = lock
-        .metadata_store
-        .as_mut()
-        .ok_or(SelectProfileError::NoStore)?;
 
     let profiles_directory = app
         .path_resolver()
@@ -1069,18 +1077,6 @@ pub(crate) async fn set_active_profile(
         profiles_directory
     };
 
-    store
-        .insert(
-            ACTIVE_PROFILE_BIN_KEY.to_owned(),
-            name
-                .clone()
-                .map(serde_json::Value::String)
-                .unwrap_or(serde_json::Value::Null),
-        )
-        .map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
-
-    store.save().map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
-
     let db_path = format!(
         "sqlite:{}?mode=rwc",
         maybe_selected_profile_directory
@@ -1093,6 +1089,26 @@ pub(crate) async fn set_active_profile(
     lock.database = Some(db::Client::new(&db_config).await.map_err(|e| {
         SelectProfileError::DatabaseInitError(format!("{e:?} {}:{}", line!(), column!()))
     })?);
+
+    let active_profile_record = name
+        .clone()
+        .map(serde_json::Value::String)
+        .unwrap_or(serde_json::Value::Null);
+
+    println!("Reflecting changed profile: {active_profile_record:?}");
+
+    let store = lock
+        .metadata_store
+        .as_mut()
+        .ok_or(SelectProfileError::NoStore)?;
+
+    store
+        .insert(ACTIVE_PROFILE_BIN_KEY.to_owned(), active_profile_record)
+        .map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
+
+    store
+        .save()
+        .map_err(|e| SelectProfileError::StoreError(e.to_string()))?;
 
     app.emit_all("profile-selection", &name)
         .expect("could not emit event");
@@ -1116,6 +1132,12 @@ pub enum CreateProfileError {
     IllegalNameError,
     #[error("IO Operation failed: {0}")]
     IOError(String),
+    #[error("there are no profiles with the name {0}")]
+    MissingProfile(String),
+}
+
+fn is_valid_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '-' || c == ' '
 }
 
 #[tauri::command]
@@ -1139,10 +1161,7 @@ pub(crate) async fn create_new_profile(
         return Err(CreateProfileError::IllegalNameError);
     }
 
-    if !name
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ')
-    {
+    if !name.chars().all(is_valid_char) {
         return Err(CreateProfileError::IllegalCharacterError);
     }
 
@@ -1157,7 +1176,7 @@ pub(crate) async fn create_new_profile(
 
     if existing_profiles
         .iter()
-        .any(|profile_name| profile_name == name)
+        .any(|(profile_name, _)| profile_name == name)
     {
         return Err(CreateProfileError::DuplicateNameError);
     }
@@ -1166,4 +1185,132 @@ pub(crate) async fn create_new_profile(
         .map_err(|e| CreateProfileError::IOError(e.to_string()))?;
 
     Ok(name.to_owned())
+}
+
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum DeleteProfileError {
+    #[error("could not access app data directory")]
+    MissingAppData,
+    #[error("there are no profiles with the name {0}")]
+    MissingProfile(String),
+    #[error("Could not list profiles: {0}")]
+    ListProfileError(String),
+    #[error("metadata was not initialized")]
+    NoStore,
+    #[error("cannot modify the active profile")]
+    ProfileIsActive,
+    #[error("IO Operation failed: {0}")]
+    IOError(String),
+    #[error(transparent)]
+    NameTooLong(#[from] NameMax64ValidationError),
+    #[error("Profile names can only contain alphanumeric characters, '_', and '-'")]
+    IllegalCharacterError,
+}
+
+#[tauri::command]
+pub(crate) async fn delete_profile(
+    app: AppHandle,
+    profile_name: NameMax64,
+) -> Result<(), DeleteProfileError> {
+    profile_name.validate()?;
+
+    // prevent controlling the path and routing using ".."
+    if !profile_name.chars().all(is_valid_char) {
+        return Err(DeleteProfileError::IllegalCharacterError);
+    }
+
+    let profiles_directory = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or(DeleteProfileError::MissingAppData)?
+        .join("profiles");
+
+    let profile_path = profiles_directory.join(&*profile_name);
+
+    if !profile_path.exists() {
+        return Err(DeleteProfileError::MissingProfile(
+            <String as ToOwned>::to_owned(&profile_name),
+        ));
+    }
+
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+
+    if let Some(serde_json::Value::String(active_profile)) = lock
+        .metadata_store
+        .as_ref()
+        .ok_or(DeleteProfileError::NoStore)?
+        .get(ACTIVE_PROFILE_BIN_KEY)
+    {
+        if active_profile == &*profile_name {
+            return Err(DeleteProfileError::ProfileIsActive);
+        }
+    }
+
+    println!("Removing directory: {}", profile_path.to_string_lossy());
+
+    std::fs::remove_dir_all(profile_path)
+        .inspect_err(|e| eprintln!("{e:?}"))
+        .map_err(|e| DeleteProfileError::IOError(e.to_string()))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn rename_profile(
+    app: AppHandle,
+    profile_name: NameMax64,
+    new_name: NameMax64,
+) -> Result<String, CreateProfileError> {
+    new_name.validate()?;
+    profile_name.validate()?;
+
+    let new_name = new_name
+        .trim_start_matches(char::is_whitespace)
+        .trim_end_matches(char::is_whitespace);
+
+    let profile_name = profile_name
+        .trim_start_matches(char::is_whitespace)
+        .trim_end_matches(char::is_whitespace);
+
+    // Reserved names in Windows
+    const RESERVED_NAMES: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    if RESERVED_NAMES.contains(&new_name) || RESERVED_NAMES.contains(&profile_name) {
+        return Err(CreateProfileError::IllegalNameError);
+    }
+
+    if !new_name.chars().all(is_valid_char) || !profile_name.chars().all(is_valid_char) {
+        return Err(CreateProfileError::IllegalCharacterError);
+    }
+
+    let profiles_directory = app
+        .path_resolver()
+        .app_data_dir()
+        .ok_or(CreateProfileError::MissingAppData)?
+        .join("profiles");
+
+    let existing_profiles =
+        list_profiles_impl(&profiles_directory).map_err(CreateProfileError::ListProfileError)?;
+
+    if existing_profiles
+        .iter()
+        .any(|(profile_name, _)| profile_name == new_name)
+    {
+        return Err(CreateProfileError::DuplicateNameError);
+    }
+
+    let target_profile = profiles_directory.join(profile_name);
+
+    if !target_profile.exists() {
+        return Err(CreateProfileError::MissingProfile(profile_name.to_owned()));
+    }
+
+    std::fs::rename(target_profile, profiles_directory.join(new_name))
+        .map_err(|e| CreateProfileError::IOError(e.to_string()))?;
+
+    Ok(new_name.to_owned())
 }
