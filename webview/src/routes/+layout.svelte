@@ -261,7 +261,7 @@
 				<li><a href="/field-types">Field Types</a></li>
 				<li><a href="/scheduler">Scheduler</a></li>
 				<li><a href="/schedules">Schedules</a></li>
-				<li class="border-surface-600 border-t-2 py-1"><a href="/settings">Settings</a></li>
+				<li class="border-t-2 border-surface-600 py-1"><a href="/settings">Settings</a></li>
 			</ul>
 		</nav>
 		{#await getVersion() then version}
@@ -306,7 +306,7 @@
 			<svelte:fragment slot="trail">
 				<div class="flex items-center">
 					<div
-						class="border-surface-600 mr-8 grid grid-cols-[auto_1fr] items-center gap-4 border-r-2 p-1 pr-8"
+						class="mr-8 grid grid-cols-[auto_1fr] items-center gap-4 border-r-2 border-surface-600 p-1 pr-8"
 					>
 						<label class="contents">
 							<select bind:value={selectedProfile} on:change={switchProfile} class="select">

@@ -180,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-		Interregional: number;
-	}
+			Interregional: number;
+	  }
 	| {
-		Regional: [number, number][];
-	};
+			Regional: [number, number][];
+	  };
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -422,6 +422,14 @@ export function handleProfileCreationError(
 				autohide: false
 			});
 			return;
+		} else if (e === 'IllegalNameError') {
+			toastStore.trigger({
+				message:
+					'This name might be unsafe for your file system. We are sorry, but you must pick another name.',
+				background: 'variant-filled-error',
+				autohide: false
+			});
+			return;
 		}
 	} else if (e !== null && typeof e === 'object') {
 		if ('NameTooLong' in e) {
@@ -457,12 +465,8 @@ export function handleProfileCreationError(
 	});
 }
 
-const ROUTES_WITH_PROFILE_QUERY_STATE = [
-	'/region',
-	'/reservations',
-	'/schedules/view'
-];
+const ROUTES_WITH_PROFILE_QUERY_STATE = ['/region', '/reservations', '/schedules/view'];
 
 export function isRouteSafeToPersist(route: URL): boolean {
-	return !ROUTES_WITH_PROFILE_QUERY_STATE.includes(route.pathname)
+	return !ROUTES_WITH_PROFILE_QUERY_STATE.includes(route.pathname);
 }

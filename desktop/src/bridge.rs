@@ -1157,7 +1157,10 @@ pub(crate) async fn create_new_profile(
         "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
 
-    if RESERVED_NAMES.contains(&name) {
+    if RESERVED_NAMES
+        .iter()
+        .any(|reserved_name| *reserved_name == name || reserved_name.to_lowercase() == name)
+    {
         return Err(CreateProfileError::IllegalNameError);
     }
 
