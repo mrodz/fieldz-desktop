@@ -101,9 +101,13 @@ pub struct CreateRegionInput {
 impl Validator for RegionName {
     type Error = RegionNameValidationError;
     fn validate(&self) -> Result<(), Self::Error> {
-        let len = self.0.len();
+        let content = self
+            .0
+            .trim_start_matches(char::is_whitespace)
+            .trim_end_matches(char::is_whitespace);
+        let len = content.len();
 
-        if self.0.is_empty() {
+        if content.is_empty() {
             return Err(RegionNameValidationError::EmptyName);
         }
 
@@ -149,7 +153,14 @@ impl CreateFieldInput {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(transparent)]
-struct NameMax64(String);
+pub struct NameMax64(String);
+
+impl Deref for NameMax64 {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTeamInput {
@@ -161,9 +172,14 @@ pub struct CreateTeamInput {
 impl Validator for NameMax64 {
     type Error = NameMax64ValidationError;
     fn validate(&self) -> Result<(), Self::Error> {
-        let len = self.0.len();
+        let content = self
+            .0
+            .trim_start_matches(char::is_whitespace)
+            .trim_end_matches(char::is_whitespace);
 
-        if self.0.is_empty() {
+        let len = content.len();
+
+        if content.is_empty() {
             return Err(NameMax64ValidationError::EmptyName);
         }
 

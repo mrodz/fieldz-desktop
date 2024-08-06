@@ -46,6 +46,7 @@
 		"@floating-ui/dom": "^1.6.3",
 		"@fortawesome/free-solid-svg-icons": "^6.5.1",
 		"@tauri-apps/api": "^1.5.3",
+		"@tauri-apps/plugin-store": "^2.0.0-rc.0",
 		"firebase": "^10.11.1",
 		"svelte-fa": "^4.0.2"
 	},

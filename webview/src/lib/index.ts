@@ -400,3 +400,73 @@ export interface RegionMetadata {
 	field_count: number;
 	time_slot_count: number;
 }
+
+export function handleProfileCreationError(
+	e: any,
+	toastStore: import('@skeletonlabs/skeleton').ToastStore,
+	message: typeof import('@tauri-apps/api/dialog').message
+) {
+	console.error(e);
+	if (typeof e === 'string') {
+		if (e === 'IllegalCharacterError') {
+			toastStore.trigger({
+				message: 'Profiles can only contain the following letters: a-z, A-Z, _, -, and whitespace',
+				background: 'variant-filled-error',
+				autohide: false
+			});
+			return;
+		} else if (e === 'DuplicateNameError') {
+			toastStore.trigger({
+				message: 'You already have a profile with this name!',
+				background: 'variant-filled-error',
+				autohide: false
+			});
+			return;
+		} else if (e === 'IllegalNameError') {
+			toastStore.trigger({
+				message:
+					'This name might be unsafe for your file system. We are sorry, but you must pick another name.',
+				background: 'variant-filled-error',
+				autohide: false
+			});
+			return;
+		}
+	} else if (e !== null && typeof e === 'object') {
+		if ('NameTooLong' in e) {
+			if (e.NameTooLong === 'EmptyName') {
+				toastStore.trigger({
+					message: 'A profile name cannot be empty',
+					background: 'variant-filled-error',
+					autohide: false
+				});
+			} else {
+				let length: number | undefined = (<any>e.NameTooLong)?.NameTooLong?.len;
+				if (length === undefined) {
+					toastStore.trigger({
+						message: 'This name is too long',
+						background: 'variant-filled-error',
+						autohide: false
+					});
+				} else {
+					toastStore.trigger({
+						message: `This name is too long, with a length of ${length} characters. Please limit the length to 64 characters.`,
+						background: 'variant-filled-error',
+						autohide: false
+					});
+				}
+			}
+			return;
+		}
+	}
+
+	message(JSON.stringify(e), {
+		title: 'Could not create profile',
+		type: 'error'
+	});
+}
+
+const ROUTES_WITH_PROFILE_QUERY_STATE = ['/region', '/reservations', '/schedules/view'];
+
+export function isRouteSafeToPersist(route: URL): boolean {
+	return !ROUTES_WITH_PROFILE_QUERY_STATE.includes(route.pathname);
+}

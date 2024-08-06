@@ -36,6 +36,7 @@ sha2 = "0.10.8"
 base64 = "0.22.1"
 httparse = "1.8.0"
 serde_urlencoded = "0.7.1"
+tauri-plugin-store = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.

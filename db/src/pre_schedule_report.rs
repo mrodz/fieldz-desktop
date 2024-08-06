@@ -233,7 +233,7 @@ pub struct PreScheduleReportInput {
 
 impl PreScheduleReport {
     /// Build a PreScheduleReport from its components
-    /// 
+    ///
     /// # Parameters
     /// - `target_duplicates`: A list of bundled team & group data to guide the processor
     /// - `all_targets`: A list of all targets and extended data
@@ -402,7 +402,7 @@ impl PreScheduleReport {
         // values have equal cardinality and sort because they are `BTreeMaps`
         let result_iterator = target_required_matches
             .into_iter()
-            .zip(target_supplied_matches.into_iter());
+            .zip(target_supplied_matches);
 
         for (required, supplied) in result_iterator {
             if required.0.target.id != supplied.0.target.id {
