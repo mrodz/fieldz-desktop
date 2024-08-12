@@ -106,6 +106,7 @@ where
                         },
                     )
                     .collect(),
+                is_practice: non_message.is_practice(),
             },
         )
         .collect::<Vec<_>>();

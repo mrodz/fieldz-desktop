@@ -19,3 +19,5 @@ rand = "0.8.5"
 thiserror = "1.0.57"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 serde = { version = "1.0.197", features = ["derive"] }
+argmin = "0.10.0"
+rayon = "1.10.0"

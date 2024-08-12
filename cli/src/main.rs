@@ -48,7 +48,8 @@ enum DbCommand {
 }
 
 fn test_schedule() -> Result<()> {
-    backend::algorithm::v2::test()?;
+    // backend::algorithm::v2::test()?;
+    backend::algorithm::practices::test()?;
     Ok(())
     /*
     let mut league = League::new();

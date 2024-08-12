@@ -22,6 +22,7 @@ message ScheduledInput {
   repeated PlayableTeamCollection team_groups = 2;
   repeated Field fields = 3;
   repeated CoachConflict coach_conflicts = 4;
+  bool is_practice = 5;
 }
 
 message ScheduledOutput {

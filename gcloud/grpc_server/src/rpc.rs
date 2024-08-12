@@ -147,6 +147,12 @@ where
                                 unique_id: away_team.unique_id().try_into().expect("away team"),
                             }),
                         }),
+                        Practice(team) => Some(algo_input::reservation::Booked {
+                            home_team: Some(algo_input::Team {
+                                unique_id: team.unique_id().try_into().expect("practice team"),
+                            }),
+                            away_team: None,
+                        }),
                     };
 
                     algo_input::Reservation {
@@ -220,7 +226,7 @@ impl Scheduler for ScheduleManager {
 
                 let backend_payload: backend::ScheduledInput<_, _, _, _> = schedule_payload.into();
 
-                tracing::info!("Recieved payload (fields: {}, teams: {})", backend_payload.fields().as_ref().len(), backend_payload.teams_len());
+                tracing::info!("Received payload (fields: {}, teams: {}, practice: {})", backend_payload.fields().as_ref().len(), backend_payload.teams_len(), backend_payload.is_practice());
 
                 let start = Instant::now();
 
