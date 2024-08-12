@@ -180,11 +180,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -290,6 +290,7 @@ export interface ReservationType {
 	color: string;
 	default_sizing: number;
 	description?: string;
+	is_practice: boolean;
 }
 
 export interface CreateReservationTypeInput {
