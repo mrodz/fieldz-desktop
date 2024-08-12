@@ -176,6 +176,7 @@ fn main() -> Result<()> {
             create_new_profile,
             delete_profile,
             rename_profile,
+            set_reservation_type_practice,
         ])
         .run(tauri::generate_context!())
         .inspect_err(|e| {

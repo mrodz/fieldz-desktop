@@ -11,8 +11,6 @@ pub mod reservation_type_field_size_join;
 pub mod reservation_type_time_slot_join;
 pub mod schedule;
 pub mod schedule_game;
-pub mod schedule_game_group;
-pub mod schedule_team;
 pub mod target;
 pub mod target_group_join;
 pub mod team;

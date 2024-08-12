@@ -1317,3 +1317,22 @@ pub(crate) async fn rename_profile(
 
     Ok(new_name.to_owned())
 }
+
+#[tauri::command]
+pub async fn set_reservation_type_practice(
+    app: AppHandle,
+    reservation_type_id: i32,
+    is_practice: bool,
+) -> Result<db::reservation_type::Model, String> {
+    let state = app.state::<SafeAppState>();
+    let lock = state.0.lock().await;
+    let client = lock
+        .database
+        .as_ref()
+        .ok_or("database was not initialized".to_owned())?;
+
+    client
+        .set_reservation_type_practice(reservation_type_id, is_practice)
+        .await
+        .map_err(|e| format!("{}:{} {e}", file!(), line!()))
+}
