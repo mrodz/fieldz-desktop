@@ -809,7 +809,7 @@ impl BusyTeamQueue {
 
         if existing_windows
             .par_iter()
-            .any(|existing_window| AvailabilityWindow::overlap_fast(&existing_window, &window))
+            .any(|existing_window| AvailabilityWindow::overlap_fast(existing_window, &window))
         {
             return true;
         }
@@ -823,11 +823,15 @@ impl BusyTeamQueue {
         self.values.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn is_busy(&self, team: i32, window: &AvailabilityWindow) -> bool {
         self.values.get(&team).is_some_and(|busy_times| {
             busy_times
                 .par_iter()
-                .any(|existing_window| AvailabilityWindow::overlap_fast(&existing_window, &window))
+                .any(|existing_window| AvailabilityWindow::overlap_fast(existing_window, window))
         })
     }
 }

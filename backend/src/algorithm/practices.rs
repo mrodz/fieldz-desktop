@@ -107,7 +107,6 @@ impl CostFunction for PracticeScheduleProblem {
         } else {
             Ok(empty_matches * 0.5)
         }
-
     }
 
     fn parallelize(&self) -> bool {
@@ -185,7 +184,9 @@ impl Anneal for PracticeScheduleProblem {
 
                 let index = loop {
                     let maybe_index = rng.sample(distr);
-                    if problematic_time_slot_index != maybe_index && !target_swap_indices.contains(&maybe_index) {
+                    if problematic_time_slot_index != maybe_index
+                        && !target_swap_indices.contains(&maybe_index)
+                    {
                         break maybe_index;
                     }
                 };
@@ -292,8 +293,8 @@ where
     };
 
     /*
-     * A temperature too high relative to the differences in solution quality (points to anneal) can 
-     * result in nearly all proposed moves being accepted, regardless of whether they improve the 
+     * A temperature too high relative to the differences in solution quality (points to anneal) can
+     * result in nearly all proposed moves being accepted, regardless of whether they improve the
      * solution or not. This can lead to inefficient exploration.
      */
     let temperature = time_slots_len.clamp(1.0, time_slots_len * 1.2);
@@ -324,7 +325,7 @@ where
 
     Ok(Output {
         time_slots: winner
-            .into_iter()
+            .iter()
             .map(|(ts, winner)| Reservation {
                 availability: ts.window.clone(),
                 booking: winner.map_or_else(

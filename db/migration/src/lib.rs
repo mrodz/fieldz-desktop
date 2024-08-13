@@ -12,7 +12,6 @@ mod m20240507_015703_create_schedule_results;
 mod m20240702_184439_create_coach_conflicts;
 mod m20240812_163502_create_practice;
 
-
 pub struct Migrator;
 
 #[async_trait::async_trait]

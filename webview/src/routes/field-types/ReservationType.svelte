@@ -101,29 +101,29 @@
 			</strong>
 			<div class="flex flex-col items-center">
 				Is Practice
-				<SlideToggle name="slide" bind:checked={reservation.is_practice} on:change={() => requestUpdate()} />
-			</div>
-				<textarea
-					class="textarea variant-form-material resize-none"
-					placeholder="Write a note for yourself to add any additional information you need"
-					rows="2"
-					on:keydown={() => requestUpdate()}
-					bind:value={reservation.description}
+				<SlideToggle
+					name="slide"
+					bind:checked={reservation.is_practice}
+					on:change={() => requestUpdate()}
 				/>
-				<div class="max-w-20 text-center">
-					Default matches per field space
-					<div class="mx-auto grid grid-cols-[1fr_auto_1fr]">
-						<button class="btn-icon btn-icon-sm mr-auto" on:click={decreaseCount}>
-							-
-						</button>
-						<div class="mx-2 text-center align-middle leading-loose">
-							{reservation.default_sizing}
-						</div>
-						<button class="btn-icon btn-icon-sm ml-auto" on:click={increaseCount}>
-							+
-						</button>
+			</div>
+			<textarea
+				class="textarea variant-form-material resize-none"
+				placeholder="Write a note for yourself to add any additional information you need"
+				rows="2"
+				on:keydown={() => requestUpdate()}
+				bind:value={reservation.description}
+			/>
+			<div class="max-w-20 text-center">
+				Default matches per field space
+				<div class="mx-auto grid grid-cols-[1fr_auto_1fr]">
+					<button class="btn-icon btn-icon-sm mr-auto" on:click={decreaseCount}> - </button>
+					<div class="mx-2 text-center align-middle leading-loose">
+						{reservation.default_sizing}
 					</div>
+					<button class="btn-icon btn-icon-sm ml-auto" on:click={increaseCount}> + </button>
 				</div>
+			</div>
 		</div>
 	</div>
 </div>
