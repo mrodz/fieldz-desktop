@@ -4,12 +4,19 @@
 </script>
 
 <script lang="ts">
-	import type { Schedule, TeamExtension, ScheduleGame } from '$lib';
+	import type {
+		Schedule,
+		TeamExtension,
+		ScheduleGame,
+		CalendarEvent,
+		Delta,
+		MoveTimeSlotInput
+	} from '$lib';
 	import { eventFromGame } from '$lib';
 	import { dialog, invoke } from '@tauri-apps/api';
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { ProgressRadial, SlideToggle } from '@skeletonlabs/skeleton';
+	import { ProgressRadial, SlideToggle, getToastStore } from '@skeletonlabs/skeleton';
 	import Calendar from '@event-calendar/core';
 	import TimeGrid from '@event-calendar/time-grid';
 	import List from '@event-calendar/list';
@@ -18,6 +25,8 @@
 
 	const queryParams = new URLSearchParams(window.location.search);
 	const idParam = queryParams.get('id');
+
+	const toastStore = getToastStore();
 
 	const teams: Map<number, TeamExtension> = new Map();
 
@@ -57,7 +66,103 @@
 		selectable: false,
 		events: [],
 		slotMinTime: '05:00:00',
-		slotMaxTime: '24:00:00'
+		slotMaxTime: '24:00:00',
+		async eventDrop(e: {
+			oldEvent: CalendarEvent;
+			event: CalendarEvent;
+			delta: Delta;
+			revert: () => void;
+		}) {
+			const delta = e.delta;
+			let canSkip = true;
+
+			for (const key in delta) {
+				const element = delta[key as keyof typeof delta];
+				if (typeof element === 'number' && element !== 0) {
+					canSkip = false;
+				}
+			}
+
+			if (canSkip) {
+				return;
+			}
+
+			let schedulePart = (await schedule!)[0];
+
+			try {
+				const input: MoveTimeSlotInput = {
+					schedule_id: Number(schedulePart.id),
+					id: Number(e.event.id),
+					new_start: e.event.start.valueOf(),
+					new_end: e.event.end.valueOf()
+				};
+
+				await invoke('move_time_slot', { input });
+			} catch (err: any) {
+				if ('Overlap' in err) {
+					e.revert();
+					toastStore.trigger({
+						message: 'This would overlap with another time slot!',
+						background: 'variant-filled-error',
+						timeout: 1500
+					});
+				} else {
+					console.error(err);
+					dialog.message(JSON.stringify(err), {
+						title: 'could not move event',
+						type: 'error'
+					});
+				}
+			}
+		},
+		async eventResize(e: {
+			oldEvent: CalendarEvent;
+			event: CalendarEvent;
+			endDelta: Delta;
+			revert: () => void;
+		}) {
+			const delta = e.endDelta;
+			let canSkip = true;
+
+			for (const key in delta) {
+				const element = delta[key as keyof typeof delta];
+				if (typeof element === 'number' && element !== 0) {
+					canSkip = false;
+				}
+			}
+
+			if (canSkip) {
+				return;
+			}
+
+			let schedulePart = (await schedule!)[0];
+
+			try {
+				const input: MoveTimeSlotInput = {
+					schedule_id: Number(schedulePart.id),
+					id: Number(e.event.id),
+					new_start: e.event.start.valueOf(),
+					new_end: e.event.end.valueOf()
+				};
+
+				await invoke('move_time_slot', { input });
+			} catch (err: any) {
+				if ('Overlap' in err) {
+					e.revert();
+					toastStore.trigger({
+						message: 'This would overlap with another time slot!',
+						background: 'variant-filled-error',
+						timeout: 1500
+					});
+				} else {
+					console.error(err);
+					dialog.message(JSON.stringify(err), {
+						title: 'could not move event',
+						type: 'error'
+					});
+				}
+			}
+		}
 	};
 
 	$: calendar?.setOption?.('view', $compact ? 'listWeek' : 'timeGridWeek');
@@ -96,6 +201,8 @@
 	});
 
 	let editMode: boolean = false;
+
+	$: calendar?.setOption?.('editable', editMode);
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -125,9 +232,7 @@
 						Compact View
 					{/if}
 				</SlideToggle>
-				<!-- <SlideToggle name="slider-label" bind:checked={editMode}>
-					Editable
-				</SlideToggle> -->
+				<SlideToggle name="slider-label" bind:checked={editMode}>Editable</SlideToggle>
 			</div>
 		{/await}
 	{/if}
