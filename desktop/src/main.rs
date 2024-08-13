@@ -59,8 +59,11 @@ fn main() -> Result<()> {
 
             let metadata_path = dir_part.join("metadata.bin");
 
-            let mut store = StoreBuilder::new(app.handle(), metadata_path).build();
-            store.load()?;
+            let mut store = StoreBuilder::new(app.handle(), metadata_path.clone()).build();
+            
+            if metadata_path.try_exists()? {
+                store.load()?;
+            }
 
             let active_profile = store.get(ACTIVE_PROFILE_BIN_KEY);
 
