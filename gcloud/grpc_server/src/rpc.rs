@@ -83,7 +83,13 @@ impl From<algo_input::ScheduledInput>
     >
 {
     fn from(value: algo_input::ScheduledInput) -> Self {
-        backend::ScheduledInput::new(
+        let constructor = if value.is_practice {
+            backend::ScheduledInput::new_practice
+        } else {
+            backend::ScheduledInput::new
+        };
+
+        constructor(
             value
                 .unique_id
                 .try_into()

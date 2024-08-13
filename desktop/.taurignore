@@ -1,3 +1,4 @@
-**/gcloud/*
-**/cli/*
-**/backend/*
+cli
+gcloud
+gcloud/grpc_server
+backend

@@ -49,6 +49,7 @@ pub struct PracticeScheduleProblem {
 }
 
 impl PracticeScheduleProblem {
+    /// # Give a hint to the annealer so that early rounds work better
     pub fn seed(&mut self) -> ParameterVector {
         let mut rng = self.rng.lock().unwrap();
 
@@ -66,7 +67,7 @@ impl PracticeScheduleProblem {
             let time_slot = &self.time_slots[time_slot_index];
             result.push((time_slot.clone(), Some(*team)))
         }
-
+        // self.time_slots.iter().map(|ts| (ts.clone(), None)).collect_vec()
         result
     }
 }
@@ -76,6 +77,7 @@ impl CostFunction for PracticeScheduleProblem {
     type Output = f64;
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output> {
+        // println!("getting cost...");
         let mut busy_queue = BusyTeamQueue::default();
 
         let mut empty_matches = 0_f64;
@@ -100,7 +102,12 @@ impl CostFunction for PracticeScheduleProblem {
             conflicts += count_of_related_teams;
         }
 
-        Ok(empty_matches * 2.5 + conflicts * 20.)
+        if conflicts != 0. {
+            Ok(conflicts * 2000.)
+        } else {
+            Ok(empty_matches * 0.5)
+        }
+
     }
 
     fn parallelize(&self) -> bool {
@@ -138,17 +145,16 @@ impl Anneal for PracticeScheduleProblem {
                 .filter(|(_src_team, team, _)| busy_queue.is_busy(team.id, &time_slot.window))
                 .count();
 
-            for _ in 0..count_of_related_teams {
+            if count_of_related_teams != 0 {
                 target_swap_indices.push(i);
             }
 
             if busy_queue.is_busy(team.id, &time_slot.window) {
                 target_swap_indices.push(i);
-                target_swap_indices.push(i); // 2x distribution
                 continue;
             }
 
-            if count_of_related_teams == 0 {
+            if count_of_related_teams != 0 {
                 continue;
             }
 
@@ -173,13 +179,13 @@ impl Anneal for PracticeScheduleProblem {
                     continue;
                 }
 
-                if param_n.len() <= 1 {
+                if param_n.len() - target_swap_indices.len() <= 1 {
                     break;
                 }
 
                 let index = loop {
                     let maybe_index = rng.sample(distr);
-                    if problematic_time_slot_index != maybe_index {
+                    if problematic_time_slot_index != maybe_index && !target_swap_indices.contains(&maybe_index) {
                         break maybe_index;
                     }
                 };
@@ -192,18 +198,8 @@ impl Anneal for PracticeScheduleProblem {
 
                 continue;
             }
-
-            // let idx = target_swap_indices.choose_multiple(, swap_len)
         }
 
-        // Compute random number in [0.1, 0.1].
-        // let val = rng.sample(Uniform::new_inclusive(-0.1, 0.1));
-
-        // modify previous parameter value at random position `idx` by `val`
-        // param_n[idx] += val;
-
-        // // check if bounds are violated. If yes, project onto bound.
-        // param_n[idx] = param_n[idx].clamp(self.lower_bound[idx], self.upper_bound[idx]);
         Ok(param_n)
     }
 }
@@ -246,7 +242,7 @@ where
     let mut teams_lookup = BTreeMap::new();
 
     for team_collection in input.team_groups() {
-		let teams_ghost = team_collection.teams(); // for lifetime purposes
+        let teams_ghost = team_collection.teams(); // for lifetime purposes
         for team in teams_ghost.as_ref() {
             teams.push(Team {
                 id: team.unique_id(),
@@ -272,6 +268,8 @@ where
         }
     }
 
+    let teams_len = teams.len();
+
     let mut problem = PracticeScheduleProblem {
         team_collisions,
         rng: Arc::new(Mutex::new(SmallRng::from_entropy())),
@@ -281,10 +279,33 @@ where
 
     let init = problem.seed();
 
-    let solver = SimulatedAnnealing::new(100.0)?;
+    let time_slots_len = time_slots.len() as f64;
+
+    let max_iters = if cfg!(feature = "env_sa_max_iters") {
+        option_env!("SA_MAX_ITERS")
+            .or(std::env::var("SA_MAX_ITERS").ok().as_deref())
+            .and_then(|env_var| env_var.parse::<u64>().ok())
+            .unwrap_or(100)
+    } else {
+        let time_complexity = time_slots_len.log2() * time_slots_len * teams_len as f64;
+        time_complexity.floor() as u64 * 100
+    };
+
+    /*
+     * A temperature too high relative to the differences in solution quality (points to anneal) can 
+     * result in nearly all proposed moves being accepted, regardless of whether they improve the 
+     * solution or not. This can lead to inefficient exploration.
+     */
+    let temperature = time_slots_len.clamp(1.0, time_slots_len * 1.2);
+
+    println!("Solving practices (i={max_iters}, temperature={temperature} degrees)");
+
+    let solver = SimulatedAnnealing::new(temperature)?
+        .with_reannealing_accepted(3 * max_iters / 2)
+        .with_reannealing_best(4 * max_iters / 5);
 
     let res = Executor::new(problem, solver)
-        .configure(|state| state.param(init).max_iters(10_000))
+        .configure(|state| state.param(init).max_iters(max_iters).target_cost(0.0))
         .run()?;
 
     let Some(winner) = res.state().get_best_param() else {
@@ -301,8 +322,6 @@ where
         });
     };
 
-    println!("winner = {winner:?}");
-
     Ok(Output {
         time_slots: winner
             .into_iter()
@@ -317,8 +336,4 @@ where
             .collect(),
         unique_id: input.unique_id,
     })
-}
-
-pub fn test() -> Result<()> {
-    todo!()
 }

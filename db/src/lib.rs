@@ -1956,12 +1956,21 @@ impl Client {
                 })
                 .collect_vec();
 
-            result.push(ScheduledInput::new(
-                i.try_into().unwrap(),
-                teams,
-                fields,
-                coach_conflicts_to_keep_in_mind,
-            ))
+            if dbg!(reservation_type).is_practice {
+                result.push(ScheduledInput::new_practice(
+                    i.try_into().unwrap(),
+                    teams,
+                    fields,
+                    coach_conflicts_to_keep_in_mind,
+                ));
+            } else {
+                result.push(ScheduledInput::new(
+                    i.try_into().unwrap(),
+                    teams,
+                    fields,
+                    coach_conflicts_to_keep_in_mind,
+                ));
+            }
         }
 
         Ok(result)

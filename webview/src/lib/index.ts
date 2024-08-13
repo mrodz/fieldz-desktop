@@ -138,11 +138,16 @@ export async function eventFromGame(
 ): Promise<CalendarEvent> {
 	let title = 'Empty';
 
+	let practice = false;
+
 	if (Number.isInteger(input?.team_one) && Number.isInteger(input?.team_two)) {
 		const teamOne = await teamGetter(input.team_one!);
 		const teamTwo = await teamGetter(input.team_two!);
-
 		title = `${teamOne.team.name} vs ${teamTwo.team.name}`;
+	} else if (Number.isInteger(input?.team_one)) {
+		practice = true;
+		const teamOne = await teamGetter(input.team_one!);
+		title = `Practice: ${teamOne.team.name}`;
 	}
 
 	return {
@@ -152,7 +157,7 @@ export async function eventFromGame(
 		resources: [],
 		start: new Date(input.start),
 		end: new Date(input.end),
-		backgroundColor: title === 'Empty' ? '#808080' : 'hsl(102,21%,49%)',
+		backgroundColor: title === 'Empty' ? '#808080' : practice ? '#00bbff' : 'hsl(102,21%,49%)',
 		title
 	};
 }
@@ -330,7 +335,7 @@ export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
 export const SCHEDULE_CREATION_DELAY: number = 30_000;
 export const SCHEDULE_TIMEOUT_MS: number = 15_000;
 export const SHOW_SCHEDULER_JSON_PAYLOADS: boolean = false;
-export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = false;
+export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = true;
 
 export interface FieldExtension {
 	field_id: number;

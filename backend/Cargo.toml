@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+env_sa_max_iters = []
+
 [dependencies]
 anyhow = "1.0.79"
 chrono = { version = "0.4.34", features = ["serde"] }
