@@ -9,3 +9,4 @@ services:
       - 50051 
     env_file:
       - .\gcloud\grpc_server\.env
+    image: us-west2-docker.pkg.dev/${GCP_APP_REPO_ID}/mega-scheduler-grpc-server/grpc_server_image:latest

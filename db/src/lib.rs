@@ -330,6 +330,8 @@ pub(crate) struct TimeSlotSelectionTypeAggregate {
     color: String,
     /// [`ReservationType`]
     default_sizing: i32,
+    /// [`ReservationType`]
+    is_practice: bool,
 }
 
 /// To selects everything needed to build a [`TimeSlotSelectionTypeAggregate`].
@@ -381,6 +383,7 @@ pub(crate) fn select_time_slot_extension() -> Select<TimeSlotEntity> {
             reservation_type_field_size_join::Column::Size,
             "custom_matches",
         )
+        .column_as(R::IsPractice, "is_practice")
         .join(JoinType::LeftJoin, time_slot::Relation::Field.def())
         .join(
             JoinType::LeftJoin,
@@ -414,6 +417,7 @@ impl From<TimeSlotSelectionTypeAggregate> for TimeSlotExtension {
                 description: value.description,
                 name: value.name,
                 default_sizing: value.default_sizing,
+                is_practice: value.is_practice,
             },
             time_slot: TimeSlot {
                 id: value.time_slot_id,
@@ -1952,12 +1956,21 @@ impl Client {
                 })
                 .collect_vec();
 
-            result.push(ScheduledInput::new(
-                i.try_into().unwrap(),
-                teams,
-                fields,
-                coach_conflicts_to_keep_in_mind,
-            ))
+            if dbg!(reservation_type).is_practice {
+                result.push(ScheduledInput::new_practice(
+                    i.try_into().unwrap(),
+                    teams,
+                    fields,
+                    coach_conflicts_to_keep_in_mind,
+                ));
+            } else {
+                result.push(ScheduledInput::new(
+                    i.try_into().unwrap(),
+                    teams,
+                    fields,
+                    coach_conflicts_to_keep_in_mind,
+                ));
+            }
         }
 
         Ok(result)
@@ -2542,5 +2555,19 @@ impl Client {
             field_count,
             time_slot_count,
         })
+    }
+
+    pub async fn set_reservation_type_practice(
+        &self,
+        reservation_type_id: i32,
+        is_practice: bool,
+    ) -> DBResult<ReservationType> {
+        ReservationTypeEntity::update(ActiveReservationType {
+            id: Set(reservation_type_id),
+            is_practice: Set(is_practice),
+            ..Default::default()
+        })
+        .exec(&self.connection)
+        .await
     }
 }

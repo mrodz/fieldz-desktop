@@ -177,6 +177,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "argmin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "760a49d596b18b881d2fe6e9e6da4608fa64d4a7653ef5cd43bfaa4da018d596"
+dependencies = [
+ "anyhow",
+ "argmin-math",
+ "instant",
+ "num-traits",
+ "paste",
+ "rand 0.8.5",
+ "rand_xoshiro",
+ "thiserror",
+]
+
+[[package]]
+name = "argmin-math"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d93a0d0269b60bd1cd674de70314e3f0da97406cf8c1936ce760d2a46e0f13fe"
+dependencies = [
+ "anyhow",
+ "cfg-if",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "thiserror",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -470,6 +501,7 @@ name = "backend"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "argmin",
  "chrono",
  "chrono-tz",
  "genevo",
@@ -479,6 +511,7 @@ dependencies = [
  "mcts",
  "petgraph",
  "rand 0.8.5",
+ "rayon",
  "serde",
  "thiserror",
  "tinyvec",
@@ -3209,6 +3242,15 @@ dependencies = [
  "rand 0.8.5",
  "smallvec 1.13.2",
  "zeroize",
+]
+
+[[package]]
+name = "num-complex"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
