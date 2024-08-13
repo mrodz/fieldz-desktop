@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+env_sa_max_iters = []
+
 [dependencies]
 anyhow = "1.0.79"
 chrono = { version = "0.4.34", features = ["serde"] }
@@ -19,3 +22,5 @@ rand = "0.8.5"
 thiserror = "1.0.57"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 serde = { version = "1.0.197", features = ["derive"] }
+argmin = "0.10.0"
+rayon = "1.10.0"

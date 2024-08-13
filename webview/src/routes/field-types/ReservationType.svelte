@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { MAX_GAMES_PER_FIELD_TYPE, MIN_GAMES_PER_FIELD_TYPE, type ReservationType } from '$lib';
 	import { faSpinner, faTrash } from '@fortawesome/free-solid-svg-icons';
-	import { getModalStore } from '@skeletonlabs/skeleton';
+	import { getModalStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { createEventDispatcher } from 'svelte';
 	import Fa from 'svelte-fa';
 
@@ -90,7 +90,7 @@
 				</button>
 			{/if}
 		</div>
-		<div>
+		<div class="grid grid-cols-[1fr_auto] gap-2">
 			<strong class="my-2">
 				<input
 					class="w-full border-none bg-transparent"
@@ -99,27 +99,29 @@
 					placeholder="Give your classification a name"
 				/>
 			</strong>
-			<div class="mt-2 grid grid-cols-[1fr_auto] gap-2">
-				<textarea
-					class="textarea variant-form-material resize-none"
-					placeholder="Write a note for yourself to add any additional information you need"
-					rows="2"
-					on:keydown={() => requestUpdate()}
-					bind:value={reservation.description}
+			<div class="flex flex-col items-center">
+				Is Practice
+				<SlideToggle
+					name="slide"
+					bind:checked={reservation.is_practice}
+					on:change={() => requestUpdate()}
 				/>
-				<div class="max-w-20 text-center">
-					Default matches per field space
-					<div class="mx-auto grid grid-cols-[1fr_auto_1fr]">
-						<button class="-x-variant-ghost btn-icon btn-icon-sm mr-auto" on:click={decreaseCount}
-							>-</button
-						>
-						<div class="mx-2 text-center align-middle leading-loose">
-							{reservation.default_sizing}
-						</div>
-						<button class="-x-variant-ghost btn-icon btn-icon-sm ml-auto" on:click={increaseCount}
-							>+</button
-						>
+			</div>
+			<textarea
+				class="textarea variant-form-material resize-none"
+				placeholder="Write a note for yourself to add any additional information you need"
+				rows="2"
+				on:keydown={() => requestUpdate()}
+				bind:value={reservation.description}
+			/>
+			<div class="max-w-20 text-center">
+				Default matches per field space
+				<div class="mx-auto grid grid-cols-[1fr_auto_1fr]">
+					<button class="btn-icon btn-icon-sm mr-auto" on:click={decreaseCount}> - </button>
+					<div class="mx-2 text-center align-middle leading-loose">
+						{reservation.default_sizing}
 					</div>
+					<button class="btn-icon btn-icon-sm ml-auto" on:click={increaseCount}> + </button>
 				</div>
 			</div>
 		</div>

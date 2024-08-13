@@ -1,11 +1,5 @@
 <script lang="ts">
-	import {
-		signInWithPopup,
-		getAuth,
-		OAuthProvider,
-		type UserCredential,
-		signInWithRedirect
-	} from 'firebase/auth';
+	import { signInWithPopup, getAuth, OAuthProvider, type UserCredential } from 'firebase/auth';
 	import { goto } from '$app/navigation';
 	import { slide } from 'svelte/transition';
 	import { getModalStore, getToastStore } from '@skeletonlabs/skeleton';
@@ -22,22 +16,9 @@
 	const modalStore = getModalStore();
 	const toastStore = getToastStore();
 
-	const signInFunction = type().then((type) => {
-		switch (type) {
-			/*
-			 * The webview on OSX does not support browser popups.
-			 * Why, you might ask?
-			 * No one knows :(
-			 */
-			case 'Darwin':
-				return signInWithRedirect;
-			default:
-				return signInWithPopup;
-		}
-	});
-
 	function duplicatedMessage(error: any) {
 		if (
+			error !== null &&
 			typeof error === 'object' &&
 			'code' in error &&
 			error.code === 'auth/account-exists-with-different-credential'
@@ -96,12 +77,31 @@
 
 	async function twitter() {
 		try {
-			await twitterLogin(async (credential) => {
-				goto(next);
+			const kill = await twitterLogin(credentialFunction, authRejection);
+			modalStore.trigger({
+				type: 'alert',
+				title: 'Please wait, you are being authenticated',
+				body: 'Visit the tab that just opened and follow their instructions to log in',
+				meta: 'FIELDZ_AUTH_POPUP',
+				response: userCancellation(kill)
 			});
 		} catch (e) {
-			console.warn(e);
-			duplicatedMessage(e);
+			if (
+				e !== null &&
+				typeof e === 'object' &&
+				'message' in e &&
+				typeof e.message === 'string' &&
+				e.message.includes('(os error 10048)')
+			) {
+				console.warn(e);
+				toastStore.trigger({
+					message: `Could not open another TCP server because you've already opened 9! Please close Fieldz and reopen the application to sign in again.`,
+					background: 'variant-filled-error'
+				});
+			} else {
+				console.error(e);
+				duplicatedMessage(e);
+			}
 		}
 	}
 
@@ -128,14 +128,16 @@
 				prompt: 'select_account'
 			});
 
-			const userCredential = await (await signInFunction)(getAuth(), provider);
-
-			goto(next);
+			const userCredential = await signInWithPopup(getAuth(), provider);
+			credentialFunction(userCredential);
 		} catch (e) {
 			console.warn(e);
 			duplicatedMessage(e);
 		}
 	}
+
+	let canSignInWithMicrosoft = false;
+	type().then((os) => (canSignInWithMicrosoft = os === 'Windows_NT'));
 </script>
 
 <main in:slide={{ axis: 'x' }} out:slide={{ axis: 'x' }} class="p-4">
@@ -149,7 +151,7 @@
 			<GoogleIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button disabled class="logo-item cursor-not-allowed bg-gray-400" on:click={twitter}>
+		<button class="logo-item card-hover" on:click={twitter}>
 			<TwitterIcon class="mr-4 w-12" />
 			Sign In
 		</button>
@@ -157,20 +159,28 @@
 			<GitHubIcon class="mr-4 w-12" />
 			Sign In
 		</button>
-		<button disabled class="logo-item cursor-not-allowed bg-gray-400" on:click={microsoft}>
+		<button
+			disabled={!canSignInWithMicrosoft}
+			class:cursor-not-allowed={!canSignInWithMicrosoft}
+			class:bg-gray-400={!canSignInWithMicrosoft}
+			class="logo-item"
+			on:click={microsoft}
+		>
 			<MicrosoftIcon class="mr-4 w-12" />
 			Sign In
 		</button>
 	</div>
 
-	<div class="card mx-auto mt-4 bg-yellow-300 p-4 text-center md:w-2/3 xl:w-1/3">
-		<header class="card-header font-bold">Temporary Notice</header>
+	{#if !canSignInWithMicrosoft}
+		<div class="card mx-auto mt-4 bg-yellow-300 p-4 text-center md:w-2/3 xl:w-1/3">
+			<header class="card-header font-bold">Notice</header>
 
-		<p>
-			Authentication via Twitter (X) and Microsoft is disabled for the moment. We apologize for the
-			inconvenience and are working to integrate these platforms for the next release.
-		</p>
-	</div>
+			<p>
+				Authentication via Microsoft is disabled for non-Windows clients. We apologize for the
+				inconvenience.
+			</p>
+		</div>
+	{/if}
 
 	<hr class="hr my-10" />
 

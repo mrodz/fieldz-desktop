@@ -149,7 +149,7 @@ checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 
 [[package]]
 name = "app"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -166,12 +166,45 @@ dependencies = [
  "reqwest 0.12.4",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sha2",
  "tauri",
  "tauri-build",
+ "tauri-plugin-store",
  "thiserror",
  "url",
  "urlencoding",
+]
+
+[[package]]
+name = "argmin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "760a49d596b18b881d2fe6e9e6da4608fa64d4a7653ef5cd43bfaa4da018d596"
+dependencies = [
+ "anyhow",
+ "argmin-math",
+ "instant",
+ "num-traits",
+ "paste",
+ "rand 0.8.5",
+ "rand_xoshiro",
+ "thiserror",
+]
+
+[[package]]
+name = "argmin-math"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d93a0d0269b60bd1cd674de70314e3f0da97406cf8c1936ce760d2a46e0f13fe"
+dependencies = [
+ "anyhow",
+ "cfg-if",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "thiserror",
 ]
 
 [[package]]
@@ -468,6 +501,7 @@ name = "backend"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "argmin",
  "chrono",
  "chrono-tz",
  "genevo",
@@ -477,6 +511,7 @@ dependencies = [
  "mcts",
  "petgraph",
  "rand 0.8.5",
+ "rayon",
  "serde",
  "thiserror",
  "tinyvec",
@@ -892,7 +927,7 @@ checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
 
 [[package]]
 name = "cli"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "backend",
@@ -1255,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "db"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "backend",
@@ -1491,7 +1526,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "sea-orm",
  "serde",
@@ -2127,7 +2162,7 @@ dependencies = [
 
 [[package]]
 name = "grpc_server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-stream",
  "backend",
@@ -3053,7 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "async-std",
  "sea-orm-migration",
@@ -3207,6 +3242,15 @@ dependencies = [
  "rand 0.8.5",
  "smallvec 1.13.2",
  "zeroize",
+]
+
+[[package]]
+name = "num-complex"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -5813,6 +5857,18 @@ dependencies = [
  "syn 1.0.109",
  "tauri-codegen",
  "tauri-utils",
+]
+
+[[package]]
+name = "tauri-plugin-store"
+version = "0.0.0"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v1#becacf9cd615d7b5a5c4e4ed14a1379388d2348f"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror",
 ]
 
 [[package]]

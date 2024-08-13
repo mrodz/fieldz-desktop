@@ -6,11 +6,7 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 fn get_address() -> Result<SocketAddr, Box<dyn std::error::Error>> {
-    let port = if cfg!(feature = "gcp") {
-        "50051"
-    } else {
-        "10000"
-    };
+    let port = "50051";
 
     format!("[::0]:{port}")
         .parse::<SocketAddr>()

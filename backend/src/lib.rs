@@ -1,7 +1,7 @@
 pub mod algorithm;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::{Debug, Display},
     hash::Hash,
 };
@@ -9,6 +9,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use chrono::{serde::ts_seconds, DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
 use itertools::Itertools;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -465,6 +466,7 @@ where
     fields: Vec<F>,
     unique_id: i32,
     coach_conflicts: Vec<C>,
+    is_practice: bool,
 }
 
 impl<T, P, F, C> ScheduledInput<T, P, F, C>
@@ -485,6 +487,22 @@ where
             team_groups: teams.as_ref().to_vec(),
             fields: fields.as_ref().to_vec(),
             coach_conflicts: coach_conflicts.as_ref().to_vec(),
+            is_practice: false,
+        }
+    }
+
+    pub fn new_practice(
+        unique_id: i32,
+        teams: impl AsRef<[P]>,
+        fields: impl AsRef<[F]>,
+        coach_conflicts: impl AsRef<[C]>,
+    ) -> Self {
+        Self {
+            unique_id,
+            team_groups: teams.as_ref().to_vec(),
+            fields: fields.as_ref().to_vec(),
+            coach_conflicts: coach_conflicts.as_ref().to_vec(),
+            is_practice: true,
         }
     }
 
@@ -609,6 +627,10 @@ where
         }
         result
     }
+
+    pub const fn is_practice(&self) -> bool {
+        self.is_practice
+    }
 }
 
 #[derive(Debug)]
@@ -713,6 +735,7 @@ where
     T: TeamLike + Clone + Debug + PartialEq,
 {
     Booked { home_team: T, away_team: T },
+    Practice(T),
     Empty,
 }
 
@@ -773,6 +796,46 @@ where
     }
 }
 
+#[derive(Default)]
+pub struct BusyTeamQueue {
+    values: BTreeMap<i32, Vec<AvailabilityWindow>>,
+}
+
+impl BusyTeamQueue {
+    /// # Returns
+    /// `true` if there was an overlap, `false` otherwise
+    pub fn add_team(&mut self, team: i32, window: AvailabilityWindow) -> bool {
+        let existing_windows = self.values.entry(team).or_default();
+
+        if existing_windows
+            .par_iter()
+            .any(|existing_window| AvailabilityWindow::overlap_fast(existing_window, &window))
+        {
+            return true;
+        }
+
+        existing_windows.push(window);
+
+        false
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn is_busy(&self, team: i32, window: &AvailabilityWindow) -> bool {
+        self.values.get(&team).is_some_and(|busy_times| {
+            busy_times
+                .par_iter()
+                .any(|existing_window| AvailabilityWindow::overlap_fast(existing_window, window))
+        })
+    }
+}
+
 pub fn schedule<T, P, F, C>(input: ScheduledInput<T, P, F, C>) -> Result<Output<T, F>>
 where
     T: TeamLike + Clone + Debug + PartialEq + Send,
@@ -780,6 +843,10 @@ where
     F: FieldLike + Clone + Debug + PartialEq + Send,
     C: CoachConflictLike + Send,
 {
+    if input.is_practice() {
+        return algorithm::practices::schedule(input);
+    }
+
     let Some(compression_profile) = input.get_compression_profile()? else {
         return Ok(Output {
             time_slots: input
@@ -802,7 +869,9 @@ where
             unique_id: input.unique_id,
         });
     };
+
     let transformer = input.into_transformer(&compression_profile)?;
+
     let output = algorithm::v2::schedule(transformer.scheduler_state())?;
     Ok(transformer.transform_v2(output, &compression_profile))
 }
