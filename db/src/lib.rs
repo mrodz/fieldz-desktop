@@ -1331,21 +1331,48 @@ impl Client {
             })
     }
 
-    pub async fn delete_time_slot(&self, id: i32) -> Result<(), TransactionError<DbErr>> {
+    pub async fn delete_time_slot(
+        &self,
+        id: i32,
+        schedule_id: Option<i32>,
+    ) -> Result<(), TransactionError<DbErr>> {
         self.connection
             .transaction(|connection| {
                 Box::pin(async move {
-                    TimeSlotEntity::delete(ActiveTimeSlot {
-                        id: Set(id),
-                        ..Default::default()
-                    })
-                    .exec(connection)
-                    .await?;
-
-                    entity::reservation_type_time_slot_join::Entity::delete_many()
-                        .filter(entity::reservation_type_time_slot_join::Column::TimeSlot.eq(id))
+                    if let Some(schedule_id) = schedule_id {
+                        ScheduleGameEntity::delete(ActiveScheduleGame {
+                            id: Set(id),
+                            ..Default::default()
+                        })
                         .exec(connection)
-                        .await
+                        .await?;
+
+                        ScheduleEntity::update(ActiveSchedule {
+                            id: Set(schedule_id),
+                            last_edit: Set(Utc::now().to_rfc3339()),
+                            ..Default::default()
+                        })
+                        .exec(connection)
+                        .await?;
+
+                        Ok(())
+                    } else {
+                        TimeSlotEntity::delete(ActiveTimeSlot {
+                            id: Set(id),
+                            ..Default::default()
+                        })
+                        .exec(connection)
+                        .await?;
+
+                        entity::reservation_type_time_slot_join::Entity::delete_many()
+                            .filter(
+                                entity::reservation_type_time_slot_join::Column::TimeSlot.eq(id),
+                            )
+                            .exec(connection)
+                            .await?;
+
+                        Ok(())
+                    }
                 })
             })
             .await
@@ -2676,5 +2703,46 @@ impl Client {
         })
         .exec(&self.connection)
         .await
+    }
+
+    pub async fn swap_schedule_games(&self, a: i32, b: i32) -> DBResult<bool> {
+        let game_one = ScheduleGameEntity::find_by_id(a)
+            .one(&self.connection)
+            .await?;
+
+        let game_two = ScheduleGameEntity::find_by_id(b)
+            .one(&self.connection)
+            .await?;
+
+        let (Some(game_one), Some(game_two)) = (game_one, game_two) else {
+            return Ok(false);
+        };
+
+        let game_one_clone = game_one.clone();
+
+        let mut game_one_am = game_one.into_active_model();
+
+        game_one_am.start = Set(game_two.start.clone());
+        game_one_am.end = Set(game_two.end.clone());
+
+        let mut game_two_am = game_two.into_active_model();
+
+        game_two_am.start = Set(game_one_clone.start);
+        game_two_am.end = Set(game_one_clone.end);
+
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    game_one_am.update(connection).await?;
+                    game_two_am.update(connection).await
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                TransactionError::Connection(db) => db,
+                TransactionError::Transaction(t) => t,
+            })?;
+
+        Ok(true)
     }
 }

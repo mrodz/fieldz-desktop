@@ -7,3 +7,4 @@ export { default as ScheduleEdit } from './ScheduleEdit.svelte';
 export { default as TeamCreate } from './TeamCreate.svelte';
 export { default as TeamEdit } from './TeamEdit.svelte';
 export { default as TeamSelector } from './TeamSelector.svelte';
+export { default as ScheduleGameEdit } from './ScheduleGameEdit.svelte';

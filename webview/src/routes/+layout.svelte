@@ -30,7 +30,8 @@
 		TeamEdit,
 		ScheduleEdit,
 		Processing,
-		TeamSelector
+		TeamSelector,
+		ScheduleGameEdit
 	} from '$lib/modals/index';
 	import { handleProfileCreationError, HAS_DB_RESET_BUTTON, isRouteSafeToPersist } from '$lib';
 	import authStore from '$lib/authStore';
@@ -146,6 +147,9 @@
 		},
 		teamSelector: {
 			ref: TeamSelector
+		},
+		scheduleGameEdit: {
+			ref: ScheduleGameEdit
 		}
 	};
 

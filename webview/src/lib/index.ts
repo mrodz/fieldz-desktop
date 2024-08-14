@@ -89,10 +89,7 @@ export type MoveTimeSlotInput = {
 	id: number;
 	new_start: number;
 	new_end: number;
-} & (
-		| { field_id: number, schedule_id?: never }
-		| { schedule_id: number, field_id?: never }
-	)
+} & ({ field_id: number; schedule_id?: never } | { schedule_id: number; field_id?: never });
 
 export interface ListReservationsBetweenInput {
 	start: number;
@@ -187,11 +184,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-		Interregional: number;
-	}
+			Interregional: number;
+	  }
 	| {
-		Regional: [number, number][];
-	};
+			Regional: [number, number][];
+	  };
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -477,4 +474,9 @@ const ROUTES_WITH_PROFILE_QUERY_STATE = ['/region', '/reservations', '/schedules
 
 export function isRouteSafeToPersist(route: URL): boolean {
 	return !ROUTES_WITH_PROFILE_QUERY_STATE.includes(route.pathname);
+}
+
+export function formatDatePretty(date: Date): string {
+	const minutes = String(date.getMinutes()).padStart(2, '0');
+	return `${date.getMonth()}/${date.getDay()}/${date.getFullYear()}, ${date.getHours() % 12}:${minutes} ${date.getHours() >= 12 ? 'PM' : 'AM'}`;
 }
