@@ -60,7 +60,7 @@ fn main() -> Result<()> {
             let metadata_path = dir_part.join("metadata.bin");
 
             let mut store = StoreBuilder::new(app.handle(), metadata_path.clone()).build();
-            
+
             if metadata_path.try_exists()? {
                 store.load()?;
             }
@@ -180,6 +180,7 @@ fn main() -> Result<()> {
             delete_profile,
             rename_profile,
             set_reservation_type_practice,
+            swap_schedule_games,
         ])
         .run(tauri::generate_context!())
         .inspect_err(|e| {
