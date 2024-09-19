@@ -68,6 +68,7 @@
 	const datesQueried: Map<string, TimeSlotExtension[]> = new Map();
 	const fieldsCache: Map<number, Field> = new Map();
 	const regionCache: Map<number, Region> = new Map();
+	const reservationTypeCache: Map<number, ReservationType> = new Map();
 
 	async function loadField(fieldId: number): Promise<Field> {
 		if (fieldsCache.has(fieldId)) {
@@ -87,6 +88,27 @@
 		const region = await invoke<Region>('load_region', { id });
 		regionCache.set(id, region);
 		return region;
+	}
+
+	async function loadReservationType(...ids: number[]): Promise<ReservationType[]> {
+		let result = [];
+		let missing = []
+		for (const id of ids) {
+			if (reservationTypeCache.has(id)) {
+				result.push(reservationTypeCache.get(id)!);
+			} else {
+				missing.push(id);
+			}
+		}
+
+		const reservationTypes = await invoke<ReservationType[]>('get_reservation_types', { ids: missing });
+
+		for (const reservationType of reservationTypes) {
+			reservationTypeCache.set(reservationType.id, reservationType);
+			result.push(reservationType)
+		}
+
+		return result;
 	}
 
 	async function titleFromTimeSlot(input: TimeSlotExtension): Promise<string | undefined> {
@@ -693,7 +715,7 @@
 			>
 
 			{#if groups.length === 0}
-				<div class="card m-4 bg-warning-500 p-4 text-center">
+				<div class="card bg-warning-500 m-4 p-4 text-center">
 					You can't create any targets, as you have not created any groups!
 					<br />
 					<a class="btn underline" href="/groups">Create a group here</a>
@@ -851,6 +873,7 @@
 								<ScheduleErrorReport
 									bind:hasErrors={normalSeasonError}
 									report={normalSeasonReport}
+									{loadReservationType}
 								/>
 							</svelte:fragment>
 							<svelte:fragment slot="content">
@@ -869,7 +892,11 @@
 						<AccordionItem open>
 							<svelte:fragment slot="summary">
 								<h3 class="h3">Post Season</h3>
-								<ScheduleErrorReport bind:hasErrors={postSeasonError} report={postSeasonReport} />
+								<ScheduleErrorReport
+									bind:hasErrors={postSeasonError}
+									report={postSeasonReport}
+									{loadReservationType}
+								/>
 							</svelte:fragment>
 							<svelte:fragment slot="content">
 								<ReportTable
@@ -948,7 +975,7 @@
 			{:else}
 				<hr class="hr my-5" />
 
-				<div class="card mx-auto w-4/5 bg-warning-500 p-4 text-center lg:w-1/2">
+				<div class="card bg-warning-500 mx-auto w-4/5 p-4 text-center lg:w-1/2">
 					<p>
 						You must be logged in to send a schedule request to our servers at this time. We do this
 						to limit spam and block malicious requests, and hope you understand!

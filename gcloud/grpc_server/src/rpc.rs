@@ -190,6 +190,7 @@ impl Scheduler for ScheduleManager {
     ) -> Result<Response<Self::ScheduleStream>, Status> {
         if request.metadata().is_empty() {
             tracing::warn!("Inbound request with no headers");
+            eprintln!("Inbound request with no headers");
             return Err(Status::failed_precondition("No headers found in request"));
         }
 
@@ -199,13 +200,18 @@ impl Scheduler for ScheduleManager {
             .or(request.metadata().get("authorization"))
         else {
             tracing::error!("Inbound request missing `authorization` header");
+            eprintln!("Inbound request missing `authorization` header");
+            
             return Err(Status::unauthenticated("Missing `Authorization` header"));
         };
+
 
         let mut bearer_split = bearer.to_str().expect("JWT non-str").split_whitespace();
 
         if !matches!(bearer_split.next(), Some("Bearer" | "bearer")) {
             tracing::error!("`authorization` header malformatted");
+            eprintln!("`authorization` header malformatted");
+            
             return Err(Status::failed_precondition(
                 "`authorization` header malformatted",
             ));
@@ -213,6 +219,8 @@ impl Scheduler for ScheduleManager {
 
         let Some(jwt_token) = bearer_split.next() else {
             tracing::error!("`authorization` header malformatted");
+            eprintln!("`authorization` header malformatted");
+            
             return Err(Status::failed_precondition(
                 "`Authorization` header malformatted",
             ));
@@ -220,9 +228,16 @@ impl Scheduler for ScheduleManager {
 
         let user_id = jwt::validate_jwt(jwt_token)
             .await
+            .inspect_err(|e| {
+                tracing::error!("Invalid JWT: {e}");
+                eprintln!("Invalid JWT: {e}");
+            })
             .map_err(|e| Status::from_error(Box::new(e)))?;
 
-        signal_usage(user_id).await.map_err(Status::from_error)?;
+        signal_usage(user_id).await.inspect_err(|e| {
+            tracing::error!("Could not signal usage to internal tracker: {e}");
+            eprintln!("Could not signal usage to internal tracker: {e}");
+        }).map_err(Status::from_error)?;
 
         let mut stream = request.into_inner();
 
