@@ -2,15 +2,22 @@
 	import {
 		regionalUnionSumTotal,
 		type PreScheduleReport,
-		isSupplyRequireEntryAccountedFor
+		isSupplyRequireEntryAccountedFor,
+		type ReservationType,
+
+		type DuplicateEntry
+
 	} from '$lib';
 
 	export let report: PreScheduleReport;
 	export let hasErrors = false;
+	export let loadReservationType: (
+		...ids: number[]
+	) => Promise<ReservationType[]> | ReservationType[];
 
 	function reportHasErrors(report: PreScheduleReport): boolean {
 		return (
-			report.target_has_duplicates.length !== 0 ||
+			duplicates.length !== 0 ||
 			report.target_duplicates.find((d) => regionalUnionSumTotal(d.teams_with_group_set) === 0) !==
 				undefined ||
 			report.target_match_count.find((req) => regionalUnionSumTotal(req.required) === 0) !==
@@ -20,15 +27,43 @@
 	}
 
 	$: hasErrors = reportHasErrors(report);
+
+	const duplicates: DuplicateEntry[] = [];
+
+	(async () => {
+		for (const d of report.target_duplicates) {
+			if (d.used_by.length === 2) {
+				const ids = d.used_by
+					.map((t) => t.target.maybe_reservation_type)
+					.filter((maybe_id) => typeof maybe_id === 'number');
+
+				const [first, second] = await loadReservationType(...ids);
+
+				if (
+					first !== undefined &&
+					second !== undefined &&
+					first.is_practice === second.is_practice
+				) {
+					duplicates.push(d);
+				} else {
+					continue;
+				}
+			}
+
+			if (d.used_by.length > 1) {
+				duplicates.push(d)
+			}
+		}
+	})();
 </script>
 
 {#if hasErrors}
-	<div class="card m-4 grid gap-4 bg-error-400 p-4 text-center">
-		{#if report.target_has_duplicates.length !== 0}
+	<div class="card bg-error-400 m-4 grid gap-4 p-4 text-center">
+		{#if duplicates.length !== 0}
 			<div>
 				<strong>Cannot use targets because of duplicates</strong>
 				<ul class="list">
-					{#each report.target_duplicates.filter((d) => d.used_by.length > 1) as dup}
+					{#each duplicates as dup}
 						<li>
 							<span>Duplicates on {dup.team_groups.length === 0 ? 'empty' : ''} targets</span>
 

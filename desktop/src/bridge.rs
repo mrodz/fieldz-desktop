@@ -516,6 +516,7 @@ pub(crate) async fn generate_pre_schedule_report(
 #[tauri::command]
 pub(crate) async fn get_reservation_types(
     app: AppHandle,
+    ids: Option<Vec<i32>>,
 ) -> Result<Vec<db::reservation_type::Model>, String> {
     let state = app.state::<SafeAppState>();
     let lock = state.0.lock().await;
@@ -525,7 +526,7 @@ pub(crate) async fn get_reservation_types(
         .ok_or("database was not initialized".to_owned())?;
 
     client
-        .get_reservation_types()
+        .get_reservation_types(ids)
         .await
         .map_err(|e| format!("{}:{} {e}", file!(), line!()))
 }

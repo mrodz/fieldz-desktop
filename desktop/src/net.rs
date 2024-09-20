@@ -140,6 +140,9 @@ where
     let response = client
         .schedule(request)
         .await
+        .inspect_err(|e| {
+            eprintln!("{e:?} {}:{}", line!(), column!());
+        })
         .map_err(|e| ScheduleRequestError::RPCError(e.to_string()))?;
 
     let mut inbound = response.into_inner();
@@ -208,12 +211,14 @@ macro_rules! env_function {
                 return Ok(var);
             }
 
+            let value = std::env::var($var).map(Cow::Owned);
+
             println!(
-                "Warning: using runtime environment variable: {}",
+                "Warning: using runtime environment variable: {} = {value:?}",
                 stringify!($var)
             );
 
-            std::env::var($var).map(Cow::Owned)
+            value
         }
     };
 }

@@ -578,6 +578,30 @@ impl TargetExtension {
             })
             .collect())
     }
+
+    pub async fn is_practice<C>(&self, connection: &C) -> DBResult<Option<bool>>
+    where
+        C: ConnectionTrait,
+    {
+        println!("practice query");
+        if let Some(reservation_type_id) = self.target.maybe_reservation_type {
+            let maybe_reservation_type = ReservationTypeEntity::find_by_id(reservation_type_id)
+                .one(connection)
+                .await?;
+
+            let Some(reservation_type) = maybe_reservation_type else {
+                eprintln!(
+                    "Attempting to search for non-existent reservation type: {reservation_type_id}"
+                );
+
+                return Ok(None);
+            };
+
+            return Ok(Some(reservation_type.is_practice));
+        }
+
+        Ok(None)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1685,7 +1709,7 @@ impl Client {
 
                     /*
                      * Missing: checks on existing primary key in join table
-                     * for creation, and absense in join table for deletion.
+                     * for creation, and absence in join table for deletion.
                      *
                      * Not a problem because we control inputs but should be
                      * fixed if this is deployed as a docker container.
@@ -1767,8 +1791,19 @@ impl Client {
         .map_err(|e| CreateReservationTypeError::DatabaseError(e.to_string()))
     }
 
-    pub async fn get_reservation_types(&self) -> DBResult<Vec<ReservationType>> {
-        ReservationTypeEntity::find().all(&self.connection).await
+    pub async fn get_reservation_types(
+        &self,
+        ids: Option<Vec<i32>>,
+    ) -> DBResult<Vec<ReservationType>> {
+        let ids = ids.unwrap_or_default();
+        if ids.is_empty() {
+            ReservationTypeEntity::find()
+        } else {
+            ReservationTypeEntity::find()
+                .filter(Condition::all().add(reservation_type::Column::Id.is_in(ids)))
+        }
+        .all(&self.connection)
+        .await
     }
 
     pub async fn delete_reservation_type(&self, id: i32) -> Result<(), String> {

@@ -33,6 +33,7 @@ pub struct SchedulerUsage {
 pub(crate) async fn signal_usage(
     user_id: String,
 ) -> Result<SchedulerUsage, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    
     let usage_endpoint = std::env::var("QUOTA_SERVER_URL").unwrap();
 
     let response = reqwest::get(format!("{usage_endpoint}?uid={user_id}"))

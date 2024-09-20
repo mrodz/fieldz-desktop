@@ -297,7 +297,7 @@ where
      * result in nearly all proposed moves being accepted, regardless of whether they improve the
      * solution or not. This can lead to inefficient exploration.
      */
-    let temperature = time_slots_len.clamp(1.0, time_slots_len * 1.2);
+    let temperature = time_slots_len.clamp(1.0, time_slots_len.max(1.) * 1.2);
 
     println!("Solving practices (i={max_iters}, temperature={temperature} degrees)");
 

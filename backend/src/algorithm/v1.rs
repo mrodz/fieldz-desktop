@@ -5,8 +5,6 @@ use petgraph::{
     graphmap::{DiGraphMap, GraphMap},
     Directed,
 };
-use rand::{rngs::ThreadRng, Rng};
-
 use std::{
     cell::Cell,
     cmp::Ordering,
@@ -43,23 +41,6 @@ impl ScheduledOutput {
     pub fn unplayed_matches(&self) -> &[Game] {
         &self.unplayed_matches
     }
-}
-
-struct RandomEdgeSupplier<'a> {
-    vec: Vec<(Pin<&'a Team>, Pin<&'a Team>, &'a Option<&'a Reservation>)>,
-    rng: ThreadRng,
-}
-
-impl<'a> Iterator for RandomEdgeSupplier<'a> {
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.vec.is_empty() {
-            return None;
-        }
-
-        let index = self.rng.gen_range(0..self.vec.len());
-        Some(self.vec.swap_remove(index))
-    }
-    type Item = (Pin<&'a Team>, Pin<&'a Team>, &'a Option<&'a Reservation>);
 }
 
 impl League {
