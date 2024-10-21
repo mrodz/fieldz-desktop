@@ -1183,7 +1183,7 @@ impl Client {
         field_id: i32,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-        exclude_from_conflicts: Option<i32>,
+        exclude_from_conflicts: Option<impl AsRef<[i32]>>,
     ) -> Result<(), TimeSlotError> {
         Self::conflicts_generic(
             connection,
@@ -1202,7 +1202,7 @@ impl Client {
         search: ConflictTimeSlotSource,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-        exclude_from_conflicts: Option<i32>,
+        exclude_from_conflicts: Option<impl AsRef<[i32]>>,
     ) -> Result<(), TimeSlotError> {
         let mut condition = match search {
             ConflictTimeSlotSource::Field => {
@@ -1213,13 +1213,17 @@ impl Client {
             }
         };
 
-        if let Some(id) = exclude_from_conflicts {
+        if let Some(ids) = exclude_from_conflicts {
             match search {
                 ConflictTimeSlotSource::Field => {
-                    condition = condition.add(time_slot::Column::Id.ne(id))
+                    for id in ids.as_ref().iter() {
+                        condition = condition.add(time_slot::Column::Id.ne(*id))
+                    }
                 }
                 ConflictTimeSlotSource::Schedule => {
-                    condition = condition.add(schedule_game::Column::Id.ne(id))
+                    for id in ids.as_ref().iter() {
+                        condition = condition.add(schedule_game::Column::Id.ne(*id))
+                    }
                 }
             }
         }
@@ -1286,7 +1290,7 @@ impl Client {
             input.field_id,
             input.start,
             input.end,
-            None,
+            None::<&[i32; 0]>,
         )
         .await?;
 
@@ -1410,7 +1414,7 @@ impl Client {
                 field_id,
                 input.new_start,
                 input.new_end,
-                Some(input.id),
+                Some([input.id]),
             )
             .await?;
 
@@ -1438,7 +1442,7 @@ impl Client {
                 ConflictTimeSlotSource::Schedule,
                 input.new_start,
                 input.new_end,
-                Some(input.id),
+                Some([input.id]),
             )
             .await?;
 
@@ -2170,6 +2174,43 @@ impl Client {
         &self,
         schedule: CompiledSchedule,
     ) -> Result<Schedule, SaveScheduleError> {
+        let mut active_games = vec![];
+
+        for output in schedule.outputs {
+            for reservation in output.time_slots {
+                active_games.push(ActiveScheduleGame {
+                    start: Set(DateTime::from_timestamp(reservation.start, 0)
+                        .ok_or(SaveScheduleError::InvalidDateError(0))?
+                        .to_rfc3339()),
+                    end: Set(DateTime::from_timestamp(reservation.end, 0)
+                        .ok_or(SaveScheduleError::InvalidDateError(1))?
+                        .to_rfc3339()),
+                    team_one: Set(reservation
+                        .booking
+                        .as_ref()
+                        .and_then(|b| b.home_team.as_ref().map(TeamLike::unique_id))),
+                    team_two: Set(reservation
+                        .booking
+                        .as_ref()
+                        .and_then(|b| b.away_team.as_ref().map(TeamLike::unique_id))),
+                    field_id: Set(reservation
+                        .field
+                        .as_ref()
+                        .map(FieldLike::unique_id)
+                        .and_then(|id| {
+                            dbg!(id)
+                                .try_into()
+                                .inspect_err(|e| {
+                                    eprintln!("field id overflow: {e:?}");
+                                })
+                                .ok()
+                        })
+                        .ok_or_else(|| SaveScheduleError::OverflowError("field id".into()))?),
+                    ..Default::default()
+                });
+            }
+        }
+
         self.connection
             .transaction(|connection| {
                 Box::pin(async move {
@@ -2184,30 +2225,13 @@ impl Client {
                     .insert(connection)
                     .await?;
 
-                    for output in schedule.outputs {
-                        for reservation in output.time_slots {
-                            ActiveScheduleGame {
-                                schedule_id: Set(new_schedule.id),
-                                start: Set(DateTime::from_timestamp(reservation.start, 0)
-                                    .expect("invalid start time")
-                                    .to_rfc3339()),
-                                end: Set(DateTime::from_timestamp(reservation.end, 0)
-                                    .expect("invalid end time")
-                                    .to_rfc3339()),
-                                team_one: Set(reservation
-                                    .booking
-                                    .as_ref()
-                                    .and_then(|b| b.home_team.as_ref().map(TeamLike::unique_id))),
-                                team_two: Set(reservation
-                                    .booking
-                                    .as_ref()
-                                    .and_then(|b| b.away_team.as_ref().map(TeamLike::unique_id))),
-                                ..Default::default()
-                            }
-                            .insert(connection)
-                            .await?;
-                        }
+                    for game in &mut active_games {
+                        game.schedule_id = Set(new_schedule.id);
                     }
+
+                    ScheduleGameEntity::insert_many(active_games)
+                        .exec(connection)
+                        .await?;
 
                     Ok(new_schedule)
                 })
@@ -2740,18 +2764,42 @@ impl Client {
         .await
     }
 
-    pub async fn swap_schedule_games(&self, a: i32, b: i32) -> DBResult<bool> {
+    pub async fn swap_schedule_games(&self, a: i32, b: i32) -> Result<bool, TimeSlotError> {
         let game_one = ScheduleGameEntity::find_by_id(a)
             .one(&self.connection)
-            .await?;
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
 
         let game_two = ScheduleGameEntity::find_by_id(b)
             .one(&self.connection)
-            .await?;
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
 
         let (Some(game_one), Some(game_two)) = (game_one, game_two) else {
             return Ok(false);
         };
+
+        if let Some(field_id) = game_one.field_id {
+            Self::conflicts(
+                &self.connection,
+                field_id,
+                DateTime::<Utc>::from_str(&game_two.start).unwrap(),
+                DateTime::<Utc>::from_str(&game_two.end).unwrap(),
+                Some([game_one.id, game_two.id]),
+            )
+            .await?;
+        }
+
+        if let Some(field_id) = game_two.field_id {
+            Self::conflicts(
+                &self.connection,
+                field_id,
+                DateTime::<Utc>::from_str(&game_one.start).unwrap(),
+                DateTime::<Utc>::from_str(&game_one.end).unwrap(),
+                Some([game_two.id, game_one.id]),
+            )
+            .await?;
+        }
 
         let game_one_clone = game_one.clone();
 
@@ -2759,11 +2807,13 @@ impl Client {
 
         game_one_am.start = Set(game_two.start.clone());
         game_one_am.end = Set(game_two.end.clone());
+        game_one_am.field_id = Set(game_two.field_id);
 
         let mut game_two_am = game_two.into_active_model();
 
         game_two_am.start = Set(game_one_clone.start);
         game_two_am.end = Set(game_one_clone.end);
+        game_one_am.field_id = Set(game_one_clone.field_id);
 
         self.connection
             .transaction(|connection| {
@@ -2774,8 +2824,9 @@ impl Client {
             })
             .await
             .map_err(|e| match e {
-                TransactionError::Connection(db) => db,
-                TransactionError::Transaction(t) => t,
+                TransactionError::Connection(db) | TransactionError::Transaction(db) => {
+                    TimeSlotError::DatabaseError(format!("{db} {}:{}", line!(), column!()))
+                }
             })?;
 
         Ok(true)

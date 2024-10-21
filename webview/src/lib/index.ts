@@ -184,11 +184,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -334,7 +334,7 @@ export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
 export const SCHEDULE_CREATION_DELAY: number = 30_000;
 export const SCHEDULE_TIMEOUT_MS: number = 15_000;
 export const SHOW_SCHEDULER_JSON_PAYLOADS: boolean = false;
-export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = true;
+export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = false;
 
 export interface FieldExtension {
 	field_id: number;
@@ -385,6 +385,7 @@ export interface ScheduleGame {
 	end: string;
 	team_one?: number;
 	team_two?: number;
+	field_id?: number;
 }
 
 export interface OAuthAccessTokenExchange {

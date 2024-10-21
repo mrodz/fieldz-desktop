@@ -3,6 +3,8 @@
 		formatDatePretty,
 		type CalendarEvent,
 		type EditTeamInput,
+		type Field,
+		type FieldExtension,
 		type Schedule,
 		type ScheduleGame,
 		type TeamExtension,
@@ -24,6 +26,7 @@
 	const event: CalendarEvent = $modalStore[0].meta!.event;
 	const onDelete: (event: CalendarEvent) => void | Promise<void> = $modalStore[0].meta!.onDelete;
 	const getTeam: (team_id: number) => Promise<TeamExtension> = $modalStore[0].meta!.getTeam;
+	const getField: (team_id: number) => Promise<Field> = $modalStore[0].meta!.getField;
 	const onSwap: () => void = $modalStore[0].meta!.onSwap;
 
 	function close() {
@@ -48,8 +51,6 @@
 
 	<div class="flex flex-col">
 		<h3 class="h3">
-			Viewing:
-
 			{#if typeof game.team_one !== 'number'}
 				Empty reservation
 			{:else}
@@ -73,6 +74,23 @@
 		</div>
 		<div>
 			End: {formatDatePretty(new Date(game.end))}
+		</div>
+
+		<hr class="hr my-5" />
+
+		<div>
+			{#if game.field_id === undefined}
+				⚠️ This schedule was created before v0.1.12 and did not record the field. We at Fieldz are
+				sorry for the inconvenience.
+			{:else}
+				{#await getField(game.field_id)}
+					Loading field...
+				{:then field}
+					<strong>
+						Field: {field.name}
+					</strong>
+				{/await}
+			{/if}
 		</div>
 	</div>
 
