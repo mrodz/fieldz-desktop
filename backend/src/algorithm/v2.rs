@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -21,8 +22,13 @@ use tinyvec::TinyVec;
 
 use crate::window;
 use crate::AvailabilityWindow;
+use crate::Booking;
+use crate::CoachConflictLike;
 use crate::CompressionProfile;
+use crate::FieldLike;
 use crate::LossyAvailability;
+use crate::PlayableTeamCollection;
+use crate::ScheduledInput;
 use crate::TeamLike;
 
 type TeamId = u8;
@@ -494,7 +500,43 @@ impl Output {
     }
 }
 
-pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
+pub fn schedule<T, P, F, C>(input: ScheduledInput<T, P, F, C>) -> Result<crate::Output<T, F>>
+where
+    T: TeamLike + Clone + Debug + PartialEq + Send,
+    P: PlayableTeamCollection<Team = T> + Send,
+    F: FieldLike + Clone + Debug + PartialEq + Send,
+    C: CoachConflictLike + Send,
+{
+    let Some(compression_profile) = input.get_compression_profile()? else {
+        return Ok(crate::Output {
+            time_slots: input
+                .fields()
+                .iter()
+                .flat_map(|field| {
+                    field
+                        .time_slots()
+                        .as_ref()
+                        .iter()
+                        .map(|(time_slot, _)| crate::Reservation {
+                            field: field.clone(),
+                            availability: AvailabilityWindow::new_unix(time_slot.0, time_slot.1)
+                                .expect("field availability"),
+                            booking: Booking::Empty,
+                        })
+                        .collect_vec()
+                })
+                .collect_vec(),
+            unique_id: input.unique_id,
+        });
+    };
+
+    let transformer = input.into_transformer(&compression_profile)?;
+
+    let output = schedule_mcts(transformer.scheduler_state())?;
+    Ok(transformer.transform_v2(output, &compression_profile))
+}
+
+fn schedule_mcts(state: &MCTSState) -> Result<Output> {
     let mut best: Option<Output> = None;
 
     if state.teams_len() == 0 {
@@ -525,7 +567,7 @@ pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
     const RETRIES: u8 = 10;
 
     for i in 1..=RETRIES {
-        let out = schedule_once(state.clone())?;
+        let out = schedule_mcts_once(state.clone())?;
         if out.all_booked() {
             return Ok(out);
         }
@@ -549,7 +591,7 @@ pub(crate) fn schedule(state: &MCTSState) -> Result<Output> {
     best.ok_or_else(|| unreachable!("the scheduler should have retried"))
 }
 
-pub(crate) fn schedule_once(state: MCTSState) -> Result<Output> {
+fn schedule_mcts_once(state: MCTSState) -> Result<Output> {
     let total_slots = state.games.len();
     let team_len = state.teams_len();
 
@@ -681,7 +723,7 @@ pub fn test() -> Result<()> {
 
     state.add_group(group_one);
 
-    let result = schedule(&state)?;
+    let result = schedule_mcts(&state)?;
 
     println!("{result:?}");
 

@@ -847,31 +847,5 @@ where
         return algorithm::practices::schedule(input);
     }
 
-    let Some(compression_profile) = input.get_compression_profile()? else {
-        return Ok(Output {
-            time_slots: input
-                .fields()
-                .iter()
-                .flat_map(|field| {
-                    field
-                        .time_slots()
-                        .as_ref()
-                        .iter()
-                        .map(|(time_slot, _)| Reservation {
-                            field: field.clone(),
-                            availability: AvailabilityWindow::new_unix(time_slot.0, time_slot.1)
-                                .expect("field availability"),
-                            booking: Booking::Empty,
-                        })
-                        .collect_vec()
-                })
-                .collect_vec(),
-            unique_id: input.unique_id,
-        });
-    };
-
-    let transformer = input.into_transformer(&compression_profile)?;
-
-    let output = algorithm::v2::schedule(transformer.scheduler_state())?;
-    Ok(transformer.transform_v2(output, &compression_profile))
+    algorithm::v2::schedule(input)
 }
