@@ -149,7 +149,7 @@ checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 
 [[package]]
 name = "app"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -926,7 +926,7 @@ checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 
 [[package]]
 name = "cli"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "backend",
@@ -1289,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "db"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "backend",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "entity"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "sea-orm",
  "serde",
@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "grpc_server"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-stream",
  "backend",
@@ -3068,7 +3068,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "async-std",
  "sea-orm-migration",
