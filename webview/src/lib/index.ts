@@ -85,12 +85,11 @@ export interface CalendarEvent {
 	extendedProps?: any;
 }
 
-export interface MoveTimeSlotInput {
-	field_id: number;
+export type MoveTimeSlotInput = {
 	id: number;
 	new_start: number;
 	new_end: number;
-}
+} & ({ field_id: number; schedule_id?: never } | { schedule_id: number; field_id?: never });
 
 export interface ListReservationsBetweenInput {
 	start: number;
@@ -153,7 +152,7 @@ export async function eventFromGame(
 	return {
 		allDay: false,
 		display: 'auto',
-		id: `schedule-${input.schedule_id}-game-${input.id}`,
+		id: String(input.id),
 		resources: [],
 		start: new Date(input.start),
 		end: new Date(input.end),
@@ -185,11 +184,11 @@ export interface TargetExtension {
 
 export type RegionalUnionU64 =
 	| {
-			Interregional: number;
-	  }
+		Interregional: number;
+	}
 	| {
-			Regional: [number, number][];
-	  };
+		Regional: [number, number][];
+	};
 
 export interface DuplicateEntry {
 	team_groups: TeamGroup[];
@@ -335,7 +334,7 @@ export const TIME_SLOT_CREATION_MODAL_ENABLE: boolean = false;
 export const SCHEDULE_CREATION_DELAY: number = 30_000;
 export const SCHEDULE_TIMEOUT_MS: number = 15_000;
 export const SHOW_SCHEDULER_JSON_PAYLOADS: boolean = false;
-export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = true;
+export const SHOW_SCHEDULER_URL_WHILE_WAITING: boolean = false;
 
 export interface FieldExtension {
 	field_id: number;
@@ -386,6 +385,7 @@ export interface ScheduleGame {
 	end: string;
 	team_one?: number;
 	team_two?: number;
+	field_id?: number;
 }
 
 export interface OAuthAccessTokenExchange {
@@ -475,4 +475,9 @@ const ROUTES_WITH_PROFILE_QUERY_STATE = ['/region', '/reservations', '/schedules
 
 export function isRouteSafeToPersist(route: URL): boolean {
 	return !ROUTES_WITH_PROFILE_QUERY_STATE.includes(route.pathname);
+}
+
+export function formatDatePretty(date: Date): string {
+	const minutes = String(date.getMinutes()).padStart(2, '0');
+	return `${date.getMonth()}/${date.getDay()}/${date.getFullYear()}, ${date.getHours() % 12}:${minutes} ${date.getHours() >= 12 ? 'PM' : 'AM'}`;
 }

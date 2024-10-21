@@ -1,13 +1,13 @@
 [package]
 name = "app"
-version = "0.1.11"
+version = "0.1.12"
 description = "An advanced field scheduling and logistics app"
 authors = ["Mateo Rodriguez"]
-license = ""
-repository = ""
+license = "MPL-2.0"
+repository = "https://github.com/mrodz/fieldz-desktop"
 default-run = "app"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.76"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

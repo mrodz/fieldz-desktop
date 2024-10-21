@@ -235,6 +235,10 @@ pub enum GetScheduledInputsError {
 pub enum SaveScheduleError {
     #[error("database operation failed: `{0}`")]
     DatabaseError(String),
+    #[error("invalid time: pos {0}")]
+    InvalidDateError(u8),
+    #[error("id overflow: {0}")]
+    OverflowError(String),
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]

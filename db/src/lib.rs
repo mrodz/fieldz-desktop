@@ -432,7 +432,8 @@ impl From<TimeSlotSelectionTypeAggregate> for TimeSlotExtension {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MoveTimeSlotInput {
-    field_id: i32,
+    field_id: Option<i32>,
+    schedule_id: Option<i32>,
     id: i32,
     #[serde(with = "ts_milliseconds")]
     new_start: DateTime<Utc>,
@@ -576,6 +577,30 @@ impl TargetExtension {
                 groups: result.remove(&target.id).unwrap_or_default(),
             })
             .collect())
+    }
+
+    pub async fn is_practice<C>(&self, connection: &C) -> DBResult<Option<bool>>
+    where
+        C: ConnectionTrait,
+    {
+        println!("practice query");
+        if let Some(reservation_type_id) = self.target.maybe_reservation_type {
+            let maybe_reservation_type = ReservationTypeEntity::find_by_id(reservation_type_id)
+                .one(connection)
+                .await?;
+
+            let Some(reservation_type) = maybe_reservation_type else {
+                eprintln!(
+                    "Attempting to search for non-existent reservation type: {reservation_type_id}"
+                );
+
+                return Ok(None);
+            };
+
+            return Ok(Some(reservation_type.is_practice));
+        }
+
+        Ok(None)
     }
 }
 
@@ -797,6 +822,12 @@ pub struct RegionMetadata {
     team_count: u64,
     field_count: u64,
     time_slot_count: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub enum ConflictTimeSlotSource {
+    Field,
+    Schedule,
 }
 
 impl Client {
@@ -1152,20 +1183,79 @@ impl Client {
         field_id: i32,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-        exclude_from_conflicts: Option<i32>,
+        exclude_from_conflicts: Option<impl AsRef<[i32]>>,
     ) -> Result<(), TimeSlotError> {
-        let mut condition = Condition::all().add(time_slot::Column::FieldId.eq(field_id));
+        Self::conflicts_generic(
+            connection,
+            field_id,
+            ConflictTimeSlotSource::Field,
+            start,
+            end,
+            exclude_from_conflicts,
+        )
+        .await
+    }
 
-        if let Some(id) = exclude_from_conflicts {
-            condition = condition.add(time_slot::Column::Id.ne(id))
+    async fn conflicts_generic(
+        connection: &impl ConnectionTrait,
+        id: i32,
+        search: ConflictTimeSlotSource,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        exclude_from_conflicts: Option<impl AsRef<[i32]>>,
+    ) -> Result<(), TimeSlotError> {
+        let mut condition = match search {
+            ConflictTimeSlotSource::Field => {
+                Condition::all().add(time_slot::Column::FieldId.eq(id))
+            }
+            ConflictTimeSlotSource::Schedule => {
+                Condition::all().add(schedule_game::Column::ScheduleId.eq(id))
+            }
+        };
+
+        if let Some(ids) = exclude_from_conflicts {
+            match search {
+                ConflictTimeSlotSource::Field => {
+                    for id in ids.as_ref().iter() {
+                        condition = condition.add(time_slot::Column::Id.ne(*id))
+                    }
+                }
+                ConflictTimeSlotSource::Schedule => {
+                    for id in ids.as_ref().iter() {
+                        condition = condition.add(schedule_game::Column::Id.ne(*id))
+                    }
+                }
+            }
         }
 
-        let time_slots = TimeSlotEntity::find()
-            .inner_join(FieldEntity)
-            .filter(condition)
-            .all(connection)
-            .await
-            .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?;
+        #[derive(FromQueryResult)]
+        struct StartEnd {
+            start: String,
+            end: String,
+        }
+
+        let time_slots = match search {
+            ConflictTimeSlotSource::Field => TimeSlotEntity::find()
+                .select_only()
+                .column(time_slot::Column::Start)
+                .column(time_slot::Column::End)
+                .inner_join(FieldEntity)
+                .filter(condition)
+                .into_model::<StartEnd>()
+                .all(connection)
+                .await
+                .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?,
+            ConflictTimeSlotSource::Schedule => ScheduleGameEntity::find()
+                .select_only()
+                .column(schedule_game::Column::Start)
+                .column(schedule_game::Column::End)
+                .inner_join(ScheduleEntity)
+                .filter(condition)
+                .into_model::<StartEnd>()
+                .all(connection)
+                .await
+                .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?,
+        };
 
         for time_slot in time_slots {
             let o_start = DateTime::<Utc>::from_str(&time_slot.start) //, FMT)
@@ -1200,7 +1290,7 @@ impl Client {
             input.field_id,
             input.start,
             input.end,
-            None,
+            None::<&[i32; 0]>,
         )
         .await?;
 
@@ -1269,21 +1359,48 @@ impl Client {
             })
     }
 
-    pub async fn delete_time_slot(&self, id: i32) -> Result<(), TransactionError<DbErr>> {
+    pub async fn delete_time_slot(
+        &self,
+        id: i32,
+        schedule_id: Option<i32>,
+    ) -> Result<(), TransactionError<DbErr>> {
         self.connection
             .transaction(|connection| {
                 Box::pin(async move {
-                    TimeSlotEntity::delete(ActiveTimeSlot {
-                        id: Set(id),
-                        ..Default::default()
-                    })
-                    .exec(connection)
-                    .await?;
-
-                    entity::reservation_type_time_slot_join::Entity::delete_many()
-                        .filter(entity::reservation_type_time_slot_join::Column::TimeSlot.eq(id))
+                    if let Some(schedule_id) = schedule_id {
+                        ScheduleGameEntity::delete(ActiveScheduleGame {
+                            id: Set(id),
+                            ..Default::default()
+                        })
                         .exec(connection)
-                        .await
+                        .await?;
+
+                        ScheduleEntity::update(ActiveSchedule {
+                            id: Set(schedule_id),
+                            last_edit: Set(Utc::now().to_rfc3339()),
+                            ..Default::default()
+                        })
+                        .exec(connection)
+                        .await?;
+
+                        Ok(())
+                    } else {
+                        TimeSlotEntity::delete(ActiveTimeSlot {
+                            id: Set(id),
+                            ..Default::default()
+                        })
+                        .exec(connection)
+                        .await?;
+
+                        entity::reservation_type_time_slot_join::Entity::delete_many()
+                            .filter(
+                                entity::reservation_type_time_slot_join::Column::TimeSlot.eq(id),
+                            )
+                            .exec(connection)
+                            .await?;
+
+                        Ok(())
+                    }
                 })
             })
             .await
@@ -1291,30 +1408,75 @@ impl Client {
     }
 
     pub async fn move_time_slot(&self, input: MoveTimeSlotInput) -> Result<(), TimeSlotError> {
-        Self::conflicts(
-            &self.connection,
-            input.field_id,
-            input.new_start,
-            input.new_end,
-            Some(input.id),
-        )
-        .await?;
+        if let Some(field_id) = input.field_id {
+            Self::conflicts(
+                &self.connection,
+                field_id,
+                input.new_start,
+                input.new_end,
+                Some([input.id]),
+            )
+            .await?;
 
-        TimeSlotEntity::update_many()
-            .col_expr(
-                time_slot::Column::Start,
-                Expr::val(Value::String(Some(Box::new(input.new_start.to_rfc3339()))))
-                    .into_simple_expr(),
+            TimeSlotEntity::update_many()
+                .col_expr(
+                    time_slot::Column::Start,
+                    Expr::val(Value::String(Some(Box::new(input.new_start.to_rfc3339()))))
+                        .into_simple_expr(),
+                )
+                .col_expr(
+                    time_slot::Column::End,
+                    Expr::val(Value::String(Some(Box::new(input.new_end.to_rfc3339()))))
+                        .into_simple_expr(),
+                )
+                .filter(time_slot::Column::Id.eq(input.id))
+                .exec(&self.connection)
+                .await
+                .map_err(|e| {
+                    TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?;
+        } else if let Some(schedule_id) = input.schedule_id {
+            Self::conflicts_generic(
+                &self.connection,
+                schedule_id,
+                ConflictTimeSlotSource::Schedule,
+                input.new_start,
+                input.new_end,
+                Some([input.id]),
             )
-            .col_expr(
-                time_slot::Column::End,
-                Expr::val(Value::String(Some(Box::new(input.new_end.to_rfc3339()))))
-                    .into_simple_expr(),
-            )
-            .filter(time_slot::Column::Id.eq(input.id))
+            .await?;
+
+            ScheduleGameEntity::update_many()
+                .col_expr(
+                    schedule_game::Column::Start,
+                    Expr::val(Value::String(Some(Box::new(input.new_start.to_rfc3339()))))
+                        .into_simple_expr(),
+                )
+                .col_expr(
+                    schedule_game::Column::End,
+                    Expr::val(Value::String(Some(Box::new(input.new_end.to_rfc3339()))))
+                        .into_simple_expr(),
+                )
+                .filter(schedule_game::Column::Id.eq(input.id))
+                .exec(&self.connection)
+                .await
+                .map_err(|e| {
+                    TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!()))
+                })?;
+
+            ScheduleEntity::update(ActiveSchedule {
+                id: Set(schedule_id),
+                last_edit: Set(Utc::now().to_rfc3339()),
+                ..Default::default()
+            })
             .exec(&self.connection)
             .await
-            .map_err(|e| TimeSlotError::DatabaseError(e.to_string()))?;
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
+        } else {
+            return Err(TimeSlotError::ParseError(
+                "missing id argument for move".to_owned(),
+            ));
+        }
 
         Ok(())
     }
@@ -1551,7 +1713,7 @@ impl Client {
 
                     /*
                      * Missing: checks on existing primary key in join table
-                     * for creation, and absense in join table for deletion.
+                     * for creation, and absence in join table for deletion.
                      *
                      * Not a problem because we control inputs but should be
                      * fixed if this is deployed as a docker container.
@@ -1633,8 +1795,19 @@ impl Client {
         .map_err(|e| CreateReservationTypeError::DatabaseError(e.to_string()))
     }
 
-    pub async fn get_reservation_types(&self) -> DBResult<Vec<ReservationType>> {
-        ReservationTypeEntity::find().all(&self.connection).await
+    pub async fn get_reservation_types(
+        &self,
+        ids: Option<Vec<i32>>,
+    ) -> DBResult<Vec<ReservationType>> {
+        let ids = ids.unwrap_or_default();
+        if ids.is_empty() {
+            ReservationTypeEntity::find()
+        } else {
+            ReservationTypeEntity::find()
+                .filter(Condition::all().add(reservation_type::Column::Id.is_in(ids)))
+        }
+        .all(&self.connection)
+        .await
     }
 
     pub async fn delete_reservation_type(&self, id: i32) -> Result<(), String> {
@@ -1956,7 +2129,7 @@ impl Client {
                 })
                 .collect_vec();
 
-            if dbg!(reservation_type).is_practice {
+            if reservation_type.is_practice {
                 result.push(ScheduledInput::new_practice(
                     i.try_into().unwrap(),
                     teams,
@@ -2001,6 +2174,43 @@ impl Client {
         &self,
         schedule: CompiledSchedule,
     ) -> Result<Schedule, SaveScheduleError> {
+        let mut active_games = vec![];
+
+        for output in schedule.outputs {
+            for reservation in output.time_slots {
+                active_games.push(ActiveScheduleGame {
+                    start: Set(DateTime::from_timestamp(reservation.start, 0)
+                        .ok_or(SaveScheduleError::InvalidDateError(0))?
+                        .to_rfc3339()),
+                    end: Set(DateTime::from_timestamp(reservation.end, 0)
+                        .ok_or(SaveScheduleError::InvalidDateError(1))?
+                        .to_rfc3339()),
+                    team_one: Set(reservation
+                        .booking
+                        .as_ref()
+                        .and_then(|b| b.home_team.as_ref().map(TeamLike::unique_id))),
+                    team_two: Set(reservation
+                        .booking
+                        .as_ref()
+                        .and_then(|b| b.away_team.as_ref().map(TeamLike::unique_id))),
+                    field_id: Set(reservation
+                        .field
+                        .as_ref()
+                        .map(FieldLike::unique_id)
+                        .and_then(|id| {
+                            dbg!(id)
+                                .try_into()
+                                .inspect_err(|e| {
+                                    eprintln!("field id overflow: {e:?}");
+                                })
+                                .ok()
+                        })
+                        .ok_or_else(|| SaveScheduleError::OverflowError("field id".into()))?),
+                    ..Default::default()
+                });
+            }
+        }
+
         self.connection
             .transaction(|connection| {
                 Box::pin(async move {
@@ -2015,30 +2225,13 @@ impl Client {
                     .insert(connection)
                     .await?;
 
-                    for output in schedule.outputs {
-                        for reservation in output.time_slots {
-                            ActiveScheduleGame {
-                                schedule_id: Set(new_schedule.id),
-                                start: Set(DateTime::from_timestamp(reservation.start, 0)
-                                    .expect("invalid start time")
-                                    .to_rfc3339()),
-                                end: Set(DateTime::from_timestamp(reservation.end, 0)
-                                    .expect("invalid end time")
-                                    .to_rfc3339()),
-                                team_one: Set(reservation
-                                    .booking
-                                    .as_ref()
-                                    .and_then(|b| b.home_team.as_ref().map(TeamLike::unique_id))),
-                                team_two: Set(reservation
-                                    .booking
-                                    .as_ref()
-                                    .and_then(|b| b.away_team.as_ref().map(TeamLike::unique_id))),
-                                ..Default::default()
-                            }
-                            .insert(connection)
-                            .await?;
-                        }
+                    for game in &mut active_games {
+                        game.schedule_id = Set(new_schedule.id);
                     }
+
+                    ScheduleGameEntity::insert_many(active_games)
+                        .exec(connection)
+                        .await?;
 
                     Ok(new_schedule)
                 })
@@ -2569,5 +2762,73 @@ impl Client {
         })
         .exec(&self.connection)
         .await
+    }
+
+    pub async fn swap_schedule_games(&self, a: i32, b: i32) -> Result<bool, TimeSlotError> {
+        let game_one = ScheduleGameEntity::find_by_id(a)
+            .one(&self.connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
+
+        let game_two = ScheduleGameEntity::find_by_id(b)
+            .one(&self.connection)
+            .await
+            .map_err(|e| TimeSlotError::DatabaseError(format!("{e} {}:{}", line!(), column!())))?;
+
+        let (Some(game_one), Some(game_two)) = (game_one, game_two) else {
+            return Ok(false);
+        };
+
+        if let Some(field_id) = game_one.field_id {
+            Self::conflicts(
+                &self.connection,
+                field_id,
+                DateTime::<Utc>::from_str(&game_two.start).unwrap(),
+                DateTime::<Utc>::from_str(&game_two.end).unwrap(),
+                Some([game_one.id, game_two.id]),
+            )
+            .await?;
+        }
+
+        if let Some(field_id) = game_two.field_id {
+            Self::conflicts(
+                &self.connection,
+                field_id,
+                DateTime::<Utc>::from_str(&game_one.start).unwrap(),
+                DateTime::<Utc>::from_str(&game_one.end).unwrap(),
+                Some([game_two.id, game_one.id]),
+            )
+            .await?;
+        }
+
+        let game_one_clone = game_one.clone();
+
+        let mut game_one_am = game_one.into_active_model();
+
+        game_one_am.start = Set(game_two.start.clone());
+        game_one_am.end = Set(game_two.end.clone());
+        game_one_am.field_id = Set(game_two.field_id);
+
+        let mut game_two_am = game_two.into_active_model();
+
+        game_two_am.start = Set(game_one_clone.start);
+        game_two_am.end = Set(game_one_clone.end);
+        game_one_am.field_id = Set(game_one_clone.field_id);
+
+        self.connection
+            .transaction(|connection| {
+                Box::pin(async move {
+                    game_one_am.update(connection).await?;
+                    game_two_am.update(connection).await
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                TransactionError::Connection(db) | TransactionError::Transaction(db) => {
+                    TimeSlotError::DatabaseError(format!("{db} {}:{}", line!(), column!()))
+                }
+            })?;
+
+        Ok(true)
     }
 }
