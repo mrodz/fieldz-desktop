@@ -10,7 +10,13 @@
 		ScheduleGame,
 		CalendarEvent,
 		Delta,
-		MoveTimeSlotInput
+		MoveTimeSlotInput,
+
+		FieldExtension,
+
+		Field
+
+
 	} from '$lib';
 	import { eventFromGame, formatDatePretty } from '$lib';
 	import { dialog, invoke } from '@tauri-apps/api';
@@ -35,6 +41,7 @@
 	const modalStore = getModalStore();
 
 	const teams: Map<number, TeamExtension> = new Map();
+	const fields: Map<number, Field> = new Map();
 
 	async function getTeam(id: number): Promise<TeamExtension> {
 		const maybeTeam = teams.get(id);
@@ -42,6 +49,14 @@
 		if (maybeTeam !== undefined) return maybeTeam;
 
 		return invoke<TeamExtension>('get_team', { id });
+	}
+
+	async function getField(id: number): Promise<Field> {
+		const maybeField = fields.get(id);
+
+		if (maybeField !== undefined) return maybeField;
+
+		return invoke<Field>('get_field', { fieldId: id })
 	}
 
 	if (idParam === null || idParam === '') {
@@ -234,6 +249,7 @@
 					event: e.event,
 					onDelete: deleteCalendarEventPrompt,
 					getTeam,
+					getField,
 					onSwap: () => {
 						swapping = e.event;
 					}

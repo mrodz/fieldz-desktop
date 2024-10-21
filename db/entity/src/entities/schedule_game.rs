@@ -15,6 +15,7 @@ pub struct Model {
     pub end: String,
     pub team_one: Option<i32>,
     pub team_two: Option<i32>,
+    pub field_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -201,17 +201,16 @@ impl Scheduler for ScheduleManager {
         else {
             tracing::error!("Inbound request missing `authorization` header");
             eprintln!("Inbound request missing `authorization` header");
-            
+
             return Err(Status::unauthenticated("Missing `Authorization` header"));
         };
-
 
         let mut bearer_split = bearer.to_str().expect("JWT non-str").split_whitespace();
 
         if !matches!(bearer_split.next(), Some("Bearer" | "bearer")) {
             tracing::error!("`authorization` header malformatted");
             eprintln!("`authorization` header malformatted");
-            
+
             return Err(Status::failed_precondition(
                 "`authorization` header malformatted",
             ));
@@ -220,7 +219,7 @@ impl Scheduler for ScheduleManager {
         let Some(jwt_token) = bearer_split.next() else {
             tracing::error!("`authorization` header malformatted");
             eprintln!("`authorization` header malformatted");
-            
+
             return Err(Status::failed_precondition(
                 "`Authorization` header malformatted",
             ));
@@ -234,10 +233,13 @@ impl Scheduler for ScheduleManager {
             })
             .map_err(|e| Status::from_error(Box::new(e)))?;
 
-        signal_usage(user_id).await.inspect_err(|e| {
-            tracing::error!("Could not signal usage to internal tracker: {e}");
-            eprintln!("Could not signal usage to internal tracker: {e}");
-        }).map_err(Status::from_error)?;
+        signal_usage(user_id)
+            .await
+            .inspect_err(|e| {
+                tracing::error!("Could not signal usage to internal tracker: {e}");
+                eprintln!("Could not signal usage to internal tracker: {e}");
+            })
+            .map_err(Status::from_error)?;
 
         let mut stream = request.into_inner();
 

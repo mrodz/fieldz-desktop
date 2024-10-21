@@ -1,6 +1,6 @@
 use sea_orm_migration::prelude::*;
 
-use crate::m20240331_003613_create_reservation_type::ReservationType;
+use crate::m20240507_015703_create_schedule_results::ScheduleGame;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -11,13 +11,9 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(ReservationType::Table)
+                    .table(ScheduleGame::Table)
                     .add_column_if_not_exists(
-                        ColumnDef::new(Alias::new("is_practice"))
-                            .boolean()
-                            .not_null()
-                            .check(Expr::col(Alias::new("is_practice")).is_in([0, 1]))
-                            .default(Value::Int(Some(0))),
+                        ColumnDef::new(Alias::new("field_id")).integer().null(),
                     )
                     .take(),
             )
